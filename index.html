@@ -1,195 +1,138 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="h-full">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#0f2a24">
 <title>Ludo Table</title>
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=IBM+Plex+Mono:wght@500&display=swap">
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          felt: "#0f2a24", felt2: "#143630", panel: "#1a3f38", line: "#2c5a51",
+          ink: "#f3efe2", muted: "#a9c3ba", paper: "#f7f2e3", gold: "#f2c94c",
+          pred: "#d8382e", pgreen: "#1d9a52", pyellow: "#efb20a", pblue: "#2563d4",
+        },
+        fontFamily: {
+          display: ['"Baloo 2"', '"Trebuchet MS"', "system-ui", "sans-serif"],
+          mono: ['"IBM Plex Mono"', "ui-monospace", "Menlo", "monospace"],
+        },
+      },
+    },
+  };
+</script>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
-/* Layout: a felt game table. Board is the hero on the left, a narrow "scorer's panel" on the right; stacks to one column on phones. Single dark look by choice. */
-:root {
-  --felt: #0f2a24;
-  --felt-2: #143630;
-  --panel: #1a3f38;
-  --line: #2c5a51;
-  --ink: #f3efe2;
-  --muted: #a9c3ba;
-  --paper: #f7f2e3;
-  --board-ink: #23302c;
-  --red: #d8382e;
-  --green: #1d9a52;
-  --yellow: #efb20a;
-  --blue: #2563d4;
-  --gold: #f2c94c;
-  --font-display: "Baloo 2", "Trebuchet MS", system-ui, sans-serif;
-  --font-body: "Baloo 2", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
-  color-scheme: dark;
-}
-*, *::before, *::after { box-sizing: border-box; }
-[hidden] { display: none !important; }
-html, body { background: var(--felt); color: var(--ink); margin: 0; }
-:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
-body {
-  font-family: var(--font-body);
-  font-size: 16px;
-  line-height: 1.4;
-  background:
-    radial-gradient(1200px 700px at 30% 20%, var(--felt-2), transparent 70%),
-    var(--felt);
-  min-height: 100%;
-}
-.wrap {
-  max-width: 1120px;
-  margin: 0 auto;
-  padding-block: 20px 40px;
-  padding-left: max(16px, env(safe-area-inset-left, 0px));
-  padding-right: max(16px, env(safe-area-inset-right, 0px));
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-header.top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-h1 {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: clamp(30px, 5vw, 44px);
-  line-height: 1;
-  margin: 0;
-  letter-spacing: -0.01em;
-}
-h1 .dot { display: inline-block; width: .32em; height: .32em; border-radius: 50%; margin-left: .08em; vertical-align: .1em; }
-.room-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; color: var(--muted); }
-.room-code {
-  font-family: var(--font-mono); font-size: 15px; color: var(--ink);
-  background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; letter-spacing: .08em;
-}
-.layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 24px; align-items: start; }
-@media (max-width: 860px) { .layout { grid-template-columns: minmax(0, 1fr); } }
-
-.board-shell {
-  width: 100%; max-width: 680px; margin: 0 auto;
-  aspect-ratio: 1; max-height: calc(100vh - 140px);
-  background: #3b2a1c;
-  border-radius: 14px;
-  padding: 10px;
-  box-shadow: 0 18px 40px rgba(0,0,0,.45), inset 0 0 0 2px #5a4029;
-}
-@media (max-width: 860px) { .board-shell { max-height: none; padding: 6px; border-radius: 10px; } }
-#board { width: 100%; height: 100%; display: block; border-radius: 6px; touch-action: manipulation; }
-.token { cursor: default; transition: transform .35s cubic-bezier(.3,.7,.3,1.2); }
-.token.movable { cursor: pointer; }
-.token .halo { opacity: 0; }
-.token.movable .halo { opacity: 1; animation: pulse 1s ease-in-out infinite; }
-@keyframes pulse { 0%,100% { stroke-opacity: .95; } 50% { stroke-opacity: .25; } }
-@media (prefers-reduced-motion: reduce) {
-  .token { transition: none; }
-  .token.movable .halo { animation: none; }
-}
-
-aside.panel { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
-.label { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
-.turn-head { display: flex; align-items: center; gap: 10px; }
-.turn-head .swatch { width: 18px; height: 18px; border-radius: 50%; box-shadow: 0 0 0 3px rgba(255,255,255,.15); flex: none; }
-.turn-title { font-family: var(--font-display); font-weight: 700; font-size: 22px; line-height: 1.1; text-wrap: balance; }
-.hint { color: var(--muted); font-size: 14px; }
-
-.dice { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
-.die {
-  aspect-ratio: 1; border: none; border-radius: 9px; background: var(--paper); cursor: pointer; padding: 0;
-  box-shadow: 0 3px 0 #b9ae8f; transition: transform .08s, box-shadow .08s;
-}
-.die:hover { transform: translateY(-1px); }
-.die:active { transform: translateY(2px); box-shadow: 0 1px 0 #b9ae8f; }
-.die.picked { outline: 3px solid var(--gold); outline-offset: 2px; }
-.die:disabled { opacity: .35; cursor: not-allowed; transform: none; }
-.die svg { width: 100%; height: 100%; display: block; }
-
-.seats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.seat {
-  border-radius: 10px; padding: 9px 10px; border: 2px solid transparent; background: rgba(255,255,255,.04);
-  display: flex; flex-direction: column; gap: 6px; min-width: 0;
-}
-.seat.turn { border-color: var(--gold); }
-.seat .who { display: flex; align-items: center; gap: 7px; font-weight: 700; min-width: 0; }
-.seat .who .swatch { width: 14px; height: 14px; border-radius: 50%; flex: none; }
-.seat .who span.name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.seat .meta { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
-
-button.btn {
-  font: inherit; font-weight: 700; font-size: 14px; border-radius: 8px; padding: 6px 12px; cursor: pointer;
-  border: 1px solid var(--line); background: var(--felt-2); color: var(--ink);
-}
-button.btn:hover { border-color: var(--muted); }
-button.btn.primary { background: var(--gold); color: #2a2208; border-color: var(--gold); }
-button.btn.primary:disabled { opacity: .45; cursor: not-allowed; }
-button.btn.small { font-size: 13px; padding: 3px 9px; }
-button.btn.danger { color: #ffb4ad; }
-button:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
-.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-input.txt {
-  font: inherit; font-size: 15px; background: var(--felt); color: var(--ink); border: 1px solid var(--line);
-  border-radius: 8px; padding: 6px 10px; min-width: 0; flex: 1;
-}
-.log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 14px; max-height: 190px; overflow-y: auto; }
-.log li { display: flex; gap: 8px; align-items: baseline; }
-.log li .pip { width: 8px; height: 8px; border-radius: 50%; flex: none; transform: translateY(-1px); }
-.log li:first-child { color: var(--ink); font-weight: 600; }
-.log li:not(:first-child) { color: var(--muted); }
-.banner { font-size: 14px; border-radius: 10px; padding: 10px 12px; background: rgba(242,201,76,.12); border: 1px solid rgba(242,201,76,.4); }
-.confirm { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 14px; }
-.winners { display: flex; flex-direction: column; gap: 4px; font-weight: 700; }
-.net { width: 100%; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
-.net .led { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
-.net.ok .led { background: #4ade80; }
-.net.bad .led { background: #f87171; }
+  html { -webkit-tap-highlight-color: transparent; }
+  body {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: max(12px, env(safe-area-inset-left, 0px));
+    padding-right: max(12px, env(safe-area-inset-right, 0px));
+    background: radial-gradient(900px 600px at 30% 10%, #143630, transparent 70%), #0f2a24;
+  }
+  .token { transition: transform .35s cubic-bezier(.3,.7,.3,1.2); }
+  .token.movable { cursor: pointer; }
+  .token .halo { opacity: 0; }
+  .token.movable .halo { opacity: 1; animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { stroke-opacity: .95; } 50% { stroke-opacity: .2; } }
+  .die-face { box-shadow: 0 5px 0 #b9ae8f, 0 10px 18px rgba(0,0,0,.35); }
+  .die-face.rolling { animation: tumble .65s cubic-bezier(.3,.6,.4,1); }
+  @keyframes tumble {
+    0% { transform: rotate(0) scale(1); }
+    25% { transform: rotate(-200deg) scale(.82) translateY(-10px); }
+    55% { transform: rotate(-340deg) scale(1.08); }
+    80% { transform: rotate(-372deg) scale(.97); }
+    100% { transform: rotate(-360deg) scale(1); }
+  }
+  .die-face.ready { animation: nudge 1.4s ease-in-out infinite; }
+  @keyframes nudge { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+  @media (prefers-reduced-motion: reduce) {
+    .token { transition: none; }
+    .token.movable .halo, .die-face.rolling, .die-face.ready { animation: none; }
+  }
 </style>
 </head>
-<body>
-<div class="wrap">
-  <header class="top">
-    <h1>Ludo Table<span class="dot" style="background:var(--red)"></span><span class="dot" style="background:var(--green)"></span><span class="dot" style="background:var(--yellow)"></span><span class="dot" style="background:var(--blue)"></span></h1>
-    <div class="room-bar">
-      Room <span class="room-code" id="roomCode">table1</span>
-      <input class="txt" id="roomInput" placeholder="Room code" maxlength="12" style="max-width:130px" aria-label="Room code to join">
-      <button class="btn small" id="joinRoom">Join</button>
-      <button class="btn small" id="newRoom">New room</button>
-      <button class="btn small primary" id="copyLink">Copy invite link</button>
-      <div class="net" id="net"><span class="led"></span><span id="netText">Connecting…</span></div>
+<body class="min-h-full font-display text-ink antialiased">
+<div class="mx-auto flex max-w-6xl flex-col gap-3 py-3 lg:gap-5 lg:py-6">
+
+  <!-- Header -->
+  <header class="flex items-center justify-between gap-2">
+    <h1 class="flex items-center gap-1 text-2xl font-extrabold leading-none sm:text-4xl">
+      Ludo Table
+      <span class="ml-1 inline-flex gap-0.5">
+        <i class="h-2 w-2 rounded-full bg-pred"></i><i class="h-2 w-2 rounded-full bg-pgreen"></i><i class="h-2 w-2 rounded-full bg-pyellow"></i><i class="h-2 w-2 rounded-full bg-pblue"></i>
+      </span>
+    </h1>
+    <div class="flex items-center gap-2">
+      <button id="roomBtn" class="flex items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-gold" aria-expanded="false" aria-controls="roomPanel">
+        <span class="text-muted">Room</span><span id="roomCode" class="font-mono tracking-wider">------</span>
+      </button>
+      <button id="copyLink" class="rounded-lg bg-gold px-3 py-1.5 text-sm font-bold text-[#2a2208] active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ink">Invite</button>
     </div>
   </header>
 
-  <div class="layout">
-    <div class="board-shell"><svg id="board" viewBox="0 0 15 15" role="img" aria-label="Ludo board"></svg></div>
+  <div id="roomPanel" class="hidden flex-col gap-2 rounded-xl border border-line bg-panel p-3 sm:flex-row sm:items-center" hidden>
+    <div class="flex flex-1 gap-2">
+      <input id="roomInput" maxlength="12" placeholder="Enter a room code" autocomplete="off" autocapitalize="off" class="min-w-0 flex-1 rounded-lg border border-line bg-felt px-3 py-2 font-mono text-base text-ink placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-gold" aria-label="Room code to join">
+      <button id="joinRoom" class="rounded-lg border border-line bg-felt2 px-4 py-2 font-bold active:scale-95">Join</button>
+    </div>
+    <button id="newRoom" class="rounded-lg border border-line bg-felt2 px-4 py-2 font-bold active:scale-95">Start a new room</button>
+  </div>
 
-    <aside class="panel">
-      <div class="banner" id="banner" hidden></div>
+  <div class="flex items-center gap-2 text-xs text-muted sm:text-sm" id="net">
+    <span id="netLed" class="h-2 w-2 shrink-0 rounded-full bg-muted"></span><span id="netText">Connecting…</span>
+  </div>
 
-      <section class="card" id="turnCard">
-        <div class="label" id="turnLabel">Your move</div>
-        <div class="turn-head"><span class="swatch" id="turnSwatch"></span><div class="turn-title" id="turnTitle">Pick your colors to begin</div></div>
-        <div class="hint" id="turnHint"></div>
-        <div class="dice" id="dice" hidden></div>
-        <div class="row" id="turnActions"></div>
-      </section>
+  <div id="banner" class="rounded-xl border border-gold/40 bg-gold/10 px-3 py-2 text-sm" hidden></div>
 
-      <section class="card">
-        <div class="label">Players</div>
-        <div class="row">
-          <input class="txt" id="nick" maxlength="16" placeholder="Your name" aria-label="Your name">
+  <div class="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-6">
+
+    <!-- Board -->
+    <div class="mx-auto w-full max-w-[min(100%,640px)]">
+      <div class="aspect-square w-full rounded-xl bg-[#3b2a1c] p-1.5 shadow-[0_14px_30px_rgba(0,0,0,.45),inset_0_0_0_2px_#5a4029] sm:p-2.5">
+        <svg id="board" viewBox="0 0 15 15" class="block h-full w-full touch-manipulation rounded-md" role="img" aria-label="Ludo board"></svg>
+      </div>
+    </div>
+
+    <aside class="flex min-w-0 flex-col gap-3">
+
+      <!-- Turn + dice -->
+      <section id="turnCard" class="flex items-center gap-4 rounded-2xl border border-line bg-panel p-3 sm:p-4">
+        <button id="die" class="die-face relative grid aspect-square w-20 shrink-0 grid-cols-3 grid-rows-3 place-items-center rounded-2xl bg-paper p-2.5 disabled:cursor-not-allowed sm:w-24 focus:outline-none focus-visible:ring-4 focus-visible:ring-gold" aria-label="Roll the dice"></button>
+        <div class="flex min-w-0 flex-1 flex-col gap-1">
+          <div class="flex items-center gap-2">
+            <span id="turnSwatch" class="h-3 w-3 shrink-0 rounded-full bg-gold"></span>
+            <span id="turnLabel" class="text-xs font-semibold uppercase tracking-widest text-muted">Waiting to start</span>
+          </div>
+          <div id="turnTitle" class="text-lg font-bold leading-tight sm:text-xl">Pick your colors to begin</div>
+          <div id="turnHint" class="text-sm leading-snug text-muted"></div>
+          <div id="turnActions" class="mt-1 flex flex-wrap gap-2"></div>
         </div>
-        <div class="seats" id="seats"></div>
-        <div class="row" id="lobbyActions"></div>
       </section>
 
-      <section class="card">
-        <div class="label">Table talk</div>
-        <ul class="log" id="log"></ul>
+      <!-- Players -->
+      <section class="flex flex-col gap-2.5 rounded-2xl border border-line bg-panel p-3 sm:p-4">
+        <div class="flex items-center justify-between gap-2">
+          <h2 class="text-xs font-semibold uppercase tracking-widest text-muted">Players</h2>
+          <div id="lobbyActions" class="flex flex-wrap items-center justify-end gap-2 text-sm"></div>
+        </div>
+        <input id="nick" maxlength="16" placeholder="Your name" autocomplete="nickname" class="w-full rounded-lg border border-line bg-felt px-3 py-2 text-base text-ink placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-gold" aria-label="Your name">
+        <div id="seats" class="grid grid-cols-2 gap-2"></div>
       </section>
+
+      <!-- Log -->
+      <details class="group rounded-2xl border border-line bg-panel p-3 sm:p-4" open>
+        <summary class="flex cursor-pointer list-none items-center justify-between text-xs font-semibold uppercase tracking-widest text-muted">
+          Table talk <span class="transition group-open:rotate-180">▾</span>
+        </summary>
+        <ul id="log" class="mt-2 flex max-h-40 flex-col gap-1 overflow-y-auto text-sm lg:max-h-56"></ul>
+      </details>
     </aside>
   </div>
 </div>
@@ -203,8 +146,19 @@ input.txt {
   const START = { red: 0, green: 13, yellow: 26, blue: 39 };
   const SAFE = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
   const FINISH = 56;
+  const $ = id => document.getElementById(id);
 
-  // 52-square main track, clockwise from Red's start square, as [row, col]
+  // ---------- fair dice ----------
+  // Uses the browser's cryptographic random source. Bytes 252-255 are thrown
+  // away so each face 1-6 has exactly the same chance. No weighting, no memory
+  // of past rolls, nothing that favours any player.
+  function rollDie() {
+    const b = new Uint8Array(1);
+    do { crypto.getRandomValues(b); } while (b[0] >= 252);
+    return (b[0] % 6) + 1;
+  }
+
+  // ---------- board geometry ----------
   const TRACK = [];
   const push = (r, c) => TRACK.push([r, c]);
   for (let c = 1; c <= 5; c++) push(6, c);
@@ -220,7 +174,6 @@ input.txt {
   for (let c = 5; c >= 0; c--) push(8, c);
   push(7, 0);
   push(6, 0);
-
   const HOMECOL = {
     red: [1, 2, 3, 4, 5].map(c => [7, c]),
     green: [1, 2, 3, 4, 5].map(r => [r, 7]),
@@ -230,45 +183,33 @@ input.txt {
   const YARD = { red: [0, 0], green: [0, 9], yellow: [9, 9], blue: [9, 0] };
   const FINISH_PT = { red: [6.55, 7.5], green: [7.5, 6.55], yellow: [8.45, 7.5], blue: [7.5, 8.45] };
 
-  // ---------- identity & storage ----------
+  // ---------- identity ----------
   const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
   const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
   let myId = lsGet("ludo.cid");
   if (!myId) { myId = "c" + Math.random().toString(36).slice(2, 10); lsSet("ludo.cid", myId); }
-  const nickEl = document.getElementById("nick");
+  const nickEl = $("nick");
   nickEl.value = lsGet("ludo.nick") || "";
   nickEl.addEventListener("input", () => lsSet("ludo.nick", nickEl.value.trim()));
   const myNick = () => nickEl.value.trim() || "Player";
 
   // ---------- state ----------
   const freshTokens = () => ({ red: [-1, -1, -1, -1], green: [-1, -1, -1, -1], yellow: [-1, -1, -1, -1], blue: [-1, -1, -1, -1] });
-  const freshState = () => ({ phase: "lobby", seats: {}, tokens: freshTokens(), turn: null, roll: null, sixes: 0, winners: [], log: [{ c: "", t: "Table is set. Pick a color and press Start." }] });
+  const freshState = () => ({ phase: "lobby", seats: {}, tokens: freshTokens(), turn: null, roll: null, sixes: 0, winners: [], last: null, log: [{ c: "", t: "Table is set. Pick a color and press Start." }] });
 
-  let state = sampleState(); // shown until the room loads
-  let online = false, readOnly = false, loaded = false;
+  let state = freshState();
+  let online = false, loaded = false, rolling = false, seenSeq = null, confirmReset = false;
   const newCode = () => Math.random().toString(36).slice(2, 8);
   let room = (location.hash || "").slice(1).toLowerCase();
   if (!/^[a-z0-9]{3,12}$/.test(room)) room = newCode();
-  let confirmReset = false;
-
-  function sampleState() {
-    const s = freshState();
-    s.tokens.red = [5, -1, 51, -1]; s.tokens.green = [20, 14, -1, -1]; s.tokens.yellow = [-1, -1, -1, -1]; s.tokens.blue = [30, -1, -1, 56];
-    s.log = [{ c: "", t: "Loading the table…" }];
-    return s;
-  }
 
   const clone = o => JSON.parse(JSON.stringify(o));
   const seated = s => COLORS.filter(c => s.seats[c]);
   const mine = (s, c) => !online || (s.seats[c] && s.seats[c].id === myId);
   const seatName = (s, c) => (s.seats[c] && s.seats[c].nick) || NAMES[c];
-  const addLog = (s, c, t) => { s.log = [{ c, t }, ...(s.log || [])].slice(0, 14); };
+  const addLog = (s, c, t) => { s.log = [{ c, t }, ...(s.log || [])].slice(0, 20); };
 
-  function canMove(p, v) {
-    if (p === FINISH) return false;
-    if (p === -1) return v === 6;
-    return p + v <= FINISH;
-  }
+  const canMove = (p, v) => p !== FINISH && (p === -1 ? v === 6 : p + v <= FINISH);
   const movable = (s, c, v) => s.tokens[c].map((p, i) => canMove(p, v) ? i : -1).filter(i => i >= 0);
   const trackIdx = (c, p) => (START[c] + p) % 52;
 
@@ -281,7 +222,7 @@ input.txt {
       addLog(s, "", "Game over.");
       return;
     }
-    let i = COLORS.indexOf(s.turn);
+    const i = COLORS.indexOf(s.turn);
     for (let k = 1; k <= 4; k++) {
       const c = COLORS[(i + k) % 4];
       if (active.includes(c)) { s.turn = c; return; }
@@ -292,7 +233,8 @@ input.txt {
     const p = s.tokens[c][i];
     const np = p === -1 ? 0 : p + v;
     s.tokens[c][i] = np;
-    let captured = [];
+    s.roll = null;
+    const captured = [];
     if (np <= 50) {
       const idx = trackIdx(c, np);
       if (!SAFE.has(idx)) {
@@ -305,9 +247,9 @@ input.txt {
       }
     }
     const who = seatName(s, c);
-    if (p === -1) addLog(s, c, `${who} rolled 6 and brought a token out.`);
-    else if (np === FINISH) addLog(s, c, `${who} rolled ${v} and got a token home!`);
-    else addLog(s, c, `${who} rolled ${v} and moved.`);
+    if (p === -1) addLog(s, c, `${who} brought a token out.`);
+    else if (np === FINISH) addLog(s, c, `${who} got a token home!`);
+    else addLog(s, c, `${who} moved ${v}.`);
     if (captured.length) addLog(s, c, `${who} cut ${[...new Set(captured)].map(o => seatName(s, o)).join(" & ")}!`);
 
     if (s.tokens[c].every(t => t === FINISH)) {
@@ -316,17 +258,13 @@ input.txt {
       nextTurn(s);
       return;
     }
-    const extra = v === 6 || captured.length > 0 || np === FINISH;
-    if (extra) {
-      s.sixes = v === 6 ? (s.sixes || 0) + 1 : 0;
-      s.roll = null;
-      addLog(s, c, `${who} plays again.`);
-    } else nextTurn(s);
+    if (v === 6 || captured.length || np === FINISH) addLog(s, c, `${who} plays again.`);
+    else nextTurn(s);
   }
 
   // ---------- actions ----------
   function commit(mutate) {
-    if (readOnly || !loaded) return;
+    if (!loaded) return;
     const s = clone(state);
     if (mutate(s) === false) return;
     s.v = (state.v || 0) + 1;
@@ -335,6 +273,8 @@ input.txt {
     render();
     broadcast();
   }
+
+  const canRollNow = () => loaded && !rolling && state.phase === "playing" && !state.roll && mine(state, state.turn);
 
   const actions = {
     claim(c) { commit(s => {
@@ -350,69 +290,87 @@ input.txt {
     start() { commit(s => {
       const sc = seated(s);
       if (sc.length < 2) return false;
-      s.phase = "playing"; s.tokens = freshTokens(); s.winners = []; s.roll = null; s.sixes = 0; s.turn = sc[0];
+      Object.assign(s, { phase: "playing", tokens: freshTokens(), winners: [], roll: null, sixes: 0, turn: sc[0], last: null });
       addLog(s, "", `Game on! ${seatName(s, s.turn)} goes first.`);
     }); },
-    roll(v) { commit(s => {
-      const c = s.turn;
-      if (s.phase !== "playing" || !mine(s, c)) return false;
-      const who = seatName(s, c);
-      if (v === 6 && (s.sixes || 0) >= 2) {
-        addLog(s, c, `${who} rolled a third 6 in a row. Turn passes.`);
-        nextTurn(s); return;
-      }
-      const opts = movable(s, c, v);
-      if (!opts.length) { addLog(s, c, `${who} rolled ${v}. No move possible.`); nextTurn(s); return; }
-      const distinct = new Set(opts.map(i => s.tokens[c][i]));
-      if (distinct.size === 1) { applyMove(s, c, opts[0], v); return; }
-      s.roll = v;
-    }); },
+    roll() {
+      if (!canRollNow()) return;
+      const turnAtStart = state.turn;
+      const v = rollDie();
+      rolling = true;
+      animateDie(v, () => {
+        rolling = false;
+        commit(s => {
+          const c = s.turn;
+          if (s.phase !== "playing" || c !== turnAtStart || s.roll) return false;
+          const seq = ((s.last && s.last.seq) || 0) + 1;
+          s.last = { v, c, seq };
+          seenSeq = seq;
+          const who = seatName(s, c);
+          addLog(s, c, `${who} rolled ${v}.`);
+          if (v === 6 && (s.sixes || 0) >= 2) { addLog(s, c, `Third 6 in a row. Turn passes.`); nextTurn(s); return; }
+          s.sixes = v === 6 ? (s.sixes || 0) + 1 : 0;
+          const opts = movable(s, c, v);
+          if (!opts.length) { addLog(s, c, `No move possible.`); nextTurn(s); return; }
+          if (new Set(opts.map(i => s.tokens[c][i])).size === 1) { applyMove(s, c, opts[0], v); return; }
+          s.roll = v;
+        });
+        render();
+      });
+      render();
+    },
     move(c, i) { commit(s => {
       if (s.phase !== "playing" || s.turn !== c || !s.roll || !mine(s, c)) return false;
       if (!canMove(s.tokens[c][i], s.roll)) return false;
       applyMove(s, c, i, s.roll);
     }); },
-    reset() { commit(s => {
+    reset() { confirmReset = false; commit(s => {
       const seats = s.seats;
       Object.assign(s, freshState(), { seats });
       s.log = [{ c: "", t: "New game. Seats kept. Press Start when ready." }];
-    }); confirmReset = false; },
-    clearSeats() { commit(s => { Object.assign(s, freshState()); }); confirmReset = false; },
+    }); },
+    clearSeats() { confirmReset = false; commit(s => { Object.assign(s, freshState()); }); },
   };
+
+  // ---------- dice face ----------
+  const PIP_CELLS = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
+  const dieEl = $("die");
+  let shownFace = 1;
+  function drawFace(v, color) {
+    shownFace = v;
+    const cells = PIP_CELLS[v] || [];
+    let html = "";
+    for (let k = 0; k < 9; k++) {
+      html += cells.includes(k)
+        ? `<span class="block h-[70%] w-[70%] rounded-full" style="background:${v === 1 ? "#c62828" : color || "#23302c"}"></span>`
+        : `<span></span>`;
+    }
+    dieEl.innerHTML = html;
+  }
+  function animateDie(finalV, done) {
+    dieEl.classList.remove("rolling", "ready");
+    void dieEl.offsetWidth;
+    dieEl.classList.add("rolling");
+    const reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let n = 0;
+    const iv = setInterval(() => {
+      let f; do { f = 1 + Math.floor(Math.random() * 6); } while (f === shownFace);
+      drawFace(f);
+      if (++n >= 8 || reduce) {
+        clearInterval(iv);
+        drawFace(finalV);
+        setTimeout(() => { dieEl.classList.remove("rolling"); done && done(); }, reduce ? 0 : 120);
+      }
+    }, 65);
+    try { navigator.vibrate && navigator.vibrate(30); } catch {}
+  }
+  dieEl.addEventListener("click", () => actions.roll());
+  drawFace(1);
 
   // ---------- board drawing ----------
   const NS = "http://www.w3.org/2000/svg";
-  const svg = document.getElementById("board");
+  const svg = $("board");
   const el = (tag, attrs, parent) => { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); (parent || svg).appendChild(n); return n; };
-
-  function drawBoard() {
-    el("rect", { x: 0, y: 0, width: 15, height: 15, fill: "#f7f2e3" });
-    // yards
-    for (const c of COLORS) {
-      const [r0, c0] = YARD[c];
-      el("rect", { x: c0, y: r0, width: 6, height: 6, fill: HEX[c] });
-      el("rect", { x: c0 + .8, y: r0 + .8, width: 4.4, height: 4.4, rx: .5, fill: "#f7f2e3" });
-      for (const [dy, dx] of [[2, 2], [2, 4], [4, 2], [4, 4]]) {
-        el("circle", { cx: c0 + dx, cy: r0 + dy, r: .62, fill: LIGHT[c], stroke: HEX[c], "stroke-width": .06 });
-      }
-    }
-    // track
-    TRACK.forEach(([r, c], idx) => {
-      let fill = "#fffdf6";
-      for (const col of COLORS) if (START[col] === idx) fill = HEX[col];
-      el("rect", { x: c, y: r, width: 1, height: 1, fill, stroke: "#23302c", "stroke-width": .035 });
-      if (SAFE.has(idx)) star(c + .5, r + .5, ![0, 13, 26, 39].includes(idx) ? "#9aa59f" : "#fffdf6");
-    });
-    for (const c of COLORS) HOMECOL[c].forEach(([r, cc]) => el("rect", { x: cc, y: r, width: 1, height: 1, fill: HEX[c], stroke: "#23302c", "stroke-width": .035 }));
-    // entry arrows on the square before each home column
-    // center triangles
-    el("polygon", { points: "6,6 6,9 7.5,7.5", fill: HEX.red });
-    el("polygon", { points: "6,6 9,6 7.5,7.5", fill: HEX.green });
-    el("polygon", { points: "9,6 9,9 7.5,7.5", fill: HEX.yellow });
-    el("polygon", { points: "6,9 9,9 7.5,7.5", fill: HEX.blue });
-    el("rect", { x: 6, y: 6, width: 3, height: 3, fill: "none", stroke: "#23302c", "stroke-width": .05 });
-    el("rect", { x: 0, y: 0, width: 15, height: 15, fill: "none", stroke: "#23302c", "stroke-width": .08 });
-  }
   function star(cx, cy, fill) {
     const pts = [];
     for (let k = 0; k < 10; k++) {
@@ -421,14 +379,36 @@ input.txt {
     }
     el("polygon", { points: pts.join(" "), fill, stroke: "#23302c", "stroke-width": .03 });
   }
-  drawBoard();
+  (function drawBoard() {
+    el("rect", { x: 0, y: 0, width: 15, height: 15, fill: "#f7f2e3" });
+    for (const c of COLORS) {
+      const [r0, c0] = YARD[c];
+      el("rect", { x: c0, y: r0, width: 6, height: 6, fill: HEX[c] });
+      el("rect", { x: c0 + .8, y: r0 + .8, width: 4.4, height: 4.4, rx: .5, fill: "#f7f2e3" });
+      for (const [dy, dx] of [[2, 2], [2, 4], [4, 2], [4, 4]]) el("circle", { cx: c0 + dx, cy: r0 + dy, r: .62, fill: LIGHT[c], stroke: HEX[c], "stroke-width": .06 });
+    }
+    TRACK.forEach(([r, c], idx) => {
+      let fill = "#fffdf6";
+      for (const col of COLORS) if (START[col] === idx) fill = HEX[col];
+      el("rect", { x: c, y: r, width: 1, height: 1, fill, stroke: "#23302c", "stroke-width": .035 });
+      if (SAFE.has(idx)) star(c + .5, r + .5, [0, 13, 26, 39].includes(idx) ? "#fffdf6" : "#9aa59f");
+    });
+    for (const c of COLORS) HOMECOL[c].forEach(([r, cc]) => el("rect", { x: cc, y: r, width: 1, height: 1, fill: HEX[c], stroke: "#23302c", "stroke-width": .035 }));
+    el("polygon", { points: "6,6 6,9 7.5,7.5", fill: HEX.red });
+    el("polygon", { points: "6,6 9,6 7.5,7.5", fill: HEX.green });
+    el("polygon", { points: "9,6 9,9 7.5,7.5", fill: HEX.yellow });
+    el("polygon", { points: "6,9 9,9 7.5,7.5", fill: HEX.blue });
+    el("rect", { x: 6, y: 6, width: 3, height: 3, fill: "none", stroke: "#23302c", "stroke-width": .05 });
+    el("rect", { x: 0, y: 0, width: 15, height: 15, fill: "none", stroke: "#23302c", "stroke-width": .08 });
+  })();
 
   const tokenLayer = el("g", {});
   const tokenEls = {};
   for (const c of COLORS) for (let i = 0; i < 4; i++) {
-    const g = el("g", { class: "token", "data-c": c, "data-i": i, tabindex: "-1" }, tokenLayer);
-    g.style.transform = "translate(0px,0px)";
-    el("circle", { class: "halo", r: .5, fill: "none", stroke: "#f2c94c", "stroke-width": .12 }, g);
+    const g = el("g", { class: "token", tabindex: "-1" }, tokenLayer);
+    // invisible larger hit area so tokens are easy to tap on phones
+    el("circle", { r: .62, fill: "transparent" }, g);
+    el("circle", { class: "halo", r: .5, fill: "none", stroke: "#f2c94c", "stroke-width": .13 }, g);
     el("ellipse", { cx: .03, cy: .1, rx: .34, ry: .3, fill: "rgba(0,0,0,.28)" }, g);
     el("circle", { r: .34, fill: HEX[c], stroke: "#1b1b1b", "stroke-width": .05 }, g);
     el("circle", { r: .17, fill: "rgba(255,255,255,.85)" }, g);
@@ -451,17 +431,15 @@ input.txt {
       const b = basePoint(c, i, p);
       (groups[b.key] = groups[b.key] || []).push({ c, i, b });
     });
-    const playing = state.phase === "playing";
-    const moveSet = new Set(playing && state.roll && mine(state, state.turn) && !readOnly ? movable(state, state.turn, state.roll).map(i => state.turn + i) : []);
-    const inGame = c => state.phase === "lobby" ? true : !!state.seats[c];
+    const moveSet = new Set(state.phase === "playing" && state.roll && mine(state, state.turn) ? movable(state, state.turn, state.roll).map(i => state.turn + i) : []);
+    const inGame = c => state.phase === "lobby" || !!state.seats[c];
     for (const key in groups) {
       const list = groups[key], n = list.length;
       list.forEach((t, k) => {
         let { x, y } = t.b, s = 1;
         if (n > 1) {
           s = n > 2 ? .62 : .75;
-          const off = n > 2 ? .22 : .2;
-          const ang = (k / n) * Math.PI * 2 - Math.PI / 4;
+          const off = n > 2 ? .22 : .2, ang = (k / n) * Math.PI * 2 - Math.PI / 4;
           x += Math.cos(ang) * off; y += Math.sin(ang) * off;
         }
         const g = tokenEls[t.c + t.i];
@@ -475,132 +453,143 @@ input.txt {
     }
   }
 
-  // ---------- dice faces ----------
-  const PIPS = { 1: [[50, 50]], 2: [[28, 28], [72, 72]], 3: [[28, 28], [50, 50], [72, 72]], 4: [[28, 28], [72, 28], [28, 72], [72, 72]], 5: [[28, 28], [72, 28], [50, 50], [28, 72], [72, 72]], 6: [[28, 25], [72, 25], [28, 50], [72, 50], [28, 75], [72, 75]] };
-  const diceEl = document.getElementById("dice");
-  for (let v = 1; v <= 6; v++) {
-    const b = document.createElement("button");
-    b.className = "die"; b.id = "die" + v; b.setAttribute("aria-label", "I rolled " + v);
-    b.innerHTML = `<svg viewBox="0 0 100 100">${PIPS[v].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="10" fill="${v === 1 ? "#c62828" : "#23302c"}"/>`).join("")}</svg>`;
-    b.addEventListener("click", () => actions.roll(v));
-    diceEl.appendChild(b);
-  }
-
   // ---------- panel ----------
-  const $ = id => document.getElementById(id);
   function showBanner(t) { const b = $("banner"); b.textContent = t; b.hidden = !t; }
+  const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+  const BTN = "rounded-lg px-3 py-1.5 text-sm font-bold active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:opacity-40 disabled:active:scale-100";
+  const BTN_PRIMARY = BTN + " bg-gold text-[#2a2208]";
+  const BTN_GHOST = BTN + " border border-line bg-felt2 text-ink";
+  const BTN_DANGER = BTN + " border border-line bg-felt2 text-[#ffb4ad]";
 
   function renderPanel() {
     const s = state;
-    const label = $("turnLabel"), title = $("turnTitle"), hint = $("turnHint"), sw = $("turnSwatch"), acts = $("turnActions");
+    const title = $("turnTitle"), hint = $("turnHint"), label = $("turnLabel"), sw = $("turnSwatch"), acts = $("turnActions");
     acts.innerHTML = "";
-    diceEl.hidden = true;
+    const canRoll = canRollNow();
+    dieEl.disabled = !canRoll;
+    dieEl.classList.toggle("ready", canRoll);
+    dieEl.classList.toggle("opacity-50", !canRoll && !rolling && s.phase !== "playing");
+    dieEl.setAttribute("aria-label", canRoll ? "Roll the dice" : "Dice");
+
     if (!loaded) {
-      label.textContent = "Connecting"; title.textContent = "Setting up the table"; hint.textContent = ""; sw.style.background = "var(--line)";
+      label.textContent = "Connecting"; title.textContent = "Setting up the table"; hint.textContent = ""; sw.style.background = "#2c5a51";
     } else if (s.phase === "lobby") {
       const n = seated(s).length;
+      sw.style.background = "#f2c94c";
       label.textContent = "Waiting to start";
-      title.textContent = n < 2 ? "Pick your colors to begin" : `${n} players seated`;
-      hint.textContent = online
-        ? "Each friend opens this page, enters a name and taps an empty color. You can take more than one color. Then anyone presses Start."
-        : "Playing on this device only. Tap colors for each player, then Start.";
-      sw.style.background = "var(--gold)";
-      const st = document.createElement("button");
-      st.className = "btn primary"; st.textContent = "Start game"; st.disabled = n < 2 || readOnly;
-      st.addEventListener("click", actions.start); acts.appendChild(st);
+      title.textContent = n < 2 ? "Pick your colors" : `${n} players ready`;
+      hint.textContent = "Tap Invite and send the link. Each friend types a name and takes a color.";
+      const st = mk("button", BTN_PRIMARY, "Start game");
+      st.disabled = n < 2;
+      st.addEventListener("click", actions.start);
+      acts.appendChild(st);
     } else if (s.phase === "playing") {
-      const c = s.turn, me = mine(s, c) && !readOnly;
+      const c = s.turn, me = mine(s, c);
       sw.style.background = HEX[c];
-      label.textContent = me ? "Your move" : "Waiting";
-      if (me) {
-        title.textContent = s.roll ? `You rolled ${s.roll}. Tap a glowing token.` : `${seatName(s, c)} (${NAMES[c]}), roll your dice`;
-        hint.textContent = s.roll ? "Pressed the wrong number? Tap the right one below." : "Roll your real dice, then tap the number you got.";
-        diceEl.hidden = false;
-        for (let v = 1; v <= 6; v++) $("die" + v).classList.toggle("picked", s.roll === v);
+      label.textContent = me ? "Your turn" : `${NAMES[c]}'s turn`;
+      if (rolling) { title.textContent = me ? "Rolling…" : `${seatName(s, c)} is rolling…`; hint.textContent = ""; }
+      else if (me) {
+        if (s.roll) { title.textContent = `You rolled ${s.roll}`; hint.textContent = "Tap a glowing token to move it."; }
+        else { title.textContent = `${seatName(s, c)}, tap the dice`; hint.textContent = s.last && s.last.c !== c ? `${seatName(s, s.last.c)} rolled ${s.last.v}.` : (s.last ? `You rolled ${s.last.v} last.` : "Roll a 6 to bring a token out."); }
       } else {
-        title.textContent = s.roll ? `${seatName(s, c)} rolled ${s.roll} and is choosing a token` : `${seatName(s, c)} (${NAMES[c]}) is rolling`;
-        hint.textContent = "The board updates for everyone as soon as they move.";
+        title.textContent = s.roll ? `${seatName(s, c)} rolled ${s.roll}` : `${seatName(s, c)} is up`;
+        hint.textContent = s.roll ? "Waiting for them to move." : "Waiting for them to roll.";
       }
     } else {
-      sw.style.background = s.winners[0] ? HEX[s.winners[0]] : "var(--gold)";
+      sw.style.background = s.winners[0] ? HEX[s.winners[0]] : "#f2c94c";
       label.textContent = "Game over";
       title.textContent = s.winners[0] ? `${seatName(s, s.winners[0])} wins!` : "Game over";
-      hint.innerHTML = "";
-      const w = document.createElement("div"); w.className = "winners";
-      s.winners.forEach((c, k) => { const d = document.createElement("div"); d.style.color = HEX[c]; d.textContent = `${k + 1}. ${seatName(s, c)}`; w.appendChild(d); });
-      hint.appendChild(w);
-      const again = document.createElement("button");
-      again.className = "btn primary"; again.textContent = "Play again"; again.disabled = readOnly;
-      again.addEventListener("click", actions.reset); acts.appendChild(again);
+      hint.textContent = s.winners.map((c, k) => `${k + 1}. ${seatName(s, c)}`).join("   ");
+      const again = mk("button", BTN_PRIMARY, "Play again");
+      again.addEventListener("click", actions.reset);
+      acts.appendChild(again);
     }
 
     // seats
     const seatsEl = $("seats"); seatsEl.innerHTML = "";
     for (const c of COLORS) {
-      const d = document.createElement("div");
-      d.className = "seat" + (s.phase === "playing" && s.turn === c ? " turn" : "");
-      d.style.background = `color-mix(in srgb, ${HEX[c]} 16%, transparent)`;
-      const who = document.createElement("div"); who.className = "who";
-      const swc = document.createElement("span"); swc.className = "swatch"; swc.style.background = HEX[c];
-      const nm = document.createElement("span"); nm.className = "name";
-      nm.textContent = s.seats[c] ? s.seats[c].nick + (online && s.seats[c].id === myId ? " (you)" : "") : NAMES[c];
-      who.append(swc, nm); d.appendChild(who);
-      const meta = document.createElement("div"); meta.className = "meta";
+      const isTurn = s.phase === "playing" && s.turn === c;
+      const d = mk("div", "flex min-w-0 flex-col gap-1.5 rounded-xl border-2 p-2.5 " + (isTurn ? "border-gold" : "border-transparent"));
+      d.style.background = `color-mix(in srgb, ${HEX[c]} 18%, transparent)`;
+      const who = mk("div", "flex min-w-0 items-center gap-2 font-bold");
+      const dot = mk("span", "h-3.5 w-3.5 shrink-0 rounded-full"); dot.style.background = HEX[c];
+      const nm = mk("span", "truncate", s.seats[c] ? s.seats[c].nick + (online && s.seats[c].id === myId ? " (you)" : "") : NAMES[c]);
+      who.append(dot, nm); d.appendChild(who);
       const home = s.tokens[c].filter(p => p === FINISH).length, out = s.tokens[c].filter(p => p >= 0 && p < FINISH).length;
+      let meta;
       if (s.seats[c]) {
         const place = s.winners.indexOf(c);
-        meta.textContent = place >= 0 ? `Finished #${place + 1}` : s.phase === "lobby" ? "Ready" : `${out} out · ${home}/4 home`;
-      } else meta.textContent = s.phase === "lobby" ? "Open seat" : "Not playing";
-      d.appendChild(meta);
-      if (s.phase === "lobby" && !readOnly && loaded) {
+        meta = place >= 0 ? `Finished #${place + 1}` : s.phase === "lobby" ? "Ready" : `${out} out · ${home}/4 home`;
+      } else meta = s.phase === "lobby" ? "Open seat" : "Not playing";
+      d.appendChild(mk("div", "text-xs text-muted tabular-nums", meta));
+      if (s.phase === "lobby" && loaded) {
         if (!s.seats[c]) {
-          const b = document.createElement("button"); b.className = "btn small"; b.textContent = "Take " + NAMES[c];
+          const b = mk("button", BTN_GHOST + " w-full", "Take " + NAMES[c]);
           b.addEventListener("click", () => actions.claim(c)); d.appendChild(b);
         } else if (mine(s, c)) {
-          const b = document.createElement("button"); b.className = "btn small"; b.textContent = "Leave";
+          const b = mk("button", BTN_GHOST + " w-full", "Leave");
           b.addEventListener("click", () => actions.leave(c)); d.appendChild(b);
         }
       }
       seatsEl.appendChild(d);
     }
 
-    // lobby actions: reset with in-page confirm
+    // reset / clear with in-page confirm
     const la = $("lobbyActions"); la.innerHTML = "";
-    if (loaded && !readOnly) {
+    if (loaded) {
+      const playing = s.phase === "playing";
       if (!confirmReset) {
-        const b = document.createElement("button"); b.className = "btn small danger";
-        b.textContent = s.phase === "playing" ? "End this game…" : "Clear all seats…";
-        b.addEventListener("click", () => { confirmReset = true; render(); });
-        la.appendChild(b);
+        if (playing || seated(s).length) {
+          const b = mk("button", BTN_DANGER + " !px-2 !py-1 text-xs", playing ? "End game" : "Clear seats");
+          b.addEventListener("click", () => { confirmReset = true; render(); });
+          la.appendChild(b);
+        }
       } else {
-        const w = document.createElement("div"); w.className = "confirm";
-        const t = document.createElement("span");
-        t.textContent = s.phase === "playing" ? "End the game for everyone?" : "Remove every player from the table?";
-        const yes = document.createElement("button"); yes.className = "btn small danger"; yes.textContent = s.phase === "playing" ? "End game" : "Clear seats";
-        yes.addEventListener("click", s.phase === "playing" ? actions.reset : actions.clearSeats);
-        const no = document.createElement("button"); no.className = "btn small"; no.textContent = "Cancel";
+        la.appendChild(mk("span", "text-xs text-muted", playing ? "End for everyone?" : "Remove everyone?"));
+        const yes = mk("button", BTN_DANGER + " !px-2 !py-1 text-xs", "Yes");
+        yes.addEventListener("click", playing ? actions.reset : actions.clearSeats);
+        const no = mk("button", BTN_GHOST + " !px-2 !py-1 text-xs", "No");
         no.addEventListener("click", () => { confirmReset = false; render(); });
-        w.append(t, yes, no); la.appendChild(w);
+        la.append(yes, no);
       }
     }
 
     // log
     const logEl = $("log"); logEl.innerHTML = "";
-    for (const e of s.log || []) {
-      const li = document.createElement("li");
-      const pip = document.createElement("span"); pip.className = "pip"; pip.style.background = e.c ? HEX[e.c] : "var(--muted)";
-      const tx = document.createElement("span"); tx.textContent = e.t;
-      li.append(pip, tx); logEl.appendChild(li);
-    }
+    (s.log || []).forEach((e, k) => {
+      const li = mk("li", "flex items-baseline gap-2 " + (k === 0 ? "font-semibold text-ink" : "text-muted"));
+      const pip = mk("span", "h-2 w-2 shrink-0 translate-y-[-1px] rounded-full"); pip.style.background = e.c ? HEX[e.c] : "#a9c3ba";
+      li.append(pip, mk("span", "", e.t));
+      logEl.appendChild(li);
+    });
     $("roomCode").textContent = room;
   }
 
-  function render() { renderTokens(); renderPanel(); }
+  function render() {
+    renderTokens();
+    renderPanel();
+    if (!rolling) {
+      const lv = state.roll || (state.last && state.last.v);
+      if (lv && lv !== shownFace) drawFace(lv);
+    }
+  }
+
+  // Show the tumble on every device when someone else rolls
+  function onRemoteState() {
+    const last = state.last;
+    if (last && last.seq !== seenSeq) {
+      const first = seenSeq === null;
+      seenSeq = last.seq;
+      if (!first) {
+        rolling = true; render();
+        animateDie(last.v, () => { rolling = false; render(); });
+        return;
+      }
+    } else if (!last) seenSeq = 0;
+    render();
+  }
 
   // ---------- rooms & sync (peer-to-peer) ----------
-  // The first browser to open a room code becomes its host and holds the game.
-  // Everyone else connects to the host. If the host leaves, the next person to
-  // reconnect takes over with the latest board.
   const PREFIX = "ludotable-v1-";
   let peer = null, isHost = false, conns = [], hostConn = null, gen = 0, retryTimer = null;
 
@@ -609,13 +598,13 @@ input.txt {
   function loadLocal(code) { try { const s = JSON.parse(lsGet("ludo.room." + code)); return validState(s) ? s : null; } catch { return null; } }
 
   function setNet(kind, text) {
-    const n = $("net"); n.className = "net" + (kind ? " " + kind : "");
+    $("netLed").className = "h-2 w-2 shrink-0 rounded-full " + (kind === "ok" ? "bg-[#4ade80]" : kind === "bad" ? "bg-[#f87171]" : "bg-muted");
     $("netText").textContent = text;
   }
   function netSummary() {
     if (isHost) {
       const n = conns.filter(c => c.open).length;
-      setNet("ok", n ? `Live · you're hosting · ${n} friend${n > 1 ? "s" : ""} connected` : "Live · you're hosting · share the invite link");
+      setNet("ok", n ? `Live · hosting · ${n} friend${n > 1 ? "s" : ""} connected` : "Live · hosting · tap Invite to add friends");
     } else setNet("ok", "Live · connected to the table");
   }
 
@@ -627,8 +616,8 @@ input.txt {
 
   function accept(incoming) {
     if (!validState(incoming)) return false;
-    if ((incoming.v || 0) < (state.v || 0) && loaded) return false;
-    state = incoming; loaded = true; saveLocal(); render();
+    if (loaded && (incoming.v || 0) < (state.v || 0)) return false;
+    state = incoming; loaded = true; saveLocal(); onRemoteState();
     return true;
   }
 
@@ -646,12 +635,12 @@ input.txt {
     room = code; confirmReset = false;
     try { if (location.hash.slice(1) !== code) history.replaceState(null, "", "#" + code); } catch {}
     if (!window.Peer) {
-      online = false; state = loadLocal(code) || freshState(); loaded = true; render();
-      setNet("bad", "Offline · couldn't load the connection library");
-      showBanner("Online play couldn't start. Check your internet and reload. You can still play on this device.");
+      online = false; state = loadLocal(code) || freshState(); loaded = true; seenSeq = null; onRemoteState();
+      setNet("bad", "Offline · playing on this device only");
+      showBanner("Online play couldn't start. Check your internet and reload. You can still play on this one phone.");
       return;
     }
-    if (!carry) { loaded = false; state = loadLocal(code) || sampleState(); }
+    if (!carry) { loaded = false; seenSeq = null; state = loadLocal(code) || freshState(); }
     render();
     setNet("", "Connecting…");
     peer = new Peer(PREFIX + code);
@@ -659,23 +648,21 @@ input.txt {
       if (my !== gen) return;
       isHost = true; online = true;
       state = carry || loadLocal(code) || freshState();
-      loaded = true; saveLocal(); render(); netSummary();
+      loaded = true; saveLocal(); onRemoteState(); netSummary();
     });
     peer.on("connection", c => {
       if (my !== gen) return;
       conns.push(c);
       c.on("open", () => { c.send({ type: "state", state }); netSummary(); });
       c.on("data", m => {
-        if (m && m.type === "state" && accept(m.state)) {
-          conns.forEach(o => { if (o !== c && o.open) o.send({ type: "state", state }); });
-        }
+        if (m && m.type === "state" && accept(m.state)) conns.forEach(o => { if (o !== c && o.open) o.send({ type: "state", state }); });
       });
       c.on("close", () => { conns = conns.filter(x => x !== c); if (my === gen) netSummary(); });
     });
     peer.on("error", e => {
       if (my !== gen) return;
       if (e.type === "unavailable-id") { try { peer.destroy(); } catch {} joinAsGuest(code, my, carry); }
-      else if (e.type === "network" || e.type === "server-error" || e.type === "socket-error") {
+      else if (["network", "server-error", "socket-error"].includes(e.type)) {
         setNet("bad", "Reconnecting…");
         retryTimer = setTimeout(() => { if (my === gen) openRoom(code, loaded ? state : null); }, 2500);
       }
@@ -694,11 +681,7 @@ input.txt {
     peer.on("open", () => {
       if (my !== gen) return;
       hostConn = peer.connect(PREFIX + code, { reliable: true });
-      hostConn.on("open", () => {
-        online = true;
-        if (carry) hostConn.send({ type: "state", state: carry });
-        netSummary();
-      });
+      hostConn.on("open", () => { online = true; if (carry) hostConn.send({ type: "state", state: carry }); netSummary(); });
       hostConn.on("data", m => { if (m && m.type === "state") accept(m.state); });
       hostConn.on("close", rejoin);
     });
@@ -709,27 +692,40 @@ input.txt {
     });
   }
 
-  $("copyLink").addEventListener("click", () => {
-    const link = location.href.split("#")[0] + "#" + room;
-    const done = () => showBanner(`Invite link copied. Send it to your friends: ${link}`);
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(done, () => showBanner(`Send this link to your friends: ${link}`));
-    else showBanner(`Send this link to your friends: ${link}`);
+  // ---------- room controls ----------
+  const roomPanel = $("roomPanel");
+  $("roomBtn").addEventListener("click", () => {
+    const open = roomPanel.hidden;
+    roomPanel.hidden = !open;
+    roomPanel.classList.toggle("hidden", !open);
+    roomPanel.classList.toggle("flex", open);
+    $("roomBtn").setAttribute("aria-expanded", String(open));
+    if (open) $("roomInput").focus();
   });
-  window.addEventListener("hashchange", () => {
-    const v = location.hash.slice(1).toLowerCase();
-    if (/^[a-z0-9]{3,12}$/.test(v) && v !== room) openRoom(v);
-  });
-
+  const closeRoomPanel = () => { roomPanel.hidden = true; roomPanel.classList.add("hidden"); roomPanel.classList.remove("flex"); $("roomBtn").setAttribute("aria-expanded", "false"); };
   $("joinRoom").addEventListener("click", () => {
     const v = $("roomInput").value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
     if (v.length < 3) { showBanner("Room codes are 3 to 12 letters or numbers."); return; }
-    showBanner(""); $("roomInput").value = ""; openRoom(v);
+    showBanner(""); $("roomInput").value = ""; closeRoomPanel(); openRoom(v);
   });
   $("roomInput").addEventListener("keydown", e => { if (e.key === "Enter") $("joinRoom").click(); });
   $("newRoom").addEventListener("click", () => {
     const code = newCode();
-    showBanner(`New room ${code} is ready. Press "Copy invite link" and send it to your friends.`);
+    closeRoomPanel();
+    showBanner(`New room ${code} is ready. Tap Invite and send the link to your friends.`);
     openRoom(code);
+  });
+  $("copyLink").addEventListener("click", async () => {
+    const link = location.href.split("#")[0] + "#" + room;
+    if (navigator.share) {
+      try { await navigator.share({ title: "Ludo Table", text: `Join my Ludo room ${room}`, url: link }); return; } catch (e) { if (e && e.name === "AbortError") return; }
+    }
+    try { await navigator.clipboard.writeText(link); showBanner(`Invite link copied: ${link}`); }
+    catch { showBanner(`Send this link to your friends: ${link}`); }
+  });
+  window.addEventListener("hashchange", () => {
+    const v = location.hash.slice(1).toLowerCase();
+    if (/^[a-z0-9]{3,12}$/.test(v) && v !== room) openRoom(v);
   });
 
   render();
