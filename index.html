@@ -41,7 +41,7 @@
   .token .halo { opacity: 0; }
   .token.movable .halo { opacity: 1; animation: pulse 1s ease-in-out infinite; }
   @keyframes pulse { 0%,100% { stroke-opacity: .95; } 50% { stroke-opacity: .2; } }
-  .die-face { box-shadow: 0 5px 0 #b9ae8f, 0 10px 18px rgba(0,0,0,.35); }
+  .die-face { box-shadow: 0 4px 0 #b9ae8f, 0 8px 14px rgba(0,0,0,.35); }
   .die-face.rolling { animation: tumble .65s cubic-bezier(.3,.6,.4,1); }
   @keyframes tumble {
     0% { transform: rotate(0) scale(1); }
@@ -93,10 +93,18 @@
 
   <div class="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-6">
 
-    <!-- Board -->
-    <div class="mx-auto w-full max-w-[min(100%,640px)]">
+    <!-- Board with a name tag at each corner. Tag positions: 0 top-left, 1 top-right, 2 bottom-right, 3 bottom-left -->
+    <div class="mx-auto flex w-full max-w-[min(100%,640px)] flex-col gap-2">
+      <div class="grid grid-cols-2 gap-2">
+        <div id="tag0" data-pos="0"></div>
+        <div id="tag1" data-pos="1"></div>
+      </div>
       <div class="aspect-square w-full rounded-xl bg-[#3b2a1c] p-1.5 shadow-[0_14px_30px_rgba(0,0,0,.45),inset_0_0_0_2px_#5a4029] sm:p-2.5">
         <svg id="board" viewBox="0 0 15 15" class="block h-full w-full touch-manipulation rounded-md" role="img" aria-label="Ludo board"></svg>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <div id="tag3" data-pos="3"></div>
+        <div id="tag2" data-pos="2"></div>
       </div>
     </div>
 
@@ -104,7 +112,6 @@
 
       <!-- Turn + dice -->
       <section id="turnCard" class="flex items-center gap-4 rounded-2xl border border-line bg-panel p-3 sm:p-4">
-        <button id="die" class="die-face relative grid aspect-square w-20 shrink-0 grid-cols-3 grid-rows-3 place-items-center rounded-2xl bg-paper p-2.5 disabled:cursor-not-allowed sm:w-24 focus:outline-none focus-visible:ring-4 focus-visible:ring-gold" aria-label="Roll the dice"></button>
         <div class="flex min-w-0 flex-1 flex-col gap-1">
           <div class="flex items-center gap-2">
             <span id="turnSwatch" class="h-3 w-3 shrink-0 rounded-full bg-gold"></span>
@@ -297,9 +304,10 @@
       if (!canRollNow()) return;
       const turnAtStart = state.turn;
       const v = rollDie();
-      rolling = true;
+      rolling = true; rollColor = turnAtStart;
       animateDie(v, () => {
         rolling = false;
+        holdDie(turnAtStart);
         commit(s => {
           const c = s.turn;
           if (s.phase !== "playing" || c !== turnAtStart || s.roll) return false;
@@ -334,8 +342,18 @@
 
   // ---------- dice face ----------
   const PIP_CELLS = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
-  const dieEl = $("die");
+  const dieEl = document.createElement("button");
+  dieEl.id = "die";
+  dieEl.type = "button";
+  dieEl.className = "die-face grid aspect-square w-12 shrink-0 grid-cols-3 grid-rows-3 place-items-center rounded-xl bg-paper p-1.5 disabled:cursor-default min-[400px]:w-14 sm:w-16 focus:outline-none focus-visible:ring-4 focus-visible:ring-gold";
   let shownFace = 1;
+  // Which color the dice sits beside: the roller while it tumbles, then it
+  // stays with them for a moment so everyone can read the result.
+  let rollColor = null, holdColor = null, holdUntil = 0;
+  function holdDie(c) {
+    holdColor = c; holdUntil = Date.now() + 1000;
+    setTimeout(render, 1050);
+  }
   function drawFace(v, color) {
     shownFace = v;
     const cells = PIP_CELLS[v] || [];
@@ -370,7 +388,10 @@
   // ---------- board drawing ----------
   const NS = "http://www.w3.org/2000/svg";
   const svg = $("board");
-  const el = (tag, attrs, parent) => { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); (parent || svg).appendChild(n); return n; };
+  // Everything on the board lives in one group that is rotated per viewer.
+  const rot = document.createElementNS(NS, "g");
+  svg.appendChild(rot);
+  const el = (tag, attrs, parent) => { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); (parent || rot).appendChild(n); return n; };
   function star(cx, cy, fill) {
     const pts = [];
     for (let k = 0; k < 10; k++) {
@@ -565,9 +586,71 @@
     $("roomCode").textContent = room;
   }
 
+  // ---------- per-viewer board rotation + corner name tags ----------
+  // Default corners (unrotated): red top-left, green top-right, yellow bottom-right, blue bottom-left.
+  const CORNER = { red: 0, green: 1, yellow: 2, blue: 3 }; // 0 TL, 1 TR, 2 BR, 3 BL
+  const myColor = () => COLORS.find(c => state.seats[c] && state.seats[c].id === myId) || null;
+  // Number of clockwise quarter turns that bring my color to bottom-left.
+  const quarterTurns = () => { const c = myColor(); return c ? (3 - CORNER[c] + 4) % 4 : 0; };
+
+  const tags = [0, 1, 2, 3].map(pos => {
+    const t = $("tag" + pos);
+    const right = pos === 1 || pos === 2;
+    t.className = "flex min-h-[64px] min-w-0 items-center gap-2 rounded-xl border-2 p-2 transition-colors sm:min-h-[76px] " + (right ? "flex-row-reverse text-right" : "");
+    const info = mk("div", "flex min-w-0 flex-1 flex-col gap-0.5" + (right ? " items-end" : ""));
+    const line = mk("div", "flex min-w-0 max-w-full items-center gap-1.5 font-bold leading-tight" + (right ? " flex-row-reverse" : ""));
+    const dot = mk("span", "h-3 w-3 shrink-0 rounded-full");
+    const name = mk("span", "truncate text-sm sm:text-base");
+    line.append(dot, name);
+    const meta = mk("div", "truncate text-xs text-muted tabular-nums");
+    info.append(line, meta);
+    const slot = mk("div", "flex shrink-0 items-center");
+    t.append(info, slot);
+    t.addEventListener("click", e => {
+      if (e.target.closest("#die")) return;
+      const c = t.dataset.color;
+      if (c && state.phase === "lobby" && loaded && !state.seats[c]) actions.claim(c);
+    });
+    return { t, dot, name, meta, slot };
+  });
+
+  function renderTags() {
+    const k = quarterTurns();
+    rot.setAttribute("transform", k ? `rotate(${k * 90} 7.5 7.5)` : "");
+    const s = state;
+    const dieColor = rolling ? rollColor
+      : (holdColor && Date.now() < holdUntil) ? holdColor
+      : (s.phase === "playing" ? s.turn : null);
+    for (const c of COLORS) {
+      const pos = (CORNER[c] + k) % 4;
+      const g = tags[pos];
+      g.t.dataset.color = c;
+      const seat = s.seats[c];
+      const isTurn = s.phase === "playing" && s.turn === c;
+      g.t.classList.toggle("border-gold", isTurn);
+      g.t.classList.toggle("border-transparent", !isTurn);
+      g.t.classList.toggle("cursor-pointer", s.phase === "lobby" && !seat);
+      g.t.style.background = `color-mix(in srgb, ${HEX[c]} ${isTurn ? 34 : 18}%, transparent)`;
+      g.t.style.opacity = s.phase !== "lobby" && !seat ? ".45" : "1";
+      g.dot.style.background = HEX[c];
+      g.name.textContent = seat ? seat.nick + (online && seat.id === myId ? " (you)" : "") : NAMES[c];
+      const home = s.tokens[c].filter(p => p === FINISH).length;
+      const place = s.winners.indexOf(c);
+      g.meta.textContent = !seat ? (s.phase === "lobby" ? "Tap to take" : "Not playing")
+        : place >= 0 ? `Finished #${place + 1}`
+        : s.phase === "lobby" ? "Ready"
+        : isTurn ? (mine(s, c) ? (s.roll ? "Pick a token" : "Your roll") : (s.roll ? "Moving…" : "Rolling…"))
+        : `${home}/4 home`;
+      g.t.setAttribute("aria-label", `${NAMES[c]}: ${g.name.textContent}`);
+      if (dieColor === c) { if (dieEl.parentNode !== g.slot) g.slot.appendChild(dieEl); }
+    }
+    if (!dieColor && dieEl.parentNode) dieEl.remove();
+  }
+
   function render() {
     renderTokens();
     renderPanel();
+    renderTags();
     if (!rolling) {
       const lv = state.roll || (state.last && state.last.v);
       if (lv && lv !== shownFace) drawFace(lv);
@@ -581,8 +664,8 @@
       const first = seenSeq === null;
       seenSeq = last.seq;
       if (!first) {
-        rolling = true; render();
-        animateDie(last.v, () => { rolling = false; render(); });
+        rolling = true; rollColor = last.c; render();
+        animateDie(last.v, () => { rolling = false; holdDie(last.c); render(); });
         return;
       }
     } else if (!last) seenSeq = 0;
