@@ -185,6 +185,7 @@
     <ol id="winList" class="flex w-full flex-col gap-1.5 text-left"></ol>
     <div class="mt-2 flex w-full flex-col gap-2">
       <button id="winAgain" type="button" class="rounded-lg bg-gold px-4 py-3 text-base font-bold text-[#2a2208] active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ink">Play again</button>
+      <button id="winKeep" type="button" class="rounded-lg border border-line bg-felt2 px-4 py-3 text-base font-bold active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold" hidden>Continue game</button>
       <button id="winMenu" type="button" class="rounded-lg border border-line bg-felt2 px-4 py-3 text-base font-bold active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold">Back to menu</button>
     </div>
   </div>
@@ -830,7 +831,6 @@
   }
 
   // Compare two states and play the matching sounds / animations.
-  let winShown = false;
   function onStateChange(prev, next, remote) {
     if (!prev || !next) return;
     if (prev.phase === "playing" && (next.phase === "playing" || next.phase === "done")) {
@@ -850,10 +850,12 @@
     if (next.phase === "playing" && prev.phase === "playing" && next.turn !== prev.turn && mode !== "local" && mine(next, next.turn)) {
       setTimeout(() => play("turn"), Math.max(250, animBusyUntil - Date.now()));
     }
-    if (prev.phase !== "done" && next.phase === "done") {
-      setTimeout(showWinner, Math.max(300, animBusyUntil - Date.now() + 200));
-    }
-    if (next.phase !== "done") hideWinner();
+    // Celebrate the first player home right away (others may keep playing),
+    // and show final rankings when the game is over.
+    const wait = Math.max(300, animBusyUntil - Date.now() + 200);
+    if (prev.phase !== "done" && next.phase === "done") setTimeout(() => showWinner(true), wait);
+    else if (next.phase === "playing" && !(prev.winners || []).length && (next.winners || []).length) setTimeout(() => showWinner(false), wait);
+    if (!(next.winners || []).length || (next.phase !== "done" && next.phase !== "playing")) hideWinner();
   }
 
   function renderTokens() {
@@ -1777,10 +1779,13 @@
   //  Game over: confetti + popup
   // ================================================================
   const winSheet = $("winSheet");
-  function showWinner() {
+  let winStage = 0; // 0 nothing shown, 1 first winner shown, 2 final shown
+  function showWinner(final) {
     const s = state;
-    if (s.phase !== "done" || winShown) return;
-    winShown = true;
+    const stage = final ? 2 : 1;
+    if (!s.winners.length || winStage >= stage) return;
+    if (final && s.phase !== "done") return;
+    winStage = stage;
     const first = s.winners[0];
     const seat = first && s.seats[first];
     const meWon = seat && ((isNet() && seat.id === myId) || (mode === "computer" && seat.id === "me"));
@@ -1794,11 +1799,12 @@
       list.appendChild(li);
     });
     $("winAgain").textContent = mode === "online" ? "Find another game" : "Play again";
+    $("winKeep").hidden = final;
     winSheet.hidden = false;
-    play("win");
-    confetti();
+    play("win"); confetti();
   }
-  function hideWinner() { winShown = false; winSheet.hidden = true; }
+  function hideWinner() { winStage = 0; winSheet.hidden = true; }
+  $("winKeep").addEventListener("click", () => { winSheet.hidden = true; });
   $("winAgain").addEventListener("click", () => {
     winSheet.hidden = true;
     if (mode === "online") { leaveCurrent(); startOnline(); } else actions.reset();
