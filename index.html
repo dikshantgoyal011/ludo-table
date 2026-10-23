@@ -1125,7 +1125,8 @@
   function sendChat(text) {
     text = String(text || "").trim().slice(0, 200);
     if (!text || !isNet() || !online) return;
-    const m = { type: "chat", mid: myId + "-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), id: myId, nick: myNick(), text, ts: Date.now() };
+    const mine = state.players.find(p => p.id === myId);
+    const m = { type: "chat", mid: myId + "-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), id: myId, nick: (mine && mine.nick) || myNick(), text, ts: Date.now() };
     addChat(m);
     if (isHost) conns.forEach(c => { if (c.open) c.send(m); });
     else if (hostConn && hostConn.open) hostConn.send(m);
@@ -1139,7 +1140,8 @@
       const li = mk("li", "flex max-w-[85%] flex-col gap-0.5 " + (me ? "self-end items-end" : "self-start items-start"));
       const who = mk("div", "flex items-center gap-1.5 text-xs font-semibold text-muted");
       const dot = mk("span", "h-2 w-2 rounded-full"); dot.style.background = slot ? dHex(slot) : "#a9c3ba";
-      who.append(dot, mk("span", "", me ? "You" : m.nick));
+      const p = state.players.find(x => x.id === m.id);
+      who.append(dot, mk("span", "", me ? "You" : (p && p.nick) || m.nick));
       const body = mk("div", "break-words rounded-2xl px-3 py-2 text-sm " + (me ? "bg-gold text-[#2a2208]" : "bg-felt2 text-ink"), m.text);
       li.append(who, body);
       chatList.appendChild(li);
