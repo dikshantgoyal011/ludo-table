@@ -129,7 +129,7 @@
     </div>
 
     <aside class="flex min-w-0 flex-col gap-3">
-      <section class="flex items-center gap-4 rounded-2xl border border-line bg-panel p-3 sm:p-4">
+      <section id="turnCard" class="flex items-center gap-4 rounded-2xl border border-line bg-panel p-3 sm:p-4">
         <div class="flex min-w-0 flex-1 flex-col gap-1">
           <div class="flex items-center gap-2">
             <span id="turnSwatch" class="h-3 w-3 shrink-0 rounded-full bg-gold"></span>
@@ -155,13 +155,23 @@
         <ol id="playerList" class="flex flex-col gap-1.5"></ol>
       </section>
 
-      <details class="group rounded-2xl border border-line bg-panel p-3 sm:p-4" open>
-        <summary class="flex cursor-pointer list-none items-center justify-between text-xs font-semibold uppercase tracking-widest text-muted">
-          Table talk <span class="transition group-open:rotate-180">▾</span>
-        </summary>
-        <ul id="log" class="mt-2 flex max-h-40 flex-col gap-1 overflow-y-auto text-sm lg:max-h-56"></ul>
-      </details>
     </aside>
+  </div>
+</div>
+
+<!-- Chat (online and friends games) -->
+<div id="chatSheet" class="fixed inset-0 z-40 flex items-end justify-center bg-black/50 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="chatTitle" hidden>
+  <div class="flex max-h-[80vh] w-full max-w-md flex-col rounded-t-2xl border border-line bg-panel shadow-2xl sm:rounded-2xl" style="padding-bottom: env(safe-area-inset-bottom, 0px)">
+    <div class="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
+      <h2 id="chatTitle" class="text-lg font-bold">Table chat</h2>
+      <button id="chatClose" type="button" class="rounded-lg border border-line bg-felt2 px-3 py-1.5 text-sm font-bold active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold">Close</button>
+    </div>
+    <ul id="chatList" class="flex min-h-[180px] flex-1 flex-col gap-2 overflow-y-auto px-4 py-3" aria-live="polite"></ul>
+    <div id="chatQuick" class="flex gap-2 overflow-x-auto px-3 pb-2"></div>
+    <form id="chatForm" class="flex gap-2 border-t border-line p-3" autocomplete="off">
+      <input id="chatInput" maxlength="200" placeholder="Type a message" aria-label="Message" class="min-w-0 flex-1 rounded-lg border border-line bg-felt px-3 py-2 text-base text-ink placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-gold">
+      <button type="submit" class="rounded-lg bg-gold px-4 py-2 font-bold text-[#2a2208] active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ink">Send</button>
+    </form>
   </div>
 </div>
 <script>
@@ -931,6 +941,7 @@
     online = false; loaded = false; searching = false; autoJoin = false; room = null;
     rotReady = false; rotTarget = 0; curAngle = 0; applyRot(); paintedKey = "";
     state = freshState();
+    resetChat();
     try { if (location.hash) history.replaceState(null, "", location.pathname + location.search); } catch {}
   }
 
@@ -1079,33 +1090,108 @@
     }
     });
 
-    // log
-    const logEl = $("log");
-    keyed(logEl, JSON.stringify([s.log, COLORS.map(displayColor)]), () => (s.log || []).forEach((e, k) => {
-      const li = mk("li", "flex items-baseline gap-2 " + (k === 0 ? "font-semibold text-ink" : "text-muted"));
-      const pip = mk("span", "h-2 w-2 shrink-0 translate-y-[-1px] rounded-full"); pip.style.background = e.c ? dHex(e.c) : "#a9c3ba";
-      li.append(pip, mk("span", "", e.t));
-      logEl.appendChild(li);
-    }));
+    // The turn box is only for before and after a game; during play the
+    // corner name tags show whose turn it is.
+    $("turnCard").hidden = loaded && s.phase === "playing";
     $("roomCode").textContent = room || "------";
     $("menuBtn").textContent = confirmMenu ? "Leave game?" : "Menu";
   }
+
+  // ---------- chat (online / friends) ----------
+  // Messages travel separately from the game state so a chat line can never
+  // overwrite a move. The host keeps the last 40 and relays every message.
+  let chat = [], unread = 0, chatOpen = false;
+  const bubbles = {};
+  const QUICK = ["👋 Hi!", "Good luck!", "Nice move!", "Hurry up! ⏳", "Oops 😅", "Good game!"];
+  const chatSheet = $("chatSheet"), chatList = $("chatList"), chatInput = $("chatInput");
+
+  function addChat(m, quiet) {
+    if (!m || typeof m.text !== "string" || typeof m.mid !== "string") return false;
+    if (chat.some(x => x.mid === m.mid)) return false;
+    const msg = { mid: m.mid.slice(0, 64), id: String(m.id || "").slice(0, 40), nick: String(m.nick || "Player").slice(0, 16), text: m.text.trim().slice(0, 200), ts: Number(m.ts) || Date.now() };
+    if (!msg.text) return false;
+    chat.push(msg);
+    chat = chat.slice(-40);
+    if (!quiet) {
+      if (msg.id !== myId && !chatOpen) unread++;
+      if (msg.id !== myId) { try { navigator.vibrate && navigator.vibrate(20); } catch {} }
+      bubbles[msg.id] = { text: msg.text, until: Date.now() + 4500 };
+      setTimeout(render, 4600);
+    }
+    renderChat();
+    render();
+    return true;
+  }
+  function sendChat(text) {
+    text = String(text || "").trim().slice(0, 200);
+    if (!text || !isNet() || !online) return;
+    const m = { type: "chat", mid: myId + "-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), id: myId, nick: myNick(), text, ts: Date.now() };
+    addChat(m);
+    if (isHost) conns.forEach(c => { if (c.open) c.send(m); });
+    else if (hostConn && hostConn.open) hostConn.send(m);
+  }
+  function renderChat() {
+    chatList.innerHTML = "";
+    if (!chat.length) chatList.appendChild(mk("li", "my-auto text-center text-sm text-muted", "No messages yet. Say hi!"));
+    for (const m of chat) {
+      const me = m.id === myId;
+      const slot = COLORS.find(c => state.seats[c] && state.seats[c].id === m.id);
+      const li = mk("li", "flex max-w-[85%] flex-col gap-0.5 " + (me ? "self-end items-end" : "self-start items-start"));
+      const who = mk("div", "flex items-center gap-1.5 text-xs font-semibold text-muted");
+      const dot = mk("span", "h-2 w-2 rounded-full"); dot.style.background = slot ? dHex(slot) : "#a9c3ba";
+      who.append(dot, mk("span", "", me ? "You" : m.nick));
+      const body = mk("div", "break-words rounded-2xl px-3 py-2 text-sm " + (me ? "bg-gold text-[#2a2208]" : "bg-felt2 text-ink"), m.text);
+      li.append(who, body);
+      chatList.appendChild(li);
+    }
+    chatList.scrollTop = chatList.scrollHeight;
+  }
+  function openChat() {
+    chatOpen = true; unread = 0;
+    chatSheet.hidden = false;
+    renderChat(); render();
+    setTimeout(() => { try { chatInput.focus(); } catch {} }, 50);
+  }
+  function closeChat() { chatOpen = false; chatSheet.hidden = true; render(); }
+  $("chatClose").addEventListener("click", closeChat);
+  chatSheet.addEventListener("click", e => { if (e.target === chatSheet) closeChat(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && chatOpen) closeChat(); });
+  $("chatForm").addEventListener("submit", e => { e.preventDefault(); sendChat(chatInput.value); chatInput.value = ""; chatInput.focus(); });
+  for (const q of QUICK) {
+    const b = mk("button", "shrink-0 rounded-full border border-line bg-felt2 px-3 py-1 text-sm font-semibold active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold", q);
+    b.type = "button";
+    b.addEventListener("click", () => sendChat(q));
+    $("chatQuick").appendChild(b);
+  }
+  function resetChat() { chat = []; unread = 0; for (const k in bubbles) delete bubbles[k]; chatOpen = false; chatSheet.hidden = true; renderChat(); }
 
   // ---------- corner name tags ----------
   const tags = [0, 1, 2, 3].map(pos => {
     const t = $("tag" + pos);
     const right = pos === 1 || pos === 2;
-    t.className = "flex min-w-0 items-center gap-2 rounded-xl border-2 p-2 transition-colors " + (right ? "flex-row-reverse text-right" : "");
+    const top = pos === 0 || pos === 1;
+    t.className = "relative flex min-w-0 items-center gap-2 rounded-xl border-2 p-2 transition-colors " + (right ? "flex-row-reverse text-right" : "");
     const info = mk("div", "flex min-w-0 flex-1 flex-col gap-0.5" + (right ? " items-end" : ""));
     const line = mk("div", "flex min-w-0 max-w-full items-center gap-1.5 font-bold leading-tight" + (right ? " flex-row-reverse" : ""));
     const dot = mk("span", "h-3 w-3 shrink-0 rounded-full");
     const name = mk("span", "truncate text-sm sm:text-base");
-    line.append(dot, name);
+    const chatBtn = mk("button", "relative ml-0.5 mr-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-felt/70 text-ink active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold");
+    chatBtn.type = "button";
+    chatBtn.setAttribute("aria-label", "Open chat");
+    chatBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.6A8 8 0 1 1 21 12z"/></svg>';
+    const badge = mk("span", "absolute -right-1.5 -top-1.5 hidden min-w-[18px] rounded-full bg-[#e5484d] px-1 text-center text-[11px] font-bold leading-[18px] text-white");
+    chatBtn.appendChild(badge);
+    chatBtn.hidden = true;
+    chatBtn.addEventListener("click", openChat);
+    line.append(dot, name, chatBtn);
+    const bubble = mk("div", "pointer-events-none absolute z-20 max-w-[90%] break-words rounded-xl bg-paper px-3 py-1.5 text-sm font-semibold leading-snug text-[#23302c] shadow-lg " + (top ? "top-full mt-1.5 " : "bottom-full mb-1.5 ") + (right ? "right-1" : "left-1"));
+    bubble.hidden = true;
+    t.appendChild(bubble);
     const meta = mk("div", "truncate text-xs text-muted tabular-nums");
     info.append(line, meta);
     const slot = mk("div", "flex h-12 w-12 shrink-0 items-center justify-center min-[400px]:h-14 min-[400px]:w-14 sm:h-16 sm:w-16");
     t.append(info, slot);
-    return { t, dot, name, meta, slot };
+    return { t, dot, name, meta, slot, chatBtn, badge, bubble };
   });
 
   function renderTags() {
@@ -1137,6 +1223,15 @@
       if (isTurn && mode === "online" && !seat.bot) meta += ` · ${secsLeft(turnSeenAt + ONLINE_TURN_LIMIT)}s`;
       g.meta.textContent = meta;
       if (dieColor === c && dieEl.parentNode !== g.slot) g.slot.appendChild(dieEl);
+      // chat icon on my own tag (online / friends)
+      const showChat = !!(you && isNet() && online);
+      g.chatBtn.hidden = !showChat;
+      g.badge.textContent = unread > 9 ? "9+" : String(unread);
+      g.badge.classList.toggle("hidden", !unread);
+      // latest message from this player as a speech bubble
+      const b = seat && bubbles[seat.id];
+      if (b && Date.now() < b.until) { g.bubble.textContent = b.text; g.bubble.hidden = false; }
+      else g.bubble.hidden = true;
     }
     if (!dieColor && dieEl.parentNode) dieEl.remove();
   }
@@ -1262,13 +1357,14 @@
     peer.on("connection", c => {
       if (my !== gen) return;
       conns.push(c);
-      c.on("open", () => { c.send({ type: "state", state }); netSummary(); });
+      c.on("open", () => { c.send({ type: "state", state }); if (chat.length) c.send({ type: "chatHistory", msgs: chat }); netSummary(); });
       c.on("data", m => {
         if (!m || typeof m !== "object") return;
         if (m.type === "hello") c.pid = String(m.id || "");
         else if (m.type === "join" && typeof m.id === "string") { c.pid = m.id; hostJoin(m.id, String(m.nick || "Player").slice(0, 16)); }
         else if (m.type === "leave" && typeof m.id === "string") hostLeave(m.id);
         else if (m.type === "start") startGame();
+        else if (m.type === "chat") { if (addChat(m)) conns.forEach(o => { if (o !== c && o.open) o.send(m); }); }
         else if (m.type === "state" && accept(m.state)) conns.forEach(o => { if (o !== c && o.open) o.send({ type: "state", state }); });
       });
       c.on("close", () => {
@@ -1306,7 +1402,12 @@
         if (carry) hostConn.send({ type: "state", state: carry });
         netSummary(); render();
       });
-      hostConn.on("data", m => { if (m && m.type === "state") accept(m.state); });
+      hostConn.on("data", m => {
+        if (!m) return;
+        if (m.type === "state") accept(m.state);
+        else if (m.type === "chat") addChat(m);
+        else if (m.type === "chatHistory" && Array.isArray(m.msgs)) m.msgs.slice(-40).forEach(x => addChat(x, true));
+      });
       hostConn.on("close", rejoin);
     });
     peer.on("error", e => {
