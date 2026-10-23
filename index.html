@@ -136,7 +136,7 @@
             <span id="turnLabel" class="text-xs font-semibold uppercase tracking-widest text-muted">Waiting to start</span>
           </div>
           <div id="turnTitle" class="text-lg font-bold leading-tight sm:text-xl"></div>
-          <div id="turnHint" class="text-sm leading-snug text-muted"></div>
+          <div id="turnHint" class="min-h-[2.5rem] text-sm leading-snug text-muted"></div>
           <div id="turnActions" class="mt-1 flex flex-wrap gap-2"></div>
         </div>
       </section>
@@ -523,7 +523,7 @@
     shownFace = v;
     const cells = PIP_CELLS[v] || [];
     let html = "";
-    for (let k = 0; k < 9; k++) html += cells.includes(k) ? `<span class="block h-[70%] w-[70%] rounded-full" style="background:${v === 1 ? "#c62828" : "#23302c"}"></span>` : `<span></span>`;
+    for (let k = 0; k < 9; k++) html += cells.includes(k) ? `<span class="block h-[70%] w-[70%] rounded-full" style="background:#23302c"></span>` : `<span></span>`;
     dieEl.innerHTML = html;
   }
   const reduceMotion = () => window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -1095,7 +1095,7 @@
   const tags = [0, 1, 2, 3].map(pos => {
     const t = $("tag" + pos);
     const right = pos === 1 || pos === 2;
-    t.className = "flex min-h-[64px] min-w-0 items-center gap-2 rounded-xl border-2 p-2 transition-colors sm:min-h-[76px] " + (right ? "flex-row-reverse text-right" : "");
+    t.className = "flex min-w-0 items-center gap-2 rounded-xl border-2 p-2 transition-colors " + (right ? "flex-row-reverse text-right" : "");
     const info = mk("div", "flex min-w-0 flex-1 flex-col gap-0.5" + (right ? " items-end" : ""));
     const line = mk("div", "flex min-w-0 max-w-full items-center gap-1.5 font-bold leading-tight" + (right ? " flex-row-reverse" : ""));
     const dot = mk("span", "h-3 w-3 shrink-0 rounded-full");
@@ -1103,7 +1103,7 @@
     line.append(dot, name);
     const meta = mk("div", "truncate text-xs text-muted tabular-nums");
     info.append(line, meta);
-    const slot = mk("div", "flex shrink-0 items-center");
+    const slot = mk("div", "flex h-12 w-12 shrink-0 items-center justify-center min-[400px]:h-14 min-[400px]:w-14 sm:h-16 sm:w-16");
     t.append(info, slot);
     return { t, dot, name, meta, slot };
   });
