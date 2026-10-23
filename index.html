@@ -130,7 +130,12 @@
           <div id="lobbyActions" class="flex flex-wrap items-center justify-end gap-2 text-sm"></div>
         </div>
         <input id="nick" maxlength="16" placeholder="Your name" autocomplete="nickname" class="w-full rounded-lg border border-line bg-felt px-3 py-2 text-base text-ink placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-gold" aria-label="Your name">
-        <div id="seats" class="grid grid-cols-2 gap-2"></div>
+        <div class="flex flex-col gap-1.5">
+          <div class="text-xs text-muted">Your color <span class="opacity-80">(only changes how the board looks on your phone)</span></div>
+          <div id="colorPick" class="grid grid-cols-4 gap-2" role="radiogroup" aria-label="Your color"></div>
+        </div>
+        <div id="joinRow" class="flex flex-wrap gap-2"></div>
+        <ol id="playerList" class="flex flex-col gap-1.5"></ol>
       </section>
 
       <!-- Log -->
@@ -146,26 +151,31 @@
 
 <script>
 (() => {
+  // Internal seats. The game logic always uses these four slots, in clockwise
+  // order around the board. What colour a slot *looks* like is decided per
+  // viewer (see displayColor), so every player can pick any colour they like.
   const COLORS = ["red", "green", "yellow", "blue"];
+  const CI = { red: 0, green: 1, yellow: 2, blue: 3 };
   const NAMES = { red: "Red", green: "Green", yellow: "Yellow", blue: "Blue" };
   const HEX = { red: "#d8382e", green: "#1d9a52", yellow: "#efb20a", blue: "#2563d4" };
   const LIGHT = { red: "#f4c7c3", green: "#bfe6cd", yellow: "#fbe7a8", blue: "#c3d4f6" };
   const START = { red: 0, green: 13, yellow: 26, blue: 39 };
   const SAFE = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
   const FINISH = 56;
+  // Which slots are used for 1-4 players: two players sit opposite each other.
+  const SLOTS_FOR = [[], ["red"], ["red", "yellow"], ["red", "green", "yellow"], ["red", "green", "yellow", "blue"]];
   const $ = id => document.getElementById(id);
 
   // ---------- fair dice ----------
-  // Uses the browser's cryptographic random source. Bytes 252-255 are thrown
-  // away so each face 1-6 has exactly the same chance. No weighting, no memory
-  // of past rolls, nothing that favours any player.
+  // Browser cryptographic randomness. Bytes 252-255 are discarded so each face
+  // 1-6 has exactly the same chance. No weighting and no memory of past rolls.
   function rollDie() {
     const b = new Uint8Array(1);
     do { crypto.getRandomValues(b); } while (b[0] >= 252);
     return (b[0] % 6) + 1;
   }
 
-  // ---------- board geometry ----------
+  // ---------- board geometry (in slot terms) ----------
   const TRACK = [];
   const push = (r, c) => TRACK.push([r, c]);
   for (let c = 1; c <= 5; c++) push(6, c);
@@ -190,19 +200,21 @@
   const YARD = { red: [0, 0], green: [0, 9], yellow: [9, 9], blue: [9, 0] };
   const FINISH_PT = { red: [6.55, 7.5], green: [7.5, 6.55], yellow: [8.45, 7.5], blue: [7.5, 8.45] };
 
-  // ---------- identity ----------
+  // ---------- identity & personal colour ----------
   const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
   const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
   let myId = lsGet("ludo.cid");
   if (!myId) { myId = "c" + Math.random().toString(36).slice(2, 10); lsSet("ludo.cid", myId); }
+  try { const p = new URLSearchParams(location.search).get("p"); if (p && /^[a-z0-9]{1,16}$/i.test(p)) myId = "t" + p; } catch {}
+  let pref = lsGet("ludo.pref");
+  if (!COLORS.includes(pref)) pref = "red";
   const nickEl = $("nick");
   nickEl.value = lsGet("ludo.nick") || "";
-  nickEl.addEventListener("input", () => lsSet("ludo.nick", nickEl.value.trim()));
   const myNick = () => nickEl.value.trim() || "Player";
 
   // ---------- state ----------
   const freshTokens = () => ({ red: [-1, -1, -1, -1], green: [-1, -1, -1, -1], yellow: [-1, -1, -1, -1], blue: [-1, -1, -1, -1] });
-  const freshState = () => ({ phase: "lobby", seats: {}, tokens: freshTokens(), turn: null, roll: null, sixes: 0, winners: [], last: null, log: [{ c: "", t: "Table is set. Pick a color and press Start." }] });
+  const freshState = () => ({ phase: "lobby", players: [], seats: {}, tokens: freshTokens(), turn: null, roll: null, sixes: 0, winners: [], last: null, log: [{ c: "", t: "Table is set. Join, pick your color, then press Start." }] });
 
   let state = freshState();
   let online = false, loaded = false, rolling = false, seenSeq = null, confirmReset = false;
@@ -212,9 +224,24 @@
 
   const clone = o => JSON.parse(JSON.stringify(o));
   const seated = s => COLORS.filter(c => s.seats[c]);
-  const mine = (s, c) => !online || (s.seats[c] && s.seats[c].id === myId);
+  const mine = (s, c) => !!(s.seats[c] && (!online || s.seats[c].id === myId));
   const seatName = (s, c) => (s.seats[c] && s.seats[c].nick) || NAMES[c];
   const addLog = (s, c, t) => { s.log = [{ c, t }, ...(s.log || [])].slice(0, 20); };
+  const seatsFor = players => {
+    const out = {};
+    (SLOTS_FOR[players.length] || []).forEach((slot, i) => { out[slot] = { id: players[i].id, nick: players[i].nick }; });
+    return out;
+  };
+
+  // ---------- what this viewer sees ----------
+  // My slot goes to the bottom-left corner and is painted in my chosen colour.
+  // The other slots keep the normal Ludo colour order going clockwise from it.
+  const mySlot = () => COLORS.find(c => state.seats[c] && state.seats[c].id === myId) || null;
+  const anchor = () => mySlot() || pref;
+  const displayColor = slot => COLORS[(CI[pref] + (CI[slot] - CI[anchor()] + 4)) % 4];
+  const quarterTurns = () => (3 - CI[anchor()] + 4) % 4; // clockwise quarter turns that put my slot bottom-left
+  const dHex = slot => HEX[displayColor(slot)];
+  const dName = slot => NAMES[displayColor(slot)];
 
   const canMove = (p, v) => p !== FINISH && (p === -1 ? v === 6 : p + v <= FINISH);
   const movable = (s, c, v) => s.tokens[c].map((p, i) => canMove(p, v) ? i : -1).filter(i => i >= 0);
@@ -229,7 +256,7 @@
       addLog(s, "", "Game over.");
       return;
     }
-    const i = COLORS.indexOf(s.turn);
+    const i = CI[s.turn];
     for (let k = 1; k <= 4; k++) {
       const c = COLORS[(i + k) % 4];
       if (active.includes(c)) { s.turn = c; return; }
@@ -258,7 +285,6 @@
     else if (np === FINISH) addLog(s, c, `${who} got a token home!`);
     else addLog(s, c, `${who} moved ${v}.`);
     if (captured.length) addLog(s, c, `${who} cut ${[...new Set(captured)].map(o => seatName(s, o)).join(" & ")}!`);
-
     if (s.tokens[c].every(t => t === FINISH)) {
       s.winners.push(c);
       addLog(s, c, `${who} finished in place ${s.winners.length}!`);
@@ -282,22 +308,32 @@
   }
 
   const canRollNow = () => loaded && !rolling && state.phase === "playing" && !state.roll && mine(state, state.turn);
+  const joined = s => s.players.some(p => p.id === myId);
 
   const actions = {
-    claim(c) { commit(s => {
-      if (s.phase !== "lobby" || s.seats[c]) return false;
-      s.seats[c] = { id: myId, nick: myNick() };
-      addLog(s, c, `${myNick()} took ${NAMES[c]}.`);
+    join() { commit(s => {
+      if (s.phase !== "lobby" || joined(s) || s.players.length >= 4) return false;
+      s.players.push({ id: myId, nick: myNick() });
+      s.seats = seatsFor(s.players);
+      addLog(s, "", `${myNick()} joined.`);
     }); },
-    leave(c) { commit(s => {
-      if (s.phase !== "lobby" || !mine(s, c)) return false;
-      addLog(s, c, `${seatName(s, c)} left ${NAMES[c]}.`);
-      delete s.seats[c];
+    leave() { commit(s => {
+      if (s.phase !== "lobby" || !joined(s)) return false;
+      const me = s.players.find(p => p.id === myId);
+      s.players = s.players.filter(p => p.id !== myId);
+      s.seats = seatsFor(s.players);
+      addLog(s, "", `${me.nick} left.`);
+    }); },
+    rename() { commit(s => {
+      const me = s.players.find(p => p.id === myId);
+      if (!me || me.nick === myNick()) return false;
+      me.nick = myNick();
+      for (const c of COLORS) if (s.seats[c] && s.seats[c].id === myId) s.seats[c].nick = me.nick;
     }); },
     start() { commit(s => {
-      const sc = seated(s);
-      if (sc.length < 2) return false;
-      Object.assign(s, { phase: "playing", tokens: freshTokens(), winners: [], roll: null, sixes: 0, turn: sc[0], last: null });
+      if (s.phase !== "lobby" || s.players.length < 2) return false;
+      s.seats = seatsFor(s.players);
+      Object.assign(s, { phase: "playing", tokens: freshTokens(), winners: [], roll: null, sixes: 0, turn: seated(s)[0], last: null });
       addLog(s, "", `Game on! ${seatName(s, s.turn)} goes first.`);
     }); },
     roll() {
@@ -333,36 +369,34 @@
       applyMove(s, c, i, s.roll);
     }); },
     reset() { confirmReset = false; commit(s => {
-      const seats = s.seats;
-      Object.assign(s, freshState(), { seats });
-      s.log = [{ c: "", t: "New game. Seats kept. Press Start when ready." }];
+      const players = s.players;
+      Object.assign(s, freshState(), { players, seats: seatsFor(players) });
+      s.log = [{ c: "", t: "New game. Players kept. Press Start when ready." }];
     }); },
     clearSeats() { confirmReset = false; commit(s => { Object.assign(s, freshState()); }); },
   };
 
-  // ---------- dice face ----------
+  let renameTimer = null;
+  nickEl.addEventListener("input", () => {
+    lsSet("ludo.nick", nickEl.value.trim());
+    clearTimeout(renameTimer);
+    renameTimer = setTimeout(() => { if (joined(state)) actions.rename(); }, 600);
+  });
+
+  // ---------- dice ----------
   const PIP_CELLS = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
   const dieEl = document.createElement("button");
   dieEl.id = "die";
   dieEl.type = "button";
   dieEl.className = "die-face grid aspect-square w-12 shrink-0 grid-cols-3 grid-rows-3 place-items-center rounded-xl bg-paper p-1.5 disabled:cursor-default min-[400px]:w-14 sm:w-16 focus:outline-none focus-visible:ring-4 focus-visible:ring-gold";
   let shownFace = 1;
-  // Which color the dice sits beside: the roller while it tumbles, then it
-  // stays with them for a moment so everyone can read the result.
   let rollColor = null, holdColor = null, holdUntil = 0;
-  function holdDie(c) {
-    holdColor = c; holdUntil = Date.now() + 1000;
-    setTimeout(render, 1050);
-  }
-  function drawFace(v, color) {
+  function holdDie(c) { holdColor = c; holdUntil = Date.now() + 1000; setTimeout(render, 1050); }
+  function drawFace(v) {
     shownFace = v;
     const cells = PIP_CELLS[v] || [];
     let html = "";
-    for (let k = 0; k < 9; k++) {
-      html += cells.includes(k)
-        ? `<span class="block h-[70%] w-[70%] rounded-full" style="background:${v === 1 ? "#c62828" : color || "#23302c"}"></span>`
-        : `<span></span>`;
-    }
+    for (let k = 0; k < 9; k++) html += cells.includes(k) ? `<span class="block h-[70%] w-[70%] rounded-full" style="background:${v === 1 ? "#c62828" : "#23302c"}"></span>` : `<span></span>`;
     dieEl.innerHTML = html;
   }
   function animateDie(finalV, done) {
@@ -388,10 +422,20 @@
   // ---------- board drawing ----------
   const NS = "http://www.w3.org/2000/svg";
   const svg = $("board");
-  // Everything on the board lives in one group that is rotated per viewer.
   const rot = document.createElementNS(NS, "g");
   svg.appendChild(rot);
   const el = (tag, attrs, parent) => { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); (parent || rot).appendChild(n); return n; };
+  // Every coloured shape remembers which slot it belongs to, so it can be
+  // repainted in this viewer's colours.
+  const painted = [];
+  const paint = (node, slot, attr, tone) => { painted.push({ node, slot, attr, tone }); return node; };
+  let paintedKey = "";
+  function repaint() {
+    const key = COLORS.map(displayColor).join(",");
+    if (key === paintedKey) return;
+    paintedKey = key;
+    for (const p of painted) p.node.setAttribute(p.attr, (p.tone === "light" ? LIGHT : HEX)[displayColor(p.slot)]);
+  }
   function star(cx, cy, fill) {
     const pts = [];
     for (let k = 0; k < 10; k++) {
@@ -404,21 +448,23 @@
     el("rect", { x: 0, y: 0, width: 15, height: 15, fill: "#f7f2e3" });
     for (const c of COLORS) {
       const [r0, c0] = YARD[c];
-      el("rect", { x: c0, y: r0, width: 6, height: 6, fill: HEX[c] });
+      paint(el("rect", { x: c0, y: r0, width: 6, height: 6 }), c, "fill");
       el("rect", { x: c0 + .8, y: r0 + .8, width: 4.4, height: 4.4, rx: .5, fill: "#f7f2e3" });
-      for (const [dy, dx] of [[2, 2], [2, 4], [4, 2], [4, 4]]) el("circle", { cx: c0 + dx, cy: r0 + dy, r: .62, fill: LIGHT[c], stroke: HEX[c], "stroke-width": .06 });
+      for (const [dy, dx] of [[2, 2], [2, 4], [4, 2], [4, 4]]) {
+        const ci = el("circle", { cx: c0 + dx, cy: r0 + dy, r: .62, "stroke-width": .06 });
+        paint(ci, c, "fill", "light"); paint(ci, c, "stroke");
+      }
     }
     TRACK.forEach(([r, c], idx) => {
-      let fill = "#fffdf6";
-      for (const col of COLORS) if (START[col] === idx) fill = HEX[col];
-      el("rect", { x: c, y: r, width: 1, height: 1, fill, stroke: "#23302c", "stroke-width": .035 });
+      const sq = el("rect", { x: c, y: r, width: 1, height: 1, fill: "#fffdf6", stroke: "#23302c", "stroke-width": .035 });
+      for (const col of COLORS) if (START[col] === idx) paint(sq, col, "fill");
       if (SAFE.has(idx)) star(c + .5, r + .5, [0, 13, 26, 39].includes(idx) ? "#fffdf6" : "#9aa59f");
     });
-    for (const c of COLORS) HOMECOL[c].forEach(([r, cc]) => el("rect", { x: cc, y: r, width: 1, height: 1, fill: HEX[c], stroke: "#23302c", "stroke-width": .035 }));
-    el("polygon", { points: "6,6 6,9 7.5,7.5", fill: HEX.red });
-    el("polygon", { points: "6,6 9,6 7.5,7.5", fill: HEX.green });
-    el("polygon", { points: "9,6 9,9 7.5,7.5", fill: HEX.yellow });
-    el("polygon", { points: "6,9 9,9 7.5,7.5", fill: HEX.blue });
+    for (const c of COLORS) HOMECOL[c].forEach(([r, cc]) => paint(el("rect", { x: cc, y: r, width: 1, height: 1, stroke: "#23302c", "stroke-width": .035 }), c, "fill"));
+    paint(el("polygon", { points: "6,6 6,9 7.5,7.5" }), "red", "fill");
+    paint(el("polygon", { points: "6,6 9,6 7.5,7.5" }), "green", "fill");
+    paint(el("polygon", { points: "9,6 9,9 7.5,7.5" }), "yellow", "fill");
+    paint(el("polygon", { points: "6,9 9,9 7.5,7.5" }), "blue", "fill");
     el("rect", { x: 6, y: 6, width: 3, height: 3, fill: "none", stroke: "#23302c", "stroke-width": .05 });
     el("rect", { x: 0, y: 0, width: 15, height: 15, fill: "none", stroke: "#23302c", "stroke-width": .08 });
   })();
@@ -427,13 +473,12 @@
   const tokenEls = {};
   for (const c of COLORS) for (let i = 0; i < 4; i++) {
     const g = el("g", { class: "token", tabindex: "-1" }, tokenLayer);
-    // invisible larger hit area so tokens are easy to tap on phones
     el("circle", { r: .62, fill: "transparent" }, g);
     el("circle", { class: "halo", r: .5, fill: "none", stroke: "#f2c94c", "stroke-width": .13 }, g);
     el("ellipse", { cx: .03, cy: .1, rx: .34, ry: .3, fill: "rgba(0,0,0,.28)" }, g);
-    el("circle", { r: .34, fill: HEX[c], stroke: "#1b1b1b", "stroke-width": .05 }, g);
+    paint(el("circle", { r: .34, stroke: "#1b1b1b", "stroke-width": .05 }, g), c, "fill");
     el("circle", { r: .17, fill: "rgba(255,255,255,.85)" }, g);
-    el("circle", { r: .09, fill: HEX[c] }, g);
+    paint(el("circle", { r: .09 }, g), c, "fill");
     g.addEventListener("click", () => actions.move(c, i));
     g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); actions.move(c, i); } });
     tokenEls[c + i] = g;
@@ -453,7 +498,6 @@
       (groups[b.key] = groups[b.key] || []).push({ c, i, b });
     });
     const moveSet = new Set(state.phase === "playing" && state.roll && mine(state, state.turn) ? movable(state, state.turn, state.roll).map(i => state.turn + i) : []);
-    const inGame = c => state.phase === "lobby" || !!state.seats[c];
     for (const key in groups) {
       const list = groups[key], n = list.length;
       list.forEach((t, k) => {
@@ -465,7 +509,8 @@
         }
         const g = tokenEls[t.c + t.i];
         g.style.transform = `translate(${x}px,${y}px) scale(${s})`;
-        g.style.opacity = inGame(t.c) ? 1 : .25;
+        // Empty seats show no tokens once the game is on; in the lobby, only taken seats show tokens.
+        g.style.display = state.seats[t.c] ? "" : "none";
         const isMov = moveSet.has(t.c + t.i);
         g.classList.toggle("movable", isMov);
         g.setAttribute("tabindex", isMov ? "0" : "-1");
@@ -482,6 +527,19 @@
   const BTN_GHOST = BTN + " border border-line bg-felt2 text-ink";
   const BTN_DANGER = BTN + " border border-line bg-felt2 text-[#ffb4ad]";
 
+  // colour picker (personal, saved on this phone only)
+  const pickEl = $("colorPick");
+  const pickBtns = COLORS.map(c => {
+    const b = mk("button", "flex h-11 items-center justify-center gap-1.5 rounded-lg border-2 text-sm font-bold text-white active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ink");
+    b.type = "button";
+    b.setAttribute("role", "radio");
+    b.style.background = HEX[c];
+    b.textContent = NAMES[c];
+    b.addEventListener("click", () => { pref = c; lsSet("ludo.pref", c); render(); });
+    pickEl.appendChild(b);
+    return b;
+  });
+
   function renderPanel() {
     const s = state;
     const title = $("turnTitle"), hint = $("turnHint"), label = $("turnLabel"), sw = $("turnSwatch"), acts = $("turnActions");
@@ -489,35 +547,36 @@
     const canRoll = canRollNow();
     dieEl.disabled = !canRoll;
     dieEl.classList.toggle("ready", canRoll);
-    dieEl.classList.toggle("opacity-50", !canRoll && !rolling && s.phase !== "playing");
     dieEl.setAttribute("aria-label", canRoll ? "Roll the dice" : "Dice");
 
     if (!loaded) {
       label.textContent = "Connecting"; title.textContent = "Setting up the table"; hint.textContent = ""; sw.style.background = "#2c5a51";
     } else if (s.phase === "lobby") {
-      const n = seated(s).length;
-      sw.style.background = "#f2c94c";
+      const n = s.players.length;
+      sw.style.background = HEX[pref];
       label.textContent = "Waiting to start";
-      title.textContent = n < 2 ? "Pick your colors" : `${n} players ready`;
-      hint.textContent = "Tap Invite and send the link. Each friend types a name and takes a color.";
+      title.textContent = n < 2 ? (joined(s) ? "Waiting for friends" : "Join the game") : `${n} players ready`;
+      hint.textContent = joined(s)
+        ? "Tap Invite and send the link. Each friend joins on their own phone and picks any color."
+        : "Type your name, pick your color and tap Join game.";
       const st = mk("button", BTN_PRIMARY, "Start game");
       st.disabled = n < 2;
       st.addEventListener("click", actions.start);
       acts.appendChild(st);
     } else if (s.phase === "playing") {
       const c = s.turn, me = mine(s, c);
-      sw.style.background = HEX[c];
-      label.textContent = me ? "Your turn" : `${NAMES[c]}'s turn`;
+      sw.style.background = dHex(c);
+      label.textContent = me ? "Your turn" : `${seatName(s, c)}'s turn`;
       if (rolling) { title.textContent = me ? "Rolling…" : `${seatName(s, c)} is rolling…`; hint.textContent = ""; }
       else if (me) {
         if (s.roll) { title.textContent = `You rolled ${s.roll}`; hint.textContent = "Tap a glowing token to move it."; }
-        else { title.textContent = `${seatName(s, c)}, tap the dice`; hint.textContent = s.last && s.last.c !== c ? `${seatName(s, s.last.c)} rolled ${s.last.v}.` : (s.last ? `You rolled ${s.last.v} last.` : "Roll a 6 to bring a token out."); }
+        else { title.textContent = "Tap your dice to roll"; hint.textContent = s.last && s.last.c !== c ? `${seatName(s, s.last.c)} rolled ${s.last.v}.` : (s.last ? `You rolled ${s.last.v} last.` : "Roll a 6 to bring a token out."); }
       } else {
         title.textContent = s.roll ? `${seatName(s, c)} rolled ${s.roll}` : `${seatName(s, c)} is up`;
         hint.textContent = s.roll ? "Waiting for them to move." : "Waiting for them to roll.";
       }
     } else {
-      sw.style.background = s.winners[0] ? HEX[s.winners[0]] : "#f2c94c";
+      sw.style.background = s.winners[0] ? dHex(s.winners[0]) : "#f2c94c";
       label.textContent = "Game over";
       title.textContent = s.winners[0] ? `${seatName(s, s.winners[0])} wins!` : "Game over";
       hint.textContent = s.winners.map((c, k) => `${k + 1}. ${seatName(s, c)}`).join("   ");
@@ -526,42 +585,53 @@
       acts.appendChild(again);
     }
 
-    // seats
-    const seatsEl = $("seats"); seatsEl.innerHTML = "";
-    for (const c of COLORS) {
-      const isTurn = s.phase === "playing" && s.turn === c;
-      const d = mk("div", "flex min-w-0 flex-col gap-1.5 rounded-xl border-2 p-2.5 " + (isTurn ? "border-gold" : "border-transparent"));
-      d.style.background = `color-mix(in srgb, ${HEX[c]} 18%, transparent)`;
-      const who = mk("div", "flex min-w-0 items-center gap-2 font-bold");
-      const dot = mk("span", "h-3.5 w-3.5 shrink-0 rounded-full"); dot.style.background = HEX[c];
-      const nm = mk("span", "truncate", s.seats[c] ? s.seats[c].nick + (online && s.seats[c].id === myId ? " (you)" : "") : NAMES[c]);
-      who.append(dot, nm); d.appendChild(who);
-      const home = s.tokens[c].filter(p => p === FINISH).length, out = s.tokens[c].filter(p => p >= 0 && p < FINISH).length;
-      let meta;
-      if (s.seats[c]) {
-        const place = s.winners.indexOf(c);
-        meta = place >= 0 ? `Finished #${place + 1}` : s.phase === "lobby" ? "Ready" : `${out} out · ${home}/4 home`;
-      } else meta = s.phase === "lobby" ? "Open seat" : "Not playing";
-      d.appendChild(mk("div", "text-xs text-muted tabular-nums", meta));
-      if (s.phase === "lobby" && loaded) {
-        if (!s.seats[c]) {
-          const b = mk("button", BTN_GHOST + " w-full", "Take " + NAMES[c]);
-          b.addEventListener("click", () => actions.claim(c)); d.appendChild(b);
-        } else if (mine(s, c)) {
-          const b = mk("button", BTN_GHOST + " w-full", "Leave");
-          b.addEventListener("click", () => actions.leave(c)); d.appendChild(b);
-        }
+    // colour picker state
+    pickBtns.forEach((b, k) => {
+      const on = COLORS[k] === pref;
+      b.setAttribute("aria-checked", String(on));
+      b.style.borderColor = on ? "#f2c94c" : "transparent";
+      b.style.opacity = on ? "1" : ".55";
+      b.textContent = (on ? "✓ " : "") + NAMES[COLORS[k]];
+    });
+
+    // join / leave
+    const jr = $("joinRow"); jr.innerHTML = "";
+    if (loaded && s.phase === "lobby") {
+      if (!joined(s)) {
+        const b = mk("button", BTN_PRIMARY + " flex-1 !py-2.5 text-base", s.players.length >= 4 ? "Table is full" : "Join game");
+        b.disabled = s.players.length >= 4;
+        b.addEventListener("click", actions.join);
+        jr.appendChild(b);
+      } else {
+        const b = mk("button", BTN_GHOST, "Leave");
+        b.addEventListener("click", actions.leave);
+        jr.appendChild(b);
       }
-      seatsEl.appendChild(d);
+    } else if (loaded && !mySlot()) {
+      jr.appendChild(mk("div", "text-sm text-muted", "You're watching this game. You can join the next one."));
     }
 
-    // reset / clear with in-page confirm
+    // player list
+    const pl = $("playerList"); pl.innerHTML = "";
+    const list = s.phase === "lobby" ? s.players.map(p => ({ p, slot: COLORS.find(c => s.seats[c] && s.seats[c].id === p.id) }))
+      : seated(s).map(c => ({ p: s.seats[c], slot: c }));
+    if (!list.length) pl.appendChild(mk("li", "text-sm text-muted", "No one has joined yet."));
+    list.forEach(({ p, slot }, k) => {
+      const li = mk("li", "flex min-w-0 items-center gap-2 rounded-lg bg-felt/60 px-2.5 py-2 text-sm");
+      const dot = mk("span", "h-3 w-3 shrink-0 rounded-full"); dot.style.background = slot ? dHex(slot) : "#a9c3ba";
+      li.append(dot, mk("span", "min-w-0 flex-1 truncate font-bold", p.nick + (p.id === myId ? " (you)" : "")));
+      const place = slot ? s.winners.indexOf(slot) : -1;
+      li.appendChild(mk("span", "shrink-0 text-xs text-muted", place >= 0 ? `#${place + 1}` : `P${k + 1}`));
+      pl.appendChild(li);
+    });
+
+    // end game / clear table with in-page confirm
     const la = $("lobbyActions"); la.innerHTML = "";
     if (loaded) {
       const playing = s.phase === "playing";
       if (!confirmReset) {
-        if (playing || seated(s).length) {
-          const b = mk("button", BTN_DANGER + " !px-2 !py-1 text-xs", playing ? "End game" : "Clear seats");
+        if (playing || s.players.length) {
+          const b = mk("button", BTN_DANGER + " !px-2 !py-1 text-xs", playing ? "End game" : "Clear table");
           b.addEventListener("click", () => { confirmReset = true; render(); });
           la.appendChild(b);
         }
@@ -579,20 +649,14 @@
     const logEl = $("log"); logEl.innerHTML = "";
     (s.log || []).forEach((e, k) => {
       const li = mk("li", "flex items-baseline gap-2 " + (k === 0 ? "font-semibold text-ink" : "text-muted"));
-      const pip = mk("span", "h-2 w-2 shrink-0 translate-y-[-1px] rounded-full"); pip.style.background = e.c ? HEX[e.c] : "#a9c3ba";
+      const pip = mk("span", "h-2 w-2 shrink-0 translate-y-[-1px] rounded-full"); pip.style.background = e.c ? dHex(e.c) : "#a9c3ba";
       li.append(pip, mk("span", "", e.t));
       logEl.appendChild(li);
     });
     $("roomCode").textContent = room;
   }
 
-  // ---------- per-viewer board rotation + corner name tags ----------
-  // Default corners (unrotated): red top-left, green top-right, yellow bottom-right, blue bottom-left.
-  const CORNER = { red: 0, green: 1, yellow: 2, blue: 3 }; // 0 TL, 1 TR, 2 BR, 3 BL
-  const myColor = () => COLORS.find(c => state.seats[c] && state.seats[c].id === myId) || null;
-  // Number of clockwise quarter turns that bring my color to bottom-left.
-  const quarterTurns = () => { const c = myColor(); return c ? (3 - CORNER[c] + 4) % 4 : 0; };
-
+  // ---------- corner name tags ----------
   const tags = [0, 1, 2, 3].map(pos => {
     const t = $("tag" + pos);
     const right = pos === 1 || pos === 2;
@@ -606,43 +670,36 @@
     info.append(line, meta);
     const slot = mk("div", "flex shrink-0 items-center");
     t.append(info, slot);
-    t.addEventListener("click", e => {
-      if (e.target.closest("#die")) return;
-      const c = t.dataset.color;
-      if (c && state.phase === "lobby" && loaded && !state.seats[c]) actions.claim(c);
-    });
     return { t, dot, name, meta, slot };
   });
 
   function renderTags() {
     const k = quarterTurns();
     rot.setAttribute("transform", k ? `rotate(${k * 90} 7.5 7.5)` : "");
+    repaint();
     const s = state;
     const dieColor = rolling ? rollColor
       : (holdColor && Date.now() < holdUntil) ? holdColor
       : (s.phase === "playing" ? s.turn : null);
     for (const c of COLORS) {
-      const pos = (CORNER[c] + k) % 4;
-      const g = tags[pos];
-      g.t.dataset.color = c;
+      const g = tags[(CI[c] + k) % 4];
       const seat = s.seats[c];
       const isTurn = s.phase === "playing" && s.turn === c;
       g.t.classList.toggle("border-gold", isTurn);
       g.t.classList.toggle("border-transparent", !isTurn);
-      g.t.classList.toggle("cursor-pointer", s.phase === "lobby" && !seat);
-      g.t.style.background = `color-mix(in srgb, ${HEX[c]} ${isTurn ? 34 : 18}%, transparent)`;
-      g.t.style.opacity = s.phase !== "lobby" && !seat ? ".45" : "1";
-      g.dot.style.background = HEX[c];
-      g.name.textContent = seat ? seat.nick + (online && seat.id === myId ? " (you)" : "") : NAMES[c];
+      g.t.style.background = seat ? `color-mix(in srgb, ${dHex(c)} ${isTurn ? 34 : 18}%, transparent)` : "rgba(255,255,255,.03)";
+      g.t.style.opacity = seat ? "1" : ".5";
+      g.dot.style.background = seat ? dHex(c) : "#2c5a51";
+      g.name.textContent = seat ? seat.nick + (online && seat.id === myId ? " (you)" : "") : "Empty";
       const home = s.tokens[c].filter(p => p === FINISH).length;
       const place = s.winners.indexOf(c);
-      g.meta.textContent = !seat ? (s.phase === "lobby" ? "Tap to take" : "Not playing")
+      g.meta.textContent = !seat ? (s.phase === "lobby" ? "Waiting for a player" : "No player")
         : place >= 0 ? `Finished #${place + 1}`
         : s.phase === "lobby" ? "Ready"
         : isTurn ? (mine(s, c) ? (s.roll ? "Pick a token" : "Your roll") : (s.roll ? "Moving…" : "Rolling…"))
         : `${home}/4 home`;
-      g.t.setAttribute("aria-label", `${NAMES[c]}: ${g.name.textContent}`);
-      if (dieColor === c) { if (dieEl.parentNode !== g.slot) g.slot.appendChild(dieEl); }
+      g.t.setAttribute("aria-label", seat ? `${seat.nick}, ${dName(c)}` : "Empty seat");
+      if (dieColor === c && dieEl.parentNode !== g.slot) g.slot.appendChild(dieEl);
     }
     if (!dieColor && dieEl.parentNode) dieEl.remove();
   }
@@ -657,7 +714,6 @@
     }
   }
 
-  // Show the tumble on every device when someone else rolls
   function onRemoteState() {
     const last = state.last;
     if (last && last.seq !== seenSeq) {
@@ -673,12 +729,12 @@
   }
 
   // ---------- rooms & sync (peer-to-peer) ----------
-  const PREFIX = "ludotable-v1-";
+  const PREFIX = "ludotable-v2-";
   let peer = null, isHost = false, conns = [], hostConn = null, gen = 0, retryTimer = null;
 
-  const validState = s => s && typeof s === "object" && s.tokens && s.seats && Array.isArray(s.winners);
-  function saveLocal() { lsSet("ludo.room." + room, JSON.stringify(state)); }
-  function loadLocal(code) { try { const s = JSON.parse(lsGet("ludo.room." + code)); return validState(s) ? s : null; } catch { return null; } }
+  const validState = s => s && typeof s === "object" && s.tokens && s.seats && Array.isArray(s.winners) && Array.isArray(s.players);
+  function saveLocal() { lsSet("ludo2.room." + room, JSON.stringify(state)); }
+  function loadLocal(code) { try { const s = JSON.parse(lsGet("ludo2.room." + code)); return validState(s) ? s : null; } catch { return null; } }
 
   function setNet(kind, text) {
     $("netLed").className = "h-2 w-2 shrink-0 rounded-full " + (kind === "ok" ? "bg-[#4ade80]" : kind === "bad" ? "bg-[#f87171]" : "bg-muted");
@@ -716,11 +772,11 @@
     teardown();
     const my = gen;
     room = code; confirmReset = false;
-    try { if (location.hash.slice(1) !== code) history.replaceState(null, "", "#" + code); } catch {}
+    try { if (location.hash.slice(1) !== code) history.replaceState(null, "", location.pathname + location.search + "#" + code); } catch {}
     if (!window.Peer) {
       online = false; state = loadLocal(code) || freshState(); loaded = true; seenSeq = null; onRemoteState();
       setNet("bad", "Offline · playing on this device only");
-      showBanner("Online play couldn't start. Check your internet and reload. You can still play on this one phone.");
+      showBanner("Online play couldn't start. Check your internet and reload.");
       return;
     }
     if (!carry) { loaded = false; seenSeq = null; state = loadLocal(code) || freshState(); }
@@ -764,7 +820,7 @@
     peer.on("open", () => {
       if (my !== gen) return;
       hostConn = peer.connect(PREFIX + code, { reliable: true });
-      hostConn.on("open", () => { online = true; if (carry) hostConn.send({ type: "state", state: carry }); netSummary(); });
+      hostConn.on("open", () => { online = true; if (carry) hostConn.send({ type: "state", state: carry }); netSummary(); render(); });
       hostConn.on("data", m => { if (m && m.type === "state") accept(m.state); });
       hostConn.on("close", rejoin);
     });
@@ -799,7 +855,7 @@
     openRoom(code);
   });
   $("copyLink").addEventListener("click", async () => {
-    const link = location.href.split("#")[0] + "#" + room;
+    const link = location.origin + location.pathname + "#" + room;
     if (navigator.share) {
       try { await navigator.share({ title: "Ludo Table", text: `Join my Ludo room ${room}`, url: link }); return; } catch (e) { if (e && e.name === "AbortError") return; }
     }
