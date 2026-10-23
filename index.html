@@ -14,8 +14,10 @@
     theme: {
       extend: {
         colors: {
-          felt: "#0f2a24", felt2: "#143630", panel: "#1a3f38", line: "#2c5a51",
-          ink: "#f3efe2", muted: "#a9c3ba", paper: "#f7f2e3", gold: "#f2c94c",
+          felt: "rgb(var(--c-felt) / <alpha-value>)", felt2: "rgb(var(--c-felt2) / <alpha-value>)",
+          panel: "rgb(var(--c-panel) / <alpha-value>)", line: "rgb(var(--c-line) / <alpha-value>)",
+          ink: "rgb(var(--c-ink) / <alpha-value>)", muted: "rgb(var(--c-muted) / <alpha-value>)",
+          paper: "rgb(var(--c-paper) / <alpha-value>)", gold: "rgb(var(--c-gold) / <alpha-value>)",
           pred: "#d8382e", pgreen: "#1d9a52", pyellow: "#efb20a", pblue: "#2563d4",
         },
         fontFamily: {
@@ -28,6 +30,7 @@
 </script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
+  :root { --c-felt: 15 42 36; --c-felt2: 20 54 48; --c-panel: 26 63 56; --c-line: 44 90 81; --c-ink: 243 239 226; --c-muted: 169 195 186; --c-paper: 247 242 227; --c-gold: 242 201 76; color-scheme: dark; }
   html { -webkit-tap-highlight-color: transparent; }
   [hidden] { display: none !important; }
   body {
@@ -38,6 +41,7 @@
     background: radial-gradient(900px 600px at 30% 10%, #143630, transparent 70%), #0f2a24;
   }
   .token { transition: transform .35s cubic-bezier(.3,.7,.3,1.2); }
+  .token.stepping { transition: transform .13s ease-out; }
   .token.movable { cursor: pointer; }
   /* No browser focus box around a tapped token; keyboard users get the halo instead. */
   .token:focus { outline: none; }
@@ -79,6 +83,9 @@
         <span class="hidden text-muted min-[420px]:inline">Room</span><span id="roomCode" class="font-mono tracking-wider">------</span>
       </button>
       <button id="copyLink" class="whitespace-nowrap rounded-lg bg-gold px-2.5 py-1.5 text-sm font-bold text-[#2a2208] active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ink sm:px-3" hidden>Invite</button>
+      <button id="settingsBtn" type="button" aria-label="Settings" class="flex h-[34px] w-[34px] items-center justify-center rounded-lg border border-line bg-felt2 text-ink active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
       <button id="menuBtn" class="whitespace-nowrap rounded-lg border border-line bg-felt2 px-2.5 py-1.5 text-sm font-bold active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold sm:px-3" hidden>Menu</button>
     </div>
   </header>
@@ -119,7 +126,7 @@
         <div id="tag0"></div>
         <div id="tag1"></div>
       </div>
-      <div class="aspect-square w-full rounded-xl bg-[#3b2a1c] p-1.5 shadow-[0_14px_30px_rgba(0,0,0,.45),inset_0_0_0_2px_#5a4029] sm:p-2.5">
+      <div id="boardFrame" class="aspect-square w-full rounded-xl p-1.5 sm:p-2.5">
         <svg id="board" viewBox="0 0 15 15" class="block h-full w-full touch-manipulation rounded-md" role="img" aria-label="Ludo board"></svg>
       </div>
       <div class="grid grid-cols-2 gap-2">
@@ -159,6 +166,31 @@
   </div>
 </div>
 
+<!-- Settings -->
+<div id="settingsSheet" class="fixed inset-0 z-40 flex items-end justify-center bg-black/50 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" hidden>
+  <div class="flex max-h-[88vh] w-full max-w-md flex-col rounded-t-2xl border border-line bg-panel shadow-2xl sm:rounded-2xl" style="padding-bottom: env(safe-area-inset-bottom, 0px)">
+    <div class="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
+      <h2 id="settingsTitle" class="text-lg font-bold">Settings</h2>
+      <button id="settingsClose" type="button" class="rounded-lg border border-line bg-felt2 px-3 py-1.5 text-sm font-bold active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold">Done</button>
+    </div>
+    <div id="settingsBody" class="flex flex-col gap-5 overflow-y-auto px-4 py-4"></div>
+  </div>
+</div>
+
+<!-- Game over -->
+<div id="winSheet" class="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="winTitle" hidden>
+  <div class="flex w-full max-w-sm flex-col items-center gap-3 rounded-2xl border border-line bg-panel p-6 text-center shadow-2xl">
+    <div class="text-5xl leading-none" aria-hidden="true">🏆</div>
+    <h2 id="winTitle" class="text-3xl font-extrabold leading-tight"></h2>
+    <ol id="winList" class="flex w-full flex-col gap-1.5 text-left"></ol>
+    <div class="mt-2 flex w-full flex-col gap-2">
+      <button id="winAgain" type="button" class="rounded-lg bg-gold px-4 py-3 text-base font-bold text-[#2a2208] active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ink">Play again</button>
+      <button id="winMenu" type="button" class="rounded-lg border border-line bg-felt2 px-4 py-3 text-base font-bold active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold">Back to menu</button>
+    </div>
+  </div>
+</div>
+<canvas id="confetti" class="pointer-events-none fixed inset-0 z-50 h-full w-full" aria-hidden="true" hidden></canvas>
+
 <!-- Chat (online and friends games) -->
 <div id="chatSheet" class="fixed inset-0 z-40 flex items-end justify-center bg-black/50 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="chatTitle" hidden>
   <div class="flex max-h-[80vh] w-full max-w-md flex-col rounded-t-2xl border border-line bg-panel shadow-2xl sm:rounded-2xl" style="padding-bottom: env(safe-area-inset-bottom, 0px)">
@@ -184,8 +216,34 @@
   const COLORS = ["red", "green", "yellow", "blue"];
   const CI = { red: 0, green: 1, yellow: 2, blue: 3 };
   const NAMES = { red: "Red", green: "Green", yellow: "Yellow", blue: "Blue" };
-  const HEX = { red: "#d8382e", green: "#1d9a52", yellow: "#efb20a", blue: "#2563d4" };
-  const LIGHT = { red: "#f4c7c3", green: "#bfe6cd", yellow: "#fbe7a8", blue: "#c3d4f6" };
+  let HEX = { red: "#d8382e", green: "#1d9a52", yellow: "#efb20a", blue: "#2563d4" };
+  let LIGHT = { red: "#f4c7c3", green: "#bfe6cd", yellow: "#fbe7a8", blue: "#c3d4f6" };
+
+  // ================================================================
+  //  Themes
+  // ================================================================
+  const THEMES = {
+    classic: { name: "Classic felt", bg: "radial-gradient(900px 600px at 30% 10%, #143630, transparent 70%), #0f2a24", meta: "#0f2a24", scheme: "dark",
+      vars: { felt: "15 42 36", felt2: "20 54 48", panel: "26 63 56", line: "44 90 81", ink: "243 239 226", muted: "169 195 186", paper: "247 242 227", gold: "242 201 76" },
+      frame: "#3b2a1c", frameEdge: "#5a4029", board: "#f7f2e3", track: "#fffdf6", stroke: "#23302c", star: "#9aa59f", pip: "#23302c",
+      pieces: { red: "#d8382e", green: "#1d9a52", yellow: "#efb20a", blue: "#2563d4" }, light: { red: "#f4c7c3", green: "#bfe6cd", yellow: "#fbe7a8", blue: "#c3d4f6" } },
+    king: { name: "Ludo King", bg: "radial-gradient(900px 700px at 50% 0%, #3d4fd1, transparent 70%), linear-gradient(170deg, #2a1f8f 0%, #16247a 55%, #0b154f 100%)", meta: "#16247a", scheme: "dark",
+      vars: { felt: "13 22 82", felt2: "31 45 150", panel: "36 52 168", line: "86 108 220", ink: "255 255 255", muted: "196 205 250", paper: "255 255 255", gold: "255 196 0" },
+      frame: "linear-gradient(145deg, #ffd54f, #f5a400 55%, #c77800)", frameEdge: "#ffe082", board: "#ffffff", track: "#ffffff", stroke: "#5b5b6b", star: "#b8bccb", pip: "#1a1a2e",
+      pieces: { red: "#e8262d", green: "#1fa64a", yellow: "#ffcc00", blue: "#1e7be6" }, light: { red: "#ffd2d3", green: "#c9f0d5", yellow: "#fff3b0", blue: "#cfe3ff" } },
+    midnight: { name: "Midnight", bg: "radial-gradient(900px 600px at 70% 0%, #1d2a52, transparent 70%), #0a0f1f", meta: "#0a0f1f", scheme: "dark",
+      vars: { felt: "10 15 31", felt2: "20 28 54", panel: "24 33 64", line: "52 64 108", ink: "232 238 255", muted: "150 163 204", paper: "236 241 255", gold: "125 211 252" },
+      frame: "#141c38", frameEdge: "#34416e", board: "#e6ebf7", track: "#f6f8ff", stroke: "#283252", star: "#8a95b8", pip: "#1e2742",
+      pieces: { red: "#f0454f", green: "#22c55e", yellow: "#eab308", blue: "#3b82f6" }, light: { red: "#fbd0d3", green: "#c4f0d4", yellow: "#f7e8b0", blue: "#cddffd" } },
+    wood: { name: "Wooden", bg: "radial-gradient(900px 600px at 30% 10%, #5a3720, transparent 70%), #2b1a10", meta: "#2b1a10", scheme: "dark",
+      vars: { felt: "43 26 16", felt2: "62 39 24", panel: "76 48 30", line: "116 80 52", ink: "251 241 226", muted: "217 192 162", paper: "250 240 220", gold: "234 174 84" },
+      frame: "linear-gradient(145deg, #8a5430, #5e3518)", frameEdge: "#a8703f", board: "#f2e1bf", track: "#fbf0da", stroke: "#4a2e1c", star: "#b39773", pip: "#3b2414",
+      pieces: { red: "#b93a2b", green: "#3d7d38", yellow: "#d9a326", blue: "#2e5d9d" }, light: { red: "#efc9bf", green: "#cfe2c4", yellow: "#f3e1ad", blue: "#c6d5ea" } },
+    candy: { name: "Candy", bg: "linear-gradient(160deg, #ffe3f1 0%, #ece6ff 55%, #dff3ff 100%)", meta: "#ffe3f1", scheme: "light",
+      vars: { felt: "255 244 250", felt2: "252 232 244", panel: "255 255 255", line: "238 202 226", ink: "67 34 78", muted: "132 101 142", paper: "255 255 255", gold: "255 120 186" },
+      frame: "linear-gradient(145deg, #ff9bd0, #c59cff)", frameEdge: "#ffd0ea", board: "#ffffff", track: "#ffffff", stroke: "#a77b9c", star: "#e3b6d4", pip: "#4a2a55",
+      pieces: { red: "#ff5577", green: "#2fc486", yellow: "#ffbf2e", blue: "#5a87ff" }, light: { red: "#ffd6df", green: "#c9f3e0", yellow: "#ffeec2", blue: "#d7e2ff" } },
+  };
   const START = { red: 0, green: 13, yellow: 26, blue: 39 };
   const SAFE = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
   const FINISH = 56;
@@ -251,6 +309,75 @@
   const savedNick = () => lsGet("ludo.nick") || "";
   const myNick = () => (lsGet("ludo.nick") || "").trim() || "Player";
   const nickEl = $("nick");
+
+  // ================================================================
+  //  Settings (kept on this device)
+  // ================================================================
+  const SOUND_KEYS = [
+    ["dice", "Dice roll"], ["move", "Token moving"], ["out", "Token comes out"], ["capture", "Cutting a token"],
+    ["home", "Token reaches home"], ["turn", "Your turn"], ["chat", "Chat messages"], ["win", "Winning"],
+  ];
+  const DEFAULT_SETTINGS = { theme: "classic", steps: true, sound: { all: true, dice: true, move: true, out: true, capture: true, home: true, turn: true, chat: true, win: true } };
+  let settings = clone0(DEFAULT_SETTINGS);
+  try {
+    const sv = JSON.parse(lsGet("ludo.settings"));
+    if (sv && typeof sv === "object") {
+      if (THEMES[sv.theme]) settings.theme = sv.theme;
+      if (typeof sv.steps === "boolean") settings.steps = sv.steps;
+      if (sv.sound && typeof sv.sound === "object") for (const k in settings.sound) if (typeof sv.sound[k] === "boolean") settings.sound[k] = sv.sound[k];
+    }
+  } catch {}
+  function clone0(o) { return JSON.parse(JSON.stringify(o)); }
+  function saveSettings() { lsSet("ludo.settings", JSON.stringify(settings)); }
+
+  // ---------- sound effects, made with the Web Audio API ----------
+  let actx = null;
+  function audio() {
+    if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; } }
+    if (actx.state === "suspended") actx.resume().catch(() => {});
+    return actx;
+  }
+  // Browsers only allow sound after the player has touched the page.
+  document.addEventListener("pointerdown", () => audio(), { passive: true });
+  function tone(freq, dur, o = {}) {
+    const a = audio(); if (!a) return;
+    const t = a.currentTime + (o.delay || 0);
+    const osc = a.createOscillator(), g = a.createGain();
+    osc.type = o.type || "sine";
+    osc.frequency.setValueAtTime(freq, t);
+    if (o.slide) osc.frequency.exponentialRampToValueAtTime(o.slide, t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(o.vol || 0.2, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(g).connect(a.destination);
+    osc.start(t); osc.stop(t + dur + 0.03);
+  }
+  function noise(dur, o = {}) {
+    const a = audio(); if (!a) return;
+    const t = a.currentTime + (o.delay || 0);
+    const len = Math.max(1, Math.floor(a.sampleRate * dur));
+    const buf = a.createBuffer(1, len, a.sampleRate), d = buf.getChannelData(0);
+    for (let k = 0; k < len; k++) d[k] = (Math.random() * 2 - 1) * Math.pow(1 - k / len, 2);
+    const src = a.createBufferSource(); src.buffer = buf;
+    const f = a.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = o.freq || 2000; f.Q.value = 1.1;
+    const g = a.createGain(); g.gain.value = o.vol || 0.3;
+    src.connect(f).connect(g).connect(a.destination);
+    src.start(t);
+  }
+  const SFX = {
+    dice() { for (let k = 0; k < 7; k++) noise(0.05, { vol: 0.45, delay: k * 0.075 + Math.random() * 0.025, freq: 1300 + Math.random() * 1700 }); tone(170, 0.09, { type: "triangle", vol: 0.18, delay: 0.6 }); },
+    move() { tone(700, 0.07, { type: "triangle", vol: 0.16 }); },
+    out() { tone(420, 0.18, { type: "square", vol: 0.07, slide: 940 }); },
+    capture() { tone(560, 0.32, { type: "sawtooth", vol: 0.1, slide: 110 }); noise(0.16, { vol: 0.25, freq: 500 }); },
+    home() { [784, 988, 1319].forEach((f, k) => tone(f, 0.2, { vol: 0.14, delay: k * 0.09 })); },
+    turn() { tone(880, 0.1, { vol: 0.1 }); tone(1175, 0.15, { vol: 0.1, delay: 0.1 }); },
+    chat() { tone(1046, 0.08, { vol: 0.1 }); tone(1568, 0.1, { vol: 0.08, delay: 0.06 }); },
+    win() { [523, 659, 784, 1046, 784, 1046, 1318].forEach((f, k) => tone(f, 0.24, { type: "triangle", vol: 0.16, delay: k * 0.12 })); },
+  };
+  function play(name) {
+    if (!settings.sound.all || settings.sound[name] === false) return;
+    try { SFX[name](); } catch {}
+  }
 
   // ================================================================
   //  State
@@ -394,8 +521,10 @@
     if (mutate(s) === false) return;
     s.v = (state.v || 0) + 1;
     if (s.turn !== state.turn || s.roll !== state.roll || (s.last && s.last.seq) !== (state.last && state.last.seq) || s.phase !== state.phase) s.turnAt = Date.now();
+    const prev = state;
     state = s;
     persist();
+    onStateChange(prev, s, false);
     render();
     if (isNet()) broadcast();
   }
@@ -452,7 +581,8 @@
     if (botTimer || !loaded || !controller() || state.phase !== "playing" || rolling) return;
     const st = state.seats[state.turn];
     if (!st || !st.bot) return;
-    botTimer = setTimeout(() => { botTimer = null; if (state.seats[state.turn] && state.seats[state.turn].bot) autoStep(); }, state.roll ? 650 : 900);
+    const wait = Math.max(state.roll ? 650 : 900, animBusyUntil - Date.now() + 250);
+    botTimer = setTimeout(() => { botTimer = null; if (state.seats[state.turn] && state.seats[state.turn].bot) autoStep(); }, wait);
   }
 
   const canRollNow = () => loaded && !rolling && state.phase === "playing" && !state.roll && mine(state, state.turn);
@@ -526,14 +656,14 @@
   dieEl.className = "die-face grid aspect-square w-12 shrink-0 grid-cols-3 grid-rows-3 place-items-center rounded-xl bg-paper p-1.5 disabled:cursor-default min-[400px]:w-14 sm:w-16 focus:outline-none focus-visible:ring-4 focus-visible:ring-gold";
   let shownFace = 1;
   let rollColor = null, holdColor = null, holdUntil = 0;
-  // After a roll the dice stays with the roller only long enough to read the
-  // number, then moves to the next player.
-  function holdDie(c) { holdColor = c; holdUntil = Date.now() + 450; setTimeout(render, 480); }
+  // The dice now moves to the next player the moment the turn changes, together
+  // with the highlight. (Kept as a no-op so older call sites stay simple.)
+  function holdDie() {}
   function drawFace(v) {
     shownFace = v;
     const cells = PIP_CELLS[v] || [];
     let html = "";
-    for (let k = 0; k < 9; k++) html += cells.includes(k) ? `<span class="block h-[70%] w-[70%] rounded-full" style="background:#23302c"></span>` : `<span></span>`;
+    for (let k = 0; k < 9; k++) html += cells.includes(k) ? `<span class="block h-[70%] w-[70%] rounded-full" style="background:${(THEMES[settings.theme] || THEMES.classic).pip}"></span>` : `<span></span>`;
     dieEl.innerHTML = html;
   }
   const reduceMotion = () => window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -541,6 +671,7 @@
     dieEl.classList.remove("rolling", "ready");
     void dieEl.offsetWidth;
     dieEl.classList.add("rolling");
+    play("dice");
     const reduce = reduceMotion();
     let n = 0;
     const iv = setInterval(() => {
@@ -567,11 +698,16 @@
   const el = (tag, attrs, parent) => { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); (parent || rot).appendChild(n); return n; };
   const painted = [];
   const paint = (node, slot, attr, tone) => { painted.push({ node, slot, attr, tone }); return node; };
+  // Board surfaces that follow the theme (paper, track, lines, stars)
+  const themedNodes = [];
+  const themed = (node, attr, key) => { themedNodes.push({ node, attr, key }); return node; };
   let paintedKey = "";
   function repaint() {
-    const key = COLORS.map(displayColor).join(",");
+    const key = settings.theme + "|" + COLORS.map(displayColor).join(",");
     if (key === paintedKey) return;
     paintedKey = key;
+    const th = THEMES[settings.theme] || THEMES.classic;
+    for (const p of themedNodes) p.node.setAttribute(p.attr, th[p.key]);
     for (const p of painted) p.node.setAttribute(p.attr, (p.tone === "light" ? LIGHT : HEX)[displayColor(p.slot)]);
   }
   function star(cx, cy, fill) {
@@ -580,31 +716,35 @@
       const a = -Math.PI / 2 + k * Math.PI / 5, rr = k % 2 ? .15 : .34;
       pts.push((cx + rr * Math.cos(a)).toFixed(3) + "," + (cy + rr * Math.sin(a)).toFixed(3));
     }
-    el("polygon", { points: pts.join(" "), fill, stroke: "#23302c", "stroke-width": .03 });
+    const n = el("polygon", { points: pts.join(" "), "stroke-width": .03 });
+    themed(n, "fill", fill); themed(n, "stroke", "stroke");
   }
   (function drawBoard() {
-    el("rect", { x: 0, y: 0, width: 15, height: 15, fill: "#f7f2e3" });
+    themed(el("rect", { x: 0, y: 0, width: 15, height: 15 }), "fill", "board");
     for (const c of COLORS) {
       const [r0, c0] = YARD[c];
       paint(el("rect", { x: c0, y: r0, width: 6, height: 6 }), c, "fill");
-      el("rect", { x: c0 + .8, y: r0 + .8, width: 4.4, height: 4.4, rx: .5, fill: "#f7f2e3" });
+      themed(el("rect", { x: c0 + .8, y: r0 + .8, width: 4.4, height: 4.4, rx: .5 }), "fill", "board");
       for (const [dy, dx] of [[2, 2], [2, 4], [4, 2], [4, 4]]) {
         const ci = el("circle", { cx: c0 + dx, cy: r0 + dy, r: .62, "stroke-width": .06 });
         paint(ci, c, "fill", "light"); paint(ci, c, "stroke");
       }
     }
     TRACK.forEach(([r, c], idx) => {
-      const sq = el("rect", { x: c, y: r, width: 1, height: 1, fill: "#fffdf6", stroke: "#23302c", "stroke-width": .035 });
-      for (const col of COLORS) if (START[col] === idx) paint(sq, col, "fill");
-      if (SAFE.has(idx)) star(c + .5, r + .5, [0, 13, 26, 39].includes(idx) ? "#fffdf6" : "#9aa59f");
+      const sq = el("rect", { x: c, y: r, width: 1, height: 1, "stroke-width": .035 });
+      themed(sq, "stroke", "stroke");
+      let isStart = false;
+      for (const col of COLORS) if (START[col] === idx) { paint(sq, col, "fill"); isStart = true; }
+      if (!isStart) themed(sq, "fill", "track");
+      if (SAFE.has(idx)) star(c + .5, r + .5, isStart ? "track" : "star");
     });
-    for (const c of COLORS) HOMECOL[c].forEach(([r, cc]) => paint(el("rect", { x: cc, y: r, width: 1, height: 1, stroke: "#23302c", "stroke-width": .035 }), c, "fill"));
+    for (const c of COLORS) HOMECOL[c].forEach(([r, cc]) => { const n = el("rect", { x: cc, y: r, width: 1, height: 1, "stroke-width": .035 }); themed(n, "stroke", "stroke"); paint(n, c, "fill"); });
     paint(el("polygon", { points: "6,6 6,9 7.5,7.5" }), "red", "fill");
     paint(el("polygon", { points: "6,6 9,6 7.5,7.5" }), "green", "fill");
     paint(el("polygon", { points: "9,6 9,9 7.5,7.5" }), "yellow", "fill");
     paint(el("polygon", { points: "6,9 9,9 7.5,7.5" }), "blue", "fill");
-    el("rect", { x: 6, y: 6, width: 3, height: 3, fill: "none", stroke: "#23302c", "stroke-width": .05 });
-    el("rect", { x: 0, y: 0, width: 15, height: 15, fill: "none", stroke: "#23302c", "stroke-width": .08 });
+    themed(el("rect", { x: 6, y: 6, width: 3, height: 3, fill: "none", "stroke-width": .05 }), "stroke", "stroke");
+    themed(el("rect", { x: 0, y: 0, width: 15, height: 15, fill: "none", "stroke-width": .08 }), "stroke", "stroke");
   })();
 
   const tokenLayer = el("g", {});
@@ -651,9 +791,75 @@
     const [x, y] = FINISH_PT[c]; return { x, y, key: "f" + c };
   }
 
+  // Where a token is drawn right now. While a move is being animated this
+  // differs from the game state.
+  const animPos = {};
+  let animTimers = [], animBusyUntil = 0;
+  function animateMove(m, caps, delay) {
+    const key = m.c + m.i;
+    animPos[key] = m.a;
+    caps.forEach(k => { animPos[k.c + k.i] = k.a; });
+    const STEP = 140;
+    let total = delay;
+    const finish = wait => {
+      animTimers.push(setTimeout(() => {
+        delete animPos[key];
+        if (m.b === FINISH) play("home");
+        if (caps.length) { caps.forEach(k => delete animPos[k.c + k.i]); play("capture"); }
+        renderTokens();
+      }, wait));
+    };
+    const run = () => {
+      if (m.a === -1) { animPos[key] = 0; play("out"); renderTokens(); finish(300); return; }
+      if (!settings.steps || reduceMotion()) { delete animPos[key]; play("move"); renderTokens(); finish(360); return; }
+      let p = m.a;
+      const iv = setInterval(() => {
+        p++; animPos[key] = p; play("move"); renderTokens();
+        if (p >= m.b) { clearInterval(iv); finish(STEP); }
+      }, STEP);
+      animTimers.push(iv);
+    };
+    total += m.a === -1 ? 300 : settings.steps ? (m.b - m.a + 1) * STEP : 360;
+    animBusyUntil = Math.max(animBusyUntil, Date.now() + total);
+    if (delay) animTimers.push(setTimeout(run, delay)); else run();
+  }
+  function stopAnimations() {
+    animTimers.forEach(t => { clearTimeout(t); clearInterval(t); });
+    animTimers = []; animBusyUntil = 0;
+    for (const k in animPos) delete animPos[k];
+  }
+
+  // Compare two states and play the matching sounds / animations.
+  let winShown = false;
+  function onStateChange(prev, next, remote) {
+    if (!prev || !next) return;
+    if (prev.phase === "playing" && (next.phase === "playing" || next.phase === "done")) {
+      const moves = [], caps = [];
+      for (const c of COLORS) for (let i = 0; i < 4; i++) {
+        const a = prev.tokens[c][i], b = next.tokens[c][i];
+        if (a === b) continue;
+        if (b === -1 && a >= 0) caps.push({ c, i, a });
+        else if (b > a) moves.push({ c, i, a, b });
+      }
+      // A remote roll animates the dice first, so hold the token until it lands.
+      const newRoll = next.last && (!prev.last || prev.last.seq !== next.last.seq);
+      const delay = remote && newRoll ? 760 : 0;
+      moves.forEach(m => animateMove(m, caps, delay));
+      if (!moves.length && caps.length) play("capture");
+    }
+    if (next.phase === "playing" && prev.phase === "playing" && next.turn !== prev.turn && mode !== "local" && mine(next, next.turn)) {
+      setTimeout(() => play("turn"), Math.max(250, animBusyUntil - Date.now()));
+    }
+    if (prev.phase !== "done" && next.phase === "done") {
+      setTimeout(showWinner, Math.max(300, animBusyUntil - Date.now() + 200));
+    }
+    if (next.phase !== "done") hideWinner();
+  }
+
   function renderTokens() {
     const groups = {};
-    for (const c of COLORS) state.tokens[c].forEach((p, i) => {
+    for (const c of COLORS) state.tokens[c].forEach((p0, i) => {
+      const p = animPos[c + i] !== undefined ? animPos[c + i] : p0;
       const b = basePoint(c, i, p);
       (groups[b.key] = groups[b.key] || []).push({ c, i, b });
     });
@@ -668,6 +874,7 @@
           x += Math.cos(ang) * off; y += Math.sin(ang) * off;
         }
         const g = tokenEls[t.c + t.i];
+        g.classList.toggle("stepping", settings.steps && animPos[t.c + t.i] !== undefined);
         g.style.transform = `translate(${x}px,${y}px) scale(${s})`;
         g.style.display = state.seats[t.c] ? "" : "none";
         const isMov = moveSet.has(t.c + t.i);
@@ -942,6 +1149,7 @@
     rotReady = false; rotTarget = 0; curAngle = 0; applyRot(); paintedKey = "";
     state = freshState();
     resetChat();
+    stopAnimations(); hideWinner();
     try { if (location.hash) history.replaceState(null, "", location.pathname + location.search); } catch {}
   }
 
@@ -1114,7 +1322,7 @@
     chat = chat.slice(-40);
     if (!quiet) {
       if (msg.id !== myId && !chatOpen) unread++;
-      if (msg.id !== myId) { try { navigator.vibrate && navigator.vibrate(20); } catch {} }
+      if (msg.id !== myId) { play("chat"); try { navigator.vibrate && navigator.vibrate(20); } catch {} }
       bubbles[msg.id] = { text: msg.text, until: Date.now() + 4500 };
       setTimeout(render, 4600);
     }
@@ -1157,7 +1365,11 @@
   function closeChat() { chatOpen = false; chatSheet.hidden = true; render(); }
   $("chatClose").addEventListener("click", closeChat);
   chatSheet.addEventListener("click", e => { if (e.target === chatSheet) closeChat(); });
-  document.addEventListener("keydown", e => { if (e.key === "Escape" && chatOpen) closeChat(); });
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Escape") return;
+    if (chatOpen) closeChat();
+    if (!$("settingsSheet").hidden) closeSettings();
+  });
   $("chatForm").addEventListener("submit", e => { e.preventDefault(); sendChat(chatInput.value); chatInput.value = ""; chatInput.focus(); });
   for (const q of QUICK) {
     const b = mk("button", "shrink-0 rounded-full border border-line bg-felt2 px-3 py-1 text-sm font-semibold active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold", q);
@@ -1207,7 +1419,7 @@
     for (const c of COLORS) {
       const g = tags[(CI[c] + k) % 4];
       const seat = s.seats[c];
-      const isTurn = s.phase === "playing" && s.turn === c;
+      const isTurn = s.phase === "playing" && (dieColor || s.turn) === c;
       g.t.classList.toggle("border-gold", isTurn);
       g.t.classList.toggle("border-transparent", !isTurn);
       g.t.style.background = seat ? `color-mix(in srgb, ${dHex(c)} ${isTurn ? 34 : 18}%, transparent)` : "rgba(255,255,255,.03)";
@@ -1314,7 +1526,9 @@
     if (!validState(incoming)) return false;
     if (loaded && (incoming.v || 0) < (state.v || 0)) return false;
     const first = !loaded;
+    const prev = loaded ? state : null;
     state = incoming; loaded = true; persist();
+    if (prev) onStateChange(prev, state, true);
     if (first) onFirstState();
     onRemoteState();
     return true;
@@ -1470,8 +1684,166 @@
   });
 
   // ================================================================
+  //  Theme
+  // ================================================================
+  function applyTheme() {
+    const th = THEMES[settings.theme] || THEMES.classic;
+    const root = document.documentElement;
+    for (const k in th.vars) root.style.setProperty("--c-" + k, th.vars[k]);
+    root.style.colorScheme = th.scheme;
+    document.body.style.background = th.bg;
+    document.body.style.backgroundAttachment = "fixed";
+    const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.setAttribute("content", th.meta);
+    const fr = $("boardFrame");
+    fr.style.background = th.frame;
+    fr.style.boxShadow = `0 14px 30px rgba(0,0,0,.4), inset 0 0 0 2px ${th.frameEdge}`;
+    HEX = th.pieces; LIGHT = th.light;
+    paintedKey = "";
+    repaint();
+    drawFace(shownFace);
+    ["colorPick", "joinRow", "playerList", "lobbyActions", "turnActions"].forEach(id => { const n = $(id); if (n) n._key = null; });
+    render();
+  }
+
+  // ================================================================
+  //  Settings sheet
+  // ================================================================
+  const settingsSheet = $("settingsSheet");
+  function sw(on, label, onToggle) {
+    const b = mk("button", "flex w-full items-center justify-between gap-3 rounded-lg px-1 py-2 text-left text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-gold");
+    b.type = "button"; b.setAttribute("role", "switch"); b.setAttribute("aria-checked", String(on));
+    const track = mk("span", "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors " + (on ? "bg-gold" : "bg-line"));
+    const knob = mk("span", "inline-block h-5 w-5 rounded-full bg-white shadow transition-transform " + (on ? "translate-x-[22px]" : "translate-x-[2px]"));
+    track.appendChild(knob);
+    b.append(mk("span", "", label), track);
+    b.addEventListener("click", onToggle);
+    return b;
+  }
+  function renderSettings() {
+    const body = $("settingsBody"); body.innerHTML = "";
+    // themes
+    const tSec = mk("section", "flex flex-col gap-2");
+    tSec.appendChild(mk("h3", "text-xs font-semibold uppercase tracking-widest text-muted", "Theme"));
+    const grid = mk("div", "grid grid-cols-2 gap-2");
+    for (const key in THEMES) {
+      const th = THEMES[key], on = settings.theme === key;
+      const b = mk("button", "flex flex-col items-start gap-2 rounded-xl border-2 p-2.5 text-left text-sm font-bold active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold " + (on ? "border-gold" : "border-transparent"));
+      b.type = "button"; b.setAttribute("aria-pressed", String(on));
+      b.style.background = th.bg;
+      b.style.color = `rgb(${th.vars.ink})`;
+      const dots = mk("span", "flex gap-1");
+      COLORS.forEach(c => { const d = mk("span", "h-3.5 w-3.5 rounded-full ring-1 ring-black/10"); d.style.background = th.pieces[c]; dots.appendChild(d); });
+      b.append(dots, mk("span", "", (on ? "✓ " : "") + th.name));
+      b.addEventListener("click", () => { settings.theme = key; saveSettings(); applyTheme(); renderSettings(); if (!$("menuScreen").hidden) renderMenu(); });
+      grid.appendChild(b);
+    }
+    tSec.appendChild(grid);
+    body.appendChild(tSec);
+    // movement
+    const mSec = mk("section", "flex flex-col gap-2");
+    mSec.appendChild(mk("h3", "text-xs font-semibold uppercase tracking-widest text-muted", "Token movement"));
+    const mg = mk("div", "grid grid-cols-2 gap-2");
+    [[true, "Step by step", "Hops square by square"], [false, "Glide", "Slides straight to the square"]].forEach(([val, label, hint]) => {
+      const on = settings.steps === val;
+      const b = mk("button", "flex flex-col items-start gap-0.5 rounded-xl border-2 bg-felt2 p-2.5 text-left active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold " + (on ? "border-gold" : "border-transparent"));
+      b.type = "button"; b.setAttribute("aria-pressed", String(on));
+      b.append(mk("span", "text-sm font-bold", (on ? "✓ " : "") + label), mk("span", "text-xs text-muted", hint));
+      b.addEventListener("click", () => { settings.steps = val; saveSettings(); renderSettings(); });
+      mg.appendChild(b);
+    });
+    mSec.appendChild(mg);
+    body.appendChild(mSec);
+    // sounds
+    const sSec = mk("section", "flex flex-col gap-1");
+    sSec.appendChild(mk("h3", "text-xs font-semibold uppercase tracking-widest text-muted", "Sounds"));
+    sSec.appendChild(sw(settings.sound.all, "All sounds", () => { settings.sound.all = !settings.sound.all; saveSettings(); renderSettings(); }));
+    const list = mk("div", "flex flex-col border-t border-line pt-1" + (settings.sound.all ? "" : " opacity-50"));
+    for (const [k, label] of SOUND_KEYS) {
+      list.appendChild(sw(settings.sound[k], label, () => {
+        settings.sound[k] = !settings.sound[k]; saveSettings(); renderSettings();
+        if (settings.sound[k] && settings.sound.all) play(k);
+      }));
+    }
+    sSec.appendChild(list);
+    body.appendChild(sSec);
+  }
+  function openSettings() { renderSettings(); settingsSheet.hidden = false; }
+  function closeSettings() { settingsSheet.hidden = true; }
+  $("settingsBtn").addEventListener("click", openSettings);
+  $("settingsClose").addEventListener("click", closeSettings);
+  settingsSheet.addEventListener("click", e => { if (e.target === settingsSheet) closeSettings(); });
+
+  // ================================================================
+  //  Game over: confetti + popup
+  // ================================================================
+  const winSheet = $("winSheet");
+  function showWinner() {
+    const s = state;
+    if (s.phase !== "done" || winShown) return;
+    winShown = true;
+    const first = s.winners[0];
+    const seat = first && s.seats[first];
+    const meWon = seat && ((isNet() && seat.id === myId) || (mode === "computer" && seat.id === "me"));
+    $("winTitle").textContent = meWon ? "You win!" : `${seat ? seat.nick : "Someone"} wins!`;
+    const list = $("winList"); list.innerHTML = "";
+    s.winners.forEach((c, k) => {
+      const li = mk("li", "flex items-center gap-2 rounded-lg bg-felt/60 px-3 py-2 text-sm font-bold");
+      li.appendChild(mk("span", "w-6 text-muted", `#${k + 1}`));
+      const dot = mk("span", "h-3 w-3 rounded-full"); dot.style.background = dHex(c);
+      li.append(dot, mk("span", "truncate", seatName(s, c)));
+      list.appendChild(li);
+    });
+    $("winAgain").textContent = mode === "online" ? "Find another game" : "Play again";
+    winSheet.hidden = false;
+    play("win");
+    confetti();
+  }
+  function hideWinner() { winShown = false; winSheet.hidden = true; }
+  $("winAgain").addEventListener("click", () => {
+    winSheet.hidden = true;
+    if (mode === "online") { leaveCurrent(); startOnline(); } else actions.reset();
+  });
+  $("winMenu").addEventListener("click", () => { winSheet.hidden = true; leaveCurrent(); mode = null; renderMenu(); });
+
+  function confetti() {
+    if (reduceMotion()) return;
+    const cv = $("confetti");
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = innerWidth * dpr; cv.height = innerHeight * dpr;
+    cv.hidden = false;
+    const ctx = cv.getContext("2d");
+    ctx.scale(dpr, dpr);
+    const cols = [...Object.values(HEX), "#ffffff", "#ffd54f"];
+    const parts = [];
+    for (let k = 0; k < 170; k++) {
+      const fromLeft = k % 2 === 0;
+      parts.push({
+        x: fromLeft ? -10 : innerWidth + 10, y: innerHeight * (0.55 + Math.random() * 0.3),
+        vx: (fromLeft ? 1 : -1) * (4 + Math.random() * 7), vy: -(9 + Math.random() * 8),
+        w: 6 + Math.random() * 6, h: 8 + Math.random() * 8, r: Math.random() * 6, vr: (Math.random() - .5) * .3,
+        c: cols[k % cols.length],
+      });
+    }
+    const t0 = performance.now();
+    const frame = now => {
+      const t = now - t0;
+      ctx.clearRect(0, 0, innerWidth, innerHeight);
+      for (const p of parts) {
+        p.vy += 0.28; p.vx *= 0.99; p.x += p.vx; p.y += p.vy; p.r += p.vr;
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r);
+        ctx.globalAlpha = Math.max(0, 1 - Math.max(0, t - 2600) / 900);
+        ctx.fillStyle = p.c; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h * Math.abs(Math.cos(p.r * 2)) + 2);
+        ctx.restore();
+      }
+      if (t < 3500) requestAnimationFrame(frame); else { ctx.clearRect(0, 0, innerWidth, innerHeight); cv.hidden = true; }
+    };
+    requestAnimationFrame(frame);
+  }
+
+  // ================================================================
   //  Boot: an invite link (#code) opens that friends room, otherwise the menu
   // ================================================================
+  applyTheme();
   const hash = (location.hash || "").slice(1).toLowerCase();
   if (/^[a-z0-9]{3,12}$/.test(hash) && !hash.startsWith("pub")) {
     mode = "friends";
