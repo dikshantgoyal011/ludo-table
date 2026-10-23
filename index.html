@@ -39,6 +39,9 @@
   }
   .token { transition: transform .35s cubic-bezier(.3,.7,.3,1.2); }
   .token.movable { cursor: pointer; }
+  /* No browser focus box around a tapped token; keyboard users get the halo instead. */
+  .token:focus { outline: none; }
+  .token:focus-visible .halo { opacity: 1; stroke: #ffffff; }
   .token .halo { opacity: 0; }
   .token.movable .halo { opacity: 1; animation: pulse 1s ease-in-out infinite; }
   @keyframes pulse { 0%,100% { stroke-opacity: .95; } 50% { stroke-opacity: .2; } }
@@ -63,20 +66,20 @@
 <div class="mx-auto flex max-w-6xl flex-col gap-3 py-3 lg:gap-5 lg:py-6">
 
   <!-- Header -->
-  <header class="flex items-center justify-between gap-2">
-    <h1 class="flex items-center gap-1 whitespace-nowrap text-xl font-extrabold leading-none min-[380px]:text-2xl sm:text-4xl">
+  <header class="flex flex-wrap items-center justify-between gap-2">
+    <h1 class="flex shrink-0 items-center gap-1 whitespace-nowrap text-xl font-extrabold leading-none min-[420px]:text-2xl sm:text-4xl">
       Ludo Table
-      <span class="ml-1 inline-flex gap-0.5">
+      <span class="ml-1 hidden gap-0.5 min-[420px]:inline-flex">
         <i class="h-2 w-2 rounded-full bg-pred"></i><i class="h-2 w-2 rounded-full bg-pgreen"></i><i class="h-2 w-2 rounded-full bg-pyellow"></i><i class="h-2 w-2 rounded-full bg-pblue"></i>
       </span>
     </h1>
-    <div class="flex items-center gap-2">
+    <div class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
       <span id="modeChip" class="hidden rounded-lg border border-line bg-panel px-2.5 py-1.5 text-sm font-semibold text-muted sm:inline" hidden></span>
-      <button id="roomBtn" class="flex items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-gold" aria-expanded="false" aria-controls="roomPanel" hidden>
-        <span class="text-muted">Room</span><span id="roomCode" class="font-mono tracking-wider">------</span>
+      <button id="roomBtn" class="flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-line bg-panel px-2 py-1.5 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-gold sm:px-2.5" aria-expanded="false" aria-controls="roomPanel" aria-label="Room code" hidden>
+        <span class="hidden text-muted min-[420px]:inline">Room</span><span id="roomCode" class="font-mono tracking-wider">------</span>
       </button>
-      <button id="copyLink" class="rounded-lg bg-gold px-3 py-1.5 text-sm font-bold text-[#2a2208] active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ink" hidden>Invite</button>
-      <button id="menuBtn" class="rounded-lg border border-line bg-felt2 px-3 py-1.5 text-sm font-bold active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold" hidden>Menu</button>
+      <button id="copyLink" class="whitespace-nowrap rounded-lg bg-gold px-2.5 py-1.5 text-sm font-bold text-[#2a2208] active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ink sm:px-3" hidden>Invite</button>
+      <button id="menuBtn" class="whitespace-nowrap rounded-lg border border-line bg-felt2 px-2.5 py-1.5 text-sm font-bold active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold sm:px-3" hidden>Menu</button>
     </div>
   </header>
 
@@ -146,7 +149,7 @@
         <input id="nick" maxlength="16" placeholder="Your name" autocomplete="nickname" class="w-full rounded-lg border border-line bg-felt px-3 py-2 text-base text-ink placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-gold" aria-label="Your name">
         <div id="pickWrap" class="flex flex-col gap-1.5">
           <div class="text-xs text-muted">Your color <span class="opacity-80">(only changes how the board looks on your phone)</span></div>
-          <div id="colorPick" class="grid grid-cols-4 gap-2" role="radiogroup" aria-label="Your color"></div>
+          <div id="colorPick" aria-label="Your color"></div>
         </div>
         <div id="joinRow" class="flex flex-wrap gap-2"></div>
         <ol id="playerList" class="flex flex-col gap-1.5"></ol>
@@ -513,7 +516,9 @@
   dieEl.className = "die-face grid aspect-square w-12 shrink-0 grid-cols-3 grid-rows-3 place-items-center rounded-xl bg-paper p-1.5 disabled:cursor-default min-[400px]:w-14 sm:w-16 focus:outline-none focus-visible:ring-4 focus-visible:ring-gold";
   let shownFace = 1;
   let rollColor = null, holdColor = null, holdUntil = 0;
-  function holdDie(c) { holdColor = c; holdUntil = Date.now() + 1000; setTimeout(render, 1050); }
+  // After a roll the dice stays with the roller only long enough to read the
+  // number, then moves to the next player.
+  function holdDie(c) { holdColor = c; holdUntil = Date.now() + 450; setTimeout(render, 480); }
   function drawFace(v) {
     shownFace = v;
     const cells = PIP_CELLS[v] || [];
@@ -602,7 +607,7 @@
     paint(el("circle", { r: .34, stroke: "#1b1b1b", "stroke-width": .05 }, g), c, "fill");
     el("circle", { r: .17, fill: "rgba(255,255,255,.85)" }, g);
     paint(el("circle", { r: .09 }, g), c, "fill");
-    g.addEventListener("click", () => actions.move(c, i));
+    g.addEventListener("click", () => { try { g.blur(); } catch {} actions.move(c, i); });
     g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); actions.move(c, i); } });
     tokenEls[c + i] = g;
   }
@@ -941,12 +946,18 @@
     renameTimer = setTimeout(() => { if (isNet() && joined(state) && state.phase === "lobby") actions.join(); }, 600);
   });
 
+  // Rebuild a block only when what it shows has changed, so buttons are not
+  // replaced under the player's finger while timers refresh the panel.
+  function keyed(el, key, build) { if (el._key === key) return; el._key = key; el.innerHTML = ""; build(); }
+
   function secsLeft(at) { return Math.max(0, Math.ceil((at - Date.now()) / 1000)); }
 
   function renderPanel() {
     const s = state;
     const title = $("turnTitle"), hint = $("turnHint"), label = $("turnLabel"), sw = $("turnSwatch"), acts = $("turnActions");
-    acts.innerHTML = "";
+    const actKey = [loaded, s.phase, joined(s), s.players.length, mode].join("|");
+    const buildActs = acts._key !== actKey;
+    if (buildActs) { acts._key = actKey; acts.innerHTML = ""; }
     const canRoll = canRollNow();
     dieEl.disabled = !canRoll;
     dieEl.classList.toggle("ready", canRoll);
@@ -970,7 +981,7 @@
         title.textContent = `${n} players ready`;
         hint.textContent = mode === "online" && s.startAt ? `Starting in ${secsLeft(s.startAt)}s. More players can still join.` : "Anyone at the table can press Start.";
       }
-      if (joined(s)) {
+      if (joined(s) && buildActs) {
         const st = mk("button", BTN_PRIMARY, "Start game");
         st.disabled = n < 2;
         st.addEventListener("click", actions.start);
@@ -996,20 +1007,22 @@
       label.textContent = "Game over";
       title.textContent = s.winners[0] ? `${seatName(s, s.winners[0])} wins!` : "Game over";
       hint.textContent = s.winners.map((c, k) => `${k + 1}. ${seatName(s, c)}`).join("   ");
-      const again = mk("button", BTN_PRIMARY, mode === "online" ? "Find another game" : "Play again");
-      again.addEventListener("click", () => { if (mode === "online") { leaveCurrent(); startOnline(); } else actions.reset(); });
-      acts.appendChild(again);
+      if (buildActs) {
+        const again = mk("button", BTN_PRIMARY, mode === "online" ? "Find another game" : "Play again");
+        again.addEventListener("click", () => { if (mode === "online") { leaveCurrent(); startOnline(); } else actions.reset(); });
+        acts.appendChild(again);
+      }
     }
 
     // name + colour (online/friends only)
     const net = isNet();
     nickEl.hidden = !(net && s.phase === "lobby" && loaded);
     $("pickWrap").hidden = !net || !loaded;
-    pickEl.innerHTML = "";
-    if (net) pickEl.appendChild(colorButtons(pref, c => { pref = c; lsSet("ludo.pref", c); render(); }));
+    keyed(pickEl, net + pref, () => { if (net) pickEl.appendChild(colorButtons(pref, c => { pref = c; lsSet("ludo.pref", c); render(); })); });
 
     // join / leave
-    const jr = $("joinRow"); jr.innerHTML = "";
+    const jr = $("joinRow");
+    keyed(jr, [net, loaded, s.phase, joined(s), s.players.length, mode, !!mySlot()].join("|"), () => {
     if (net && loaded && s.phase === "lobby") {
       if (!joined(s)) {
         const b = mk("button", BTN_PRIMARY + " flex-1 !py-2.5 text-base", s.players.length >= 4 ? "Table is full" : "Join game");
@@ -1024,11 +1037,13 @@
     } else if (net && loaded && !mySlot()) {
       jr.appendChild(mk("div", "text-sm text-muted", "You're watching this game. You can join the next one."));
     }
+    });
 
     // player list
-    const pl = $("playerList"); pl.innerHTML = "";
+    const pl = $("playerList");
     const list = s.phase === "lobby" ? s.players.map(p => ({ p, slot: COLORS.find(c => s.seats[c] && s.seats[c].id === p.id) }))
       : seated(s).map(c => ({ p: s.seats[c], slot: c }));
+    keyed(pl, JSON.stringify([list, s.winners, s.phase, joined(s), COLORS.map(displayColor)]), () => {
     if (!list.length) pl.appendChild(mk("li", "text-sm text-muted", "No one has joined yet."));
     list.forEach(({ p, slot }, k) => {
       const li = mk("li", "flex min-w-0 items-center gap-2 rounded-lg bg-felt/60 px-2.5 py-2 text-sm");
@@ -1040,9 +1055,11 @@
       li.appendChild(mk("span", "shrink-0 text-xs text-muted", place >= 0 ? `#${place + 1}` : (s.seats[slot] && s.seats[slot].bot) ? "Computer" : `P${k + 1}`));
       pl.appendChild(li);
     });
+    });
 
     // end game / clear table
-    const la = $("lobbyActions"); la.innerHTML = "";
+    const la = $("lobbyActions");
+    keyed(la, [loaded, mode, s.phase, confirmReset, s.players.length].join("|"), () => {
     if (loaded && mode !== "online") {
       const playing = s.phase === "playing";
       if (!confirmReset) {
@@ -1060,17 +1077,18 @@
         la.append(yes, no);
       }
     }
+    });
 
     // log
-    const logEl = $("log"); logEl.innerHTML = "";
-    (s.log || []).forEach((e, k) => {
+    const logEl = $("log");
+    keyed(logEl, JSON.stringify([s.log, COLORS.map(displayColor)]), () => (s.log || []).forEach((e, k) => {
       const li = mk("li", "flex items-baseline gap-2 " + (k === 0 ? "font-semibold text-ink" : "text-muted"));
       const pip = mk("span", "h-2 w-2 shrink-0 translate-y-[-1px] rounded-full"); pip.style.background = e.c ? dHex(e.c) : "#a9c3ba";
       li.append(pip, mk("span", "", e.t));
       logEl.appendChild(li);
-    });
+    }));
     $("roomCode").textContent = room || "------";
-    $("menuBtn").textContent = confirmMenu ? "Tap again to leave" : "Menu";
+    $("menuBtn").textContent = confirmMenu ? "Leave game?" : "Menu";
   }
 
   // ---------- corner name tags ----------
