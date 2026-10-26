@@ -24,18 +24,47 @@ const SHOW: Record<number, { x: number; y: number }> = {
   5: { x: 90, y: 0 },
 };
 const PIPS: Record<number, number[]> = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
+// Outward normal of each face before the cube turns (CSS axes: y points down, z towards the viewer).
+const NORMALS: Record<number, [number, number, number]> = { 1: [0, 0, 1], 6: [0, 0, -1], 3: [1, 0, 0], 4: [-1, 0, 0], 2: [0, -1, 0], 5: [0, 1, 0] };
+// Light comes from in front of the dice, slightly top-left, so the face up front stays bright white.
+const LIGHT = (() => {
+  const l = [-0.2, -0.35, 0.92];
+  const m = Math.hypot(...l);
+  return l.map((c) => c / m);
+})();
 
 // The cube's orientation survives the dice moving from one name tag to another.
 const angles = { x: -18, y: 22, z: 0 };
+// Resting tilt: mostly face-on like Ludo King, with a sliver of the top and side showing.
+const TILT_X = -9;
+const TILT_Y = 10;
 let handledRoll = 0;
 
 const cubeTransform = () => `rotateZ(${angles.z}deg) rotateX(${angles.x}deg) rotateY(${angles.y}deg)`;
+
+/** Darkens each face by how far it turns away from the light, so the cube reads as solid. */
+function shadeFaces(cube: HTMLElement, ms: number) {
+  const r = (d: number) => (d * Math.PI) / 180;
+  const [cx, sx, cy, sy, cz, sz] = [Math.cos(r(angles.x)), Math.sin(r(angles.x)), Math.cos(r(angles.y)), Math.sin(r(angles.y)), Math.cos(r(angles.z)), Math.sin(r(angles.z))];
+  cube.querySelectorAll<HTMLElement>(".dice-face").forEach((face) => {
+    const [x0, y0, z0] = NORMALS[Number(face.dataset.v)];
+    // Same order as cubeTransform: rotateY first, then rotateX, then rotateZ.
+    const x1 = x0 * cy + z0 * sy, z1 = -x0 * sy + z0 * cy;
+    const y2 = y0 * cx - z1 * sx, z2 = y0 * sx + z1 * cx;
+    const x3 = x1 * cz - y2 * sz, y3 = x1 * sz + y2 * cz;
+    const lit = Math.max(0, x3 * LIGHT[0] + y3 * LIGHT[1] + z2 * LIGHT[2]);
+    const light = face.querySelector<HTMLElement>(".dice-light");
+    if (!light) return;
+    light.style.transition = ms > 0 ? `opacity ${ms}ms cubic-bezier(.15,.65,.25,1)` : "none";
+    light.style.opacity = Math.min(0.5, Math.max(0, (0.82 - lit) * 0.75)).toFixed(3);
+  });
+}
 /** Lands on `v` after a few full tumbles, always spinning forward. */
 function aimAt(v: number, spins: boolean) {
   const t = SHOW[v] || SHOW[1];
   // A small tilt keeps it looking 3D while still showing the top face clearly.
-  const tiltX = -14;
-  const tiltY = t.x === 0 ? 16 : 0;
+  const tiltX = TILT_X;
+  const tiltY = t.x === 0 ? TILT_Y : 0;
   const next = (cur: number, base: number, turns: number) => {
     let n = base + Math.ceil((cur - base) / 360) * 360;
     if (spins) n += turns * 360;
@@ -48,8 +77,9 @@ function aimAt(v: number, spins: boolean) {
 
 function Face({ v, place }: { v: number; place: string }) {
   return (
-    <div className="dice-face" style={{ transform: `${place} translateZ(calc(var(--die) / 2))` }}>
-      {Array.from({ length: 9 }, (_, k) => (PIPS[v].includes(k) ? <span key={k} className="dice-pip" /> : <span key={k} />))}
+    <div className="dice-face" data-v={v} style={{ transform: `${place} translateZ(calc(var(--die) / 2))` }}>
+      {Array.from({ length: 9 }, (_, k) => (PIPS[v].includes(k) ? <span key={k} className={cn("dice-pip", v === 1 && "dice-pip-one")} /> : <span key={k} />))}
+      <span className="dice-light" />
     </div>
   );
 }
@@ -68,6 +98,7 @@ export function Dice3D() {
     if (!game.rolling) aimAt(game.dieFace, false);
     cube.style.transition = "none";
     cube.style.transform = cubeTransform();
+    shadeFaces(cube, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -86,6 +117,7 @@ export function Dice3D() {
     cube.style.transition = left > 0 ? `transform ${left}ms cubic-bezier(.15,.65,.25,1)` : "none";
     requestAnimationFrame(() => {
       cube.style.transform = cubeTransform();
+      shadeFaces(cube, left);
     });
     const t = setTimeout(() => root.classList.remove("rolling"), left);
     return () => clearTimeout(t);
@@ -97,12 +129,13 @@ export function Dice3D() {
     if (!cube || game.rolling) return;
     const t = SHOW[game.dieFace];
     const norm = (a: number) => ((Math.round(a) % 360) + 360) % 360;
-    const wantX = norm(t.x - 14);
-    const wantY = norm(t.y + (t.x === 0 ? 16 : 0));
+    const wantX = norm(t.x + TILT_X);
+    const wantY = norm(t.y + (t.x === 0 ? TILT_Y : 0));
     if (norm(angles.x) !== wantX || norm(angles.y) !== wantY) {
       aimAt(game.dieFace, false);
       cube.style.transition = "transform 300ms ease-out";
       cube.style.transform = cubeTransform();
+      shadeFaces(cube, 300);
     }
   });
 
