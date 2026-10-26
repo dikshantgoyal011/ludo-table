@@ -1,0 +1,47 @@
+import type { Color, Mode } from "./types";
+
+// Internal seats ("slots"), clockwise around the board. Game logic always
+// works in slots; what colour a slot looks like is decided per viewer.
+export const COLORS: Color[] = ["red", "green", "yellow", "blue"];
+export const CI: Record<Color, number> = { red: 0, green: 1, yellow: 2, blue: 3 };
+export const NAMES: Record<Color, string> = { red: "Red", green: "Green", yellow: "Yellow", blue: "Blue" };
+
+export const START: Record<Color, number> = { red: 0, green: 13, yellow: 26, blue: 39 };
+export const SAFE = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
+export const FINISH = 56;
+
+/** Which slots are used for 1..4 players. Two players sit opposite each other. */
+export const SLOTS_FOR: Color[][] = [[], ["red"], ["red", "yellow"], ["red", "green", "yellow"], ["red", "green", "yellow", "blue"]];
+
+/** Online: a player who doesn't act in 30s gets an automatic move. */
+export const ONLINE_TURN_LIMIT = 30_000;
+/** Online: once a table is full it starts after this short countdown. */
+export const ONLINE_FULL_START_DELAY = 3_000;
+/** How long the dice tumbles before it lands. */
+export const DICE_ROLL_MS = 820;
+/** A remote roll animates the dice first; tokens wait this long before moving. */
+export const REMOTE_MOVE_DELAY = DICE_ROLL_MS + 120;
+/** Step-by-step token movement: time per square. */
+export const STEP_MS = 140;
+
+export const PLAYER_COUNTS = [2, 3, 4] as const;
+export type PlayerCount = (typeof PLAYER_COUNTS)[number];
+
+export const MODES: Record<Mode, { title: string; desc: string; chip: string }> = {
+  online: { title: "Play online", desc: "Get matched with players from anywhere who are looking for a game.", chip: "Online" },
+  computer: { title: "Play with computer", desc: "You against 1 to 3 computer players.", chip: "Vs computer" },
+  local: { title: "Play on this device", desc: "2 to 4 players pass one phone around.", chip: "This device" },
+  friends: { title: "Play with friends", desc: "Private room. Share a code or invite link.", chip: "Friends" },
+};
+
+export const MODE_ORDER: Mode[] = ["online", "computer", "local", "friends"];
+
+export const QUICK_CHAT = ["👋 Hi!", "Good luck!", "Nice move!", "Hurry up! ⏳", "Oops 😅", "Good game!"];
+
+export const isColor = (v: unknown): v is Color => typeof v === "string" && (COLORS as string[]).includes(v);
+export const isMode = (v: unknown): v is Mode => typeof v === "string" && v in MODES;
+
+/** Room codes: 3 to 12 letters or numbers. */
+export const cleanRoomCode = (v: string) => v.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+export const isRoomCode = (v: string) => /^[a-z0-9]{3,12}$/.test(v);
+export const newRoomCode = () => Math.random().toString(36).slice(2, 8);
