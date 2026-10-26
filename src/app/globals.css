@@ -169,63 +169,65 @@
   inset: 0;
   transform-style: preserve-3d;
 }
-/* Ludo King style: a glossy white body with rounded edges and black pips sunk into it,
-   the same on every theme. */
+/* Mobile-Ludo style (Ludo King / Ludo Club): at rest the dice sits flat and face-on, a
+   white rounded tile with a raised bevel and dark pips, the same on every theme. */
 .dice-face,
 .dice-core {
   position: absolute;
   inset: 0;
-  border-radius: 14%;
+  border-radius: 20%;
 }
 .dice-face {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
   place-items: center;
-  padding: 15%;
+  padding: 16%;
   background:
-    radial-gradient(120% 90% at 28% 18%, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0) 55%),
-    linear-gradient(150deg, #ffffff 0%, #f7f8fa 60%, #e6e8ee 100%);
-  /* Rounded bevel: a bright rim on top, a soft grey fall-off at the bottom edge. */
+    radial-gradient(90% 70% at 30% 22%, #ffffff 0%, rgba(255, 255, 255, 0) 70%),
+    linear-gradient(160deg, #ffffff 0%, #f6f6f8 55%, #e4e5ea 100%);
+  /* Raised tile: bright rim top-left, grey rim bottom-right, thin outline. */
   box-shadow:
-    inset 0 calc(var(--die) * 0.04) calc(var(--die) * 0.05) rgba(255, 255, 255, 0.95),
-    inset 0 calc(var(--die) * -0.06) calc(var(--die) * 0.1) rgba(70, 76, 96, 0.22),
-    inset 0 0 0 1px rgba(40, 44, 60, 0.08);
+    inset calc(var(--die) * 0.03) calc(var(--die) * 0.035) calc(var(--die) * 0.04) rgba(255, 255, 255, 0.95),
+    inset calc(var(--die) * -0.035) calc(var(--die) * -0.05) calc(var(--die) * 0.06) rgba(60, 64, 82, 0.28),
+    inset 0 0 0 1px rgba(30, 34, 48, 0.14);
   backface-visibility: hidden;
 }
-/* Three inner planes fill the gaps that the rounded corners leave; light grey so the
-   corners read as a rounded edge rather than a dark seam. */
+/* Three inner planes fill the gaps between faces while it tumbles. Same corner radius
+   as the faces, so nothing peeks out behind the front face at rest. */
 .dice-core {
-  inset: 1px;
-  background: #cfd2db;
-  border-radius: 6%;
+  inset: 2px;
+  background: #c9ccd6;
+}
+/* Only needed mid-roll; at rest they'd show as a hairline through the front face. */
+.dice:not(.rolling) .dice-core {
+  visibility: hidden;
 }
 .dice-pip {
   position: relative;
-  width: 74%;
-  height: 74%;
+  width: 76%;
+  height: 76%;
   border-radius: 9999px;
-  background: radial-gradient(circle at 38% 32%, #4a4d57 0%, #1a1b20 45%, #050507 100%);
-  /* Sunk into the face: dark lip on top, a thin highlight under the bottom edge. */
+  background: radial-gradient(circle at 40% 35%, #3a3d46 0%, #17181d 55%, #0a0a0d 100%);
+  /* Pressed in: shadow on the upper lip, a faint highlight on the lower one. */
   box-shadow:
-    inset 0 calc(var(--die) * 0.018) calc(var(--die) * 0.025) rgba(0, 0, 0, 0.85),
-    0 calc(var(--die) * 0.012) 0 rgba(255, 255, 255, 0.9);
+    inset 0 calc(var(--die) * 0.015) calc(var(--die) * 0.02) rgba(0, 0, 0, 0.8),
+    0 calc(var(--die) * 0.01) 0 rgba(255, 255, 255, 0.85);
 }
 .dice-pip-one {
-  width: 108%;
-  height: 108%;
+  width: 112%;
+  height: 112%;
 }
-/* Glossy glint on each pip. */
+/* Small glint on each pip. */
 .dice-pip::after {
   content: "";
   position: absolute;
-  left: 24%;
-  top: 20%;
-  width: 28%;
-  height: 22%;
+  left: 26%;
+  top: 22%;
+  width: 24%;
+  height: 18%;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.35);
-  filter: blur(0.5px);
+  background: rgba(255, 255, 255, 0.28);
 }
 /* Per-face shading, set from the cube's orientation in dice-3d.tsx. */
 .dice-light {
@@ -246,8 +248,12 @@
   background: radial-gradient(closest-side, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0));
 }
 /* Glow while it's waiting to be rolled (on the button: a filter on the cube would flatten it). */
+.dice {
+  filter: drop-shadow(0 calc(var(--die) * 0.05) calc(var(--die) * 0.05) rgba(0, 0, 0, 0.3));
+}
 .dice.ready {
-  filter: drop-shadow(0 0 calc(var(--die) * 0.1) rgba(255, 255, 255, 0.75));
+  filter: drop-shadow(0 calc(var(--die) * 0.05) calc(var(--die) * 0.05) rgba(0, 0, 0, 0.3))
+    drop-shadow(0 0 calc(var(--die) * 0.1) rgba(255, 255, 255, 0.75));
 }
 .dice.rolling .dice-hop {
   animation: dice-hop var(--roll-ms, 820ms) cubic-bezier(0.25, 0.7, 0.3, 1);

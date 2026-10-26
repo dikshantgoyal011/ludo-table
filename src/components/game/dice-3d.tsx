@@ -34,10 +34,11 @@ const LIGHT = (() => {
 })();
 
 // The cube's orientation survives the dice moving from one name tag to another.
-const angles = { x: -18, y: 22, z: 0 };
-// Resting tilt: mostly face-on like Ludo King, with a sliver of the top and side showing.
-const TILT_X = -9;
-const TILT_Y = 10;
+const angles = { x: 0, y: 0, z: 0 };
+// Resting tilt: none. At rest the dice faces you flat, like in Ludo King / Ludo Club;
+// it only shows its 3D sides while it tumbles.
+const TILT_X = 0;
+const TILT_Y = 0;
 let handledRoll = 0;
 
 const cubeTransform = () => `rotateZ(${angles.z}deg) rotateX(${angles.x}deg) rotateY(${angles.y}deg)`;
@@ -72,7 +73,8 @@ function aimAt(v: number, spins: boolean) {
   };
   angles.x = next(angles.x, t.x + tiltX, spins ? 2 + Math.floor(Math.random() * 2) : 0);
   angles.y = next(angles.y, t.y + tiltY, spins ? 1 + Math.floor(Math.random() * 2) : 0);
-  angles.z = spins ? (Math.random() * 16 - 8) : angles.z;
+  // Land square-on: a full spin while rolling, always ending at 0.
+  angles.z = next(angles.z, 0, spins ? 1 : 0);
 }
 
 function Face({ v, place }: { v: number; place: string }) {
@@ -131,7 +133,7 @@ export function Dice3D() {
     const norm = (a: number) => ((Math.round(a) % 360) + 360) % 360;
     const wantX = norm(t.x + TILT_X);
     const wantY = norm(t.y + (t.x === 0 ? TILT_Y : 0));
-    if (norm(angles.x) !== wantX || norm(angles.y) !== wantY) {
+    if (norm(angles.x) !== wantX || norm(angles.y) !== wantY || norm(angles.z) !== 0) {
       aimAt(game.dieFace, false);
       cube.style.transition = "transform 300ms ease-out";
       cube.style.transform = cubeTransform();
