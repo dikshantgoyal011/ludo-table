@@ -1,12 +1,23 @@
 "use client";
 
-import { MessageCircle } from "lucide-react";
+import { Bot, MessageCircle } from "lucide-react";
 import { useGame, useSettings } from "@/hooks/use-game";
 import { COLORS, FINISH } from "@/lib/game/constants";
 import type { Color } from "@/lib/game/types";
 import { themeOf } from "@/lib/theme/themes";
 import { cn } from "@/lib/utils";
 import { Dice3D } from "./dice-3d";
+
+/** Three bouncing dots for "typing…". */
+export function TypingDots() {
+  return (
+    <span className="typing-dots" aria-hidden="true">
+      <span />
+      <span />
+      <span />
+    </span>
+  );
+}
 
 /**
  * Name tag at one corner of the board. Corners: 0 top-left, 1 top-right,
@@ -38,7 +49,9 @@ export function PlayerTag({ corner }: { corner: number }) {
         ? "Ready"
         : isTurn
           ? seat.bot
-            ? "Thinking…"
+            ? seat.takeover
+              ? "Bot playing…"
+              : "Thinking…"
             : game.mine(s, c)
               ? s.roll
                 ? "Pick a token"
@@ -46,12 +59,17 @@ export function PlayerTag({ corner }: { corner: number }) {
               : s.roll
                 ? "Moving…"
                 : "Rolling…"
-          : `${home}/4 home` + (seat.bot ? " · Computer" : "");
+          : `${home}/4 home` + (seat.bot && !seat.takeover ? " · Computer" : "");
   if (isTurn && seat && game.mode === "online" && !seat.bot) meta += ` · ${game.turnSecsLeft()}s`;
+  // Offline: show how much offline time is left before the computer takes over.
+  if (seat?.away && s.phase === "playing" && place < 0)
+    meta = seat.bot ? "Offline" : `Offline · bot in ${Math.ceil(game.offlineLeft(seat) / 1000)}s`;
 
   const showChat = you && game.isNet() && game.online;
   const bubble = seat ? game.bubbles[seat.id] : undefined;
   const showBubble = !!bubble && Date.now() < bubble.until;
+  const showTyping = !showBubble && !!seat && game.isTyping(seat.id);
+  const takeover = !!seat?.takeover && s.phase === "playing";
 
   return (
     <div
@@ -76,10 +94,45 @@ export function PlayerTag({ corner }: { corner: number }) {
           {bubble!.text}
         </div>
       )}
+      {showTyping && (
+        <div
+          className={cn(
+            "pointer-events-none absolute z-20 flex items-center gap-1.5 rounded-xl bg-paper px-3 py-1.5 text-sm font-semibold text-[#23302c]/70 italic shadow-lg",
+            top ? "top-full mt-1.5" : "bottom-full mb-1.5",
+            right ? "right-1" : "left-1",
+          )}
+        >
+          typing
+          <TypingDots />
+        </div>
+      )}
       <div className={cn("flex min-w-0 flex-1 flex-col gap-0.5", right && "items-end")}>
         <div className={cn("flex max-w-full min-w-0 items-center gap-1.5 leading-tight font-bold", right && "flex-row-reverse")}>
           <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: seat ? hex : "rgb(var(--c-line))" }} />
           <span className="truncate text-sm sm:text-base">{seat ? seat.nick + (you ? " (you)" : "") : "Empty"}</span>
+          {takeover &&
+            (you ? (
+              <button
+                type="button"
+                role="switch"
+                aria-checked="true"
+                aria-label="Bot is playing for you. Turn it off to play yourself."
+                title="Turn the bot off and play yourself"
+                onClick={game.takeBack}
+                className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-primary px-2 text-xs font-bold text-primary-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95"
+              >
+                <Bot className="size-4" strokeWidth={2.2} />
+                Bot on
+                <span className="ml-0.5 flex h-4 w-7 items-center justify-end rounded-full bg-primary-foreground/30 p-0.5">
+                  <span className="h-3 w-3 rounded-full bg-primary-foreground" />
+                </span>
+              </button>
+            ) : (
+              <span className="flex h-6 shrink-0 items-center gap-1 rounded-full bg-background/70 px-2 text-xs font-bold">
+                <Bot className="size-3.5" strokeWidth={2.2} />
+                Bot on
+              </span>
+            ))}
           {showChat && (
             <button
               type="button"

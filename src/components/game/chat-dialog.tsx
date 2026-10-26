@@ -8,6 +8,7 @@ import { useGame, useSettings } from "@/hooks/use-game";
 import { COLORS, QUICK_CHAT } from "@/lib/game/constants";
 import { themeOf } from "@/lib/theme/themes";
 import { cn } from "@/lib/utils";
+import { TypingDots } from "./player-tag";
 
 /** Table chat for online and friends games. */
 export function ChatDialog() {
@@ -26,9 +27,19 @@ export function ChatDialog() {
   const send = (t: string) => {
     game.sendChat(t);
   };
+  const typers = game.typingNames();
 
   return (
-    <Dialog open={game.chatOpen} onOpenChange={(o) => (o ? game.openChat() : game.closeChat())}>
+    <Dialog
+      open={game.chatOpen}
+      onOpenChange={(o) => {
+        if (o) game.openChat();
+        else {
+          game.setTyping(false);
+          game.closeChat();
+        }
+      }}
+    >
       <DialogContent className="max-h-[80vh]">
         <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
           <DialogTitle>Table chat</DialogTitle>
@@ -58,6 +69,14 @@ export function ChatDialog() {
             );
           })}
         </ul>
+        <div className="flex h-5 items-center gap-1.5 px-4 text-xs text-muted-foreground italic" aria-live="polite">
+          {typers.length > 0 && (
+            <>
+              <TypingDots />
+              {typers.length === 1 ? `${typers[0]} is typing` : typers.length === 2 ? `${typers[0]} and ${typers[1]} are typing` : "Several people are typing"}
+            </>
+          )}
+        </div>
         <div className="flex gap-2 overflow-x-auto px-3 pb-2">
           {QUICK_CHAT.map((q) => (
             <button
@@ -79,7 +98,14 @@ export function ChatDialog() {
             setText("");
           }}
         >
-          <Input value={text} onChange={(e) => setText(e.target.value)} maxLength={200} placeholder="Type a message" aria-label="Message" autoFocus />
+          <Input
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              game.setTyping(e.target.value.trim().length > 0);
+            }}
+            onBlur={() => game.setTyping(false)}
+            maxLength={200} placeholder="Type a message" aria-label="Message" autoFocus />
           <Button type="submit" className="h-10 px-4">
             Send
           </Button>

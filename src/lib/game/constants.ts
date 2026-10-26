@@ -15,6 +15,12 @@ export const SLOTS_FOR: Color[][] = [[], ["red"], ["red", "yellow"], ["red", "gr
 
 /** Online: a player who doesn't act in 30s gets an automatic move. */
 export const ONLINE_TURN_LIMIT = 30_000;
+/** Online/friends: how long a player may be offline in total per game before the computer plays for them. */
+export const OFFLINE_ALLOWANCE = 60_000;
+/** Online/friends: a dropped connection only counts as offline after this long (covers quick reconnects). */
+export const AWAY_GRACE = 3_000;
+/** How long a "typing…" hint lasts without a fresh signal. */
+export const TYPING_TTL = 4_000;
 /** Online: once a table is full it starts after this short countdown. */
 export const ONLINE_FULL_START_DELAY = 3_000;
 /** How long the dice tumbles before it lands. */

@@ -9,18 +9,22 @@ import type { NetMessage, PeerLink, RoomTransport, TransportFactory } from "@/li
 import type { SoundName } from "@/lib/settings/settings";
 import type { Services } from "@/lib/services/types";
 import {
+  AWAY_GRACE,
   CI,
   COLORS,
   DICE_ROLL_MS,
   FINISH,
+  OFFLINE_ALLOWANCE,
   ONLINE_FULL_START_DELAY,
   ONLINE_TURN_LIMIT,
   REMOTE_MOVE_DELAY,
   STEP_MS,
+  TYPING_TTL,
 } from "./constants";
 import { rollDie } from "./dice";
 import { basePoint } from "./geometry";
 import {
+  addLog,
   applyMove,
   applyRoll,
   canMove,
@@ -34,7 +38,7 @@ import {
   seatsFor,
   validState,
 } from "./rules";
-import type { ChatMessage, Color, GameState, Mode } from "./types";
+import type { ChatMessage, Color, GameState, Mode, Seat } from "./types";
 
 export type NetKind = "" | "ok" | "bad";
 
@@ -87,6 +91,8 @@ export class GameController {
   unread = 0;
   chatOpen = false;
   bubbles: Record<string, { text: string; until: number }> = {};
+  /** Player id -> until when they count as typing. */
+  typing: Record<string, number> = {};
   // winner popup
   winOpen = false;
   winFinal = false;
@@ -114,6 +120,11 @@ export class GameController {
   private animBusyUntil = 0;
   private rotFrame = 0;
   private heartbeat: ReturnType<typeof setInterval> | null = null;
+  /** Host: when each player was last connected. */
+  private lastSeen: Record<string, number> = {};
+  private typingSentAt = 0;
+  /** My colour while a game is on; changing the colour setting waits for the next game. */
+  private lockedColor: Color | null = null;
 
   constructor(
     private services: Services,
@@ -147,6 +158,8 @@ export class GameController {
 
   /** Re-render everything that shows the table. */
   private emit() {
+    if (this.state.phase !== "playing") this.lockedColor = null;
+    else if (!this.lockedColor) this.lockedColor = this.pref;
     this.noteTurn();
     this.updateRotation();
     if (!this.rolling) {
@@ -213,7 +226,15 @@ export class GameController {
   displayColor(slot: Color): Color {
     const me = this.isNet() ? this.mySlot() : null;
     if (!me) return slot;
-    return COLORS[(CI[this.pref] + (CI[slot] - CI[me] + 4)) % 4];
+    return COLORS[(CI[this.myColor()] + (CI[slot] - CI[me] + 4)) % 4];
+  }
+  /** The colour I play as: the colour setting, frozen while a game is on. */
+  myColor(): Color {
+    return this.lockedColor || this.pref;
+  }
+  /** Colour can't be changed mid-game (the board would swap colours under everyone's eyes). */
+  colorLocked() {
+    return this.loaded && this.state.phase === "playing";
   }
   private targetTurns() {
     const s = this.mySlot();
@@ -240,6 +261,16 @@ export class GameController {
   }
   capacity() {
     return this.state.capacity || this.wantCount;
+  }
+  /** Offline time a player has left this game (ms), counting down while they're away. */
+  offlineLeft(seat: Seat) {
+    const bank = seat.bank ?? OFFLINE_ALLOWANCE;
+    return seat.away && seat.awayAt ? Math.max(0, bank - (Date.now() - seat.awayAt)) : bank;
+  }
+  /** Is the computer playing my seat because I was away? */
+  myTakeover() {
+    const c = this.mySlot();
+    return !!c && !!this.state.seats[c]?.takeover;
   }
   setBanner(t: string) {
     this.banner = t;
@@ -429,6 +460,22 @@ export class GameController {
   /** The colour I see myself as changed (online / friends). */
   colorChanged() {
     this.emit();
+  }
+  /** Turn the computer off for my seat and play myself again. */
+  takeBack = () => {
+    if (!this.myTakeover()) return;
+    if (this.isHost) this.hostTakeBack(this.myId);
+    else this.transport?.sendToHost({ type: "takeBack", id: this.myId });
+  };
+  private hostTakeBack(id: string) {
+    this.commit((s) => {
+      const c = COLORS.find((k) => s.seats[k]?.id === id);
+      const seat = c && s.seats[c];
+      if (!seat || !seat.takeover) return false;
+      seat.bot = false;
+      seat.takeover = false;
+      addLog(s, c, `${seat.nick} is back in control.`);
+    });
   }
   /**
    * Menu button. During an online/friends game the first tap only asks
@@ -803,6 +850,7 @@ export class GameController {
     };
     if (!msg.text) return false;
     this.chat = [...this.chat, msg].slice(-40);
+    delete this.typing[msg.id];
     if (!quiet) {
       if (msg.id !== this.myId && !this.chatOpen) this.unread++;
       if (msg.id !== this.myId) {
@@ -831,8 +879,32 @@ export class GameController {
       text,
       ts: Date.now(),
     };
+    this.typingSentAt = 0; // the message itself clears my "typing…" for everyone
     this.addChat(m);
     this.transport?.broadcast(m);
+  }
+  /** Tell the table I'm typing (or stopped). Repeats at most every 2s while typing. */
+  setTyping(on: boolean) {
+    if (!this.isNet() || !this.online) return;
+    const now = Date.now();
+    if (on ? now - this.typingSentAt < 2000 : !this.typingSentAt) return;
+    this.typingSentAt = on ? now : 0;
+    this.transport?.broadcast({ type: "typing", id: this.myId, on });
+  }
+  private noteTyping(id: string, on: boolean) {
+    if (!id || id === this.myId) return;
+    if (on) {
+      this.typing[id] = Date.now() + TYPING_TTL;
+      setTimeout(() => this.emit(), TYPING_TTL + 100);
+    } else delete this.typing[id];
+    this.emit();
+  }
+  isTyping(id: string) {
+    return (this.typing[id] || 0) > Date.now();
+  }
+  /** Names of the other players typing right now. */
+  typingNames() {
+    return this.state.players.filter((p) => this.isTyping(p.id)).map((p) => p.nick);
   }
   openChat() {
     this.chatOpen = true;
@@ -847,6 +919,8 @@ export class GameController {
     this.chat = [];
     this.unread = 0;
     this.bubbles = {};
+    this.typing = {};
+    this.typingSentAt = 0;
     this.chatOpen = false;
   }
 
@@ -860,18 +934,63 @@ export class GameController {
     }
   }
 
-  /** Host housekeeping every second: online countdowns and idle-player moves. */
+  /** Host housekeeping every second: online countdowns, idle-player moves and who's offline. */
   private ensureHeartbeat() {
     if (this.heartbeat || typeof window === "undefined") return;
     this.heartbeat = setInterval(() => {
-      if (!this.loaded || this.mode !== "online") return;
+      if (!this.loaded || !this.isNet()) return;
       const s = this.state;
-      if (this.isHost) {
+      if (this.isHost && s.phase === "playing") this.checkPresence();
+      if (this.isHost && this.mode === "online") {
         if (s.phase === "lobby" && s.startAt && Date.now() >= s.startAt && s.players.length >= (s.capacity || this.wantCount)) this.startGame();
         else if (s.phase === "playing" && !this.rolling && Date.now() - this.turnSeenAt > ONLINE_TURN_LIMIT) this.autoStep();
       }
       if (s.phase === "lobby" ? s.startAt : s.phase === "playing") this.emit();
     }, 1000);
+  }
+
+  /**
+   * Host: mark players who lost their connection as away and spend their
+   * offline time; when it runs out the computer plays for them until they
+   * come back and take over again.
+   */
+  private checkPresence() {
+    const now = Date.now();
+    const here = new Set([this.myId, ...(this.transport?.connectedIds() || [])]);
+    here.forEach((id) => (this.lastSeen[id] = now));
+    const s0 = this.state;
+    // Someone we haven't seen since becoming host gets the grace period from now.
+    seated(s0).forEach((c) => (this.lastSeen[s0.seats[c]!.id] ??= now));
+    const changed = seated(s0).some((c) => {
+      const seat = s0.seats[c]!;
+      if (s0.winners.includes(c)) return false;
+      const gone = now - this.lastSeen[seat.id] > AWAY_GRACE;
+      return gone !== !!seat.away || (seat.away && !seat.bot && this.offlineLeft(seat) <= 0);
+    });
+    if (!changed) return;
+    this.commit((s) => {
+      for (const c of seated(s)) {
+        const seat = s.seats[c]!;
+        if (s.winners.includes(c)) continue;
+        const gone = now - this.lastSeen[seat.id] > AWAY_GRACE;
+        if (gone && !seat.away) {
+          seat.away = true;
+          seat.awayAt = now;
+          if (seat.bank === undefined) seat.bank = OFFLINE_ALLOWANCE;
+          addLog(s, c, `${seat.nick} went offline.`);
+        } else if (!gone && seat.away) {
+          seat.bank = this.offlineLeft(seat);
+          seat.away = false;
+          delete seat.awayAt;
+          addLog(s, c, seat.takeover ? `${seat.nick} is back. The computer keeps playing until they take over.` : `${seat.nick} is back.`);
+        }
+        if (seat.away && !seat.bot && this.offlineLeft(seat) <= 0) {
+          seat.bot = true;
+          seat.takeover = true;
+          addLog(s, c, `${seat.nick} is still offline. The computer plays for them.`);
+        }
+      }
+    });
   }
 
   // ============================================================ networking
@@ -957,6 +1076,7 @@ export class GameController {
     this.retryTimer = null;
     this.transport?.close();
     this.transport = null;
+    this.lastSeen = {};
   }
 
   private async openRoom(code: string, carry?: GameState | null) {
@@ -1019,6 +1139,7 @@ export class GameController {
           if (m.type === "state") this.accept(m.state);
           else if (m.type === "chat") this.addChat(m);
           else if (m.type === "chatHistory" && Array.isArray(m.msgs)) m.msgs.slice(-40).forEach((x) => this.addChat(x, true));
+          else if (m.type === "typing") this.noteTyping(String(m.id || ""), !!m.on);
         },
         lost: (reason) => {
           if (!alive()) return;
@@ -1049,7 +1170,13 @@ export class GameController {
     else if (m.type === "start") this.startGame();
     else if (m.type === "chat") {
       if (this.addChat(m)) this.transport?.broadcast(m, link);
-    } else if (m.type === "state" && this.accept(m.state)) this.transport?.broadcast({ type: "state", state: this.state }, link);
+    } else if (m.type === "typing") {
+      // Only relay a guest's own typing signal.
+      const id = link.pid || String(m.id || "");
+      this.noteTyping(id, !!m.on);
+      this.transport?.broadcast({ type: "typing", id, on: !!m.on }, link);
+    } else if (m.type === "takeBack" && link.pid && m.id === link.pid) this.hostTakeBack(link.pid);
+    else if (m.type === "state" && this.accept(m.state)) this.transport?.broadcast({ type: "state", state: this.state }, link);
   }
 
   /** Invite link for the current friends room. */

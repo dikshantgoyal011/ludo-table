@@ -14,7 +14,10 @@ export type NetMessage =
   | { type: "start" }
   | { type: "state"; state: GameState }
   | ({ type: "chat" } & ChatMessage)
-  | { type: "chatHistory"; msgs: ChatMessage[] };
+  | { type: "chatHistory"; msgs: ChatMessage[] }
+  | { type: "typing"; id: string; on: boolean }
+  /** Guest to host: take my seat back from the computer. */
+  | { type: "takeBack"; id: string };
 
 /** One connected guest, as seen by the host. */
 export interface PeerLink {
@@ -52,6 +55,8 @@ export interface RoomTransport {
   sendToHost(msg: NetMessage): boolean;
   /** Number of guests currently connected (host only). */
   guestCount(): number;
+  /** Player ids of the guests currently connected (host only). */
+  connectedIds(): string[];
   close(): void;
 }
 

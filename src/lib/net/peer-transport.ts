@@ -125,6 +125,10 @@ export class PeerRoomTransport implements RoomTransport {
     return this.links.filter((l) => l.open).length;
   }
 
+  connectedIds() {
+    return this.links.filter((l) => l.open && l.pid).map((l) => l.pid as string);
+  }
+
   close() {
     this.closed = true;
     this.links.forEach((l) => {

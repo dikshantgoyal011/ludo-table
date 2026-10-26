@@ -161,7 +161,7 @@ export function PlayersPanel() {
         />
       )}
 
-      {net && game.loaded && (
+      {net && game.loaded && !game.colorLocked() && (
         <div className="flex flex-col gap-1.5">
           <div className="text-xs text-muted-foreground">
             Your color <span className="opacity-80">(only changes how the board looks on your phone)</span>
@@ -173,6 +173,12 @@ export function PlayersPanel() {
               game.colorChanged();
             }}
           />
+        </div>
+      )}
+      {net && game.loaded && game.colorLocked() && game.mySlot() && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: th.pieces[game.myColor()] }} />
+          Your color is locked until this game ends.
         </div>
       )}
 
@@ -204,7 +210,15 @@ export function PlayersPanel() {
                 {you ? " (you)" : ""}
               </span>
               <span className="shrink-0 text-xs text-muted-foreground">
-                {place >= 0 ? `#${place + 1}` : slot && s.seats[slot]?.bot ? "Computer" : `P${k + 1}`}
+                {place >= 0
+                  ? `#${place + 1}`
+                  : slot && s.seats[slot]?.takeover
+                    ? "Bot on"
+                    : slot && s.seats[slot]?.bot
+                      ? "Computer"
+                      : slot && s.seats[slot]?.away && playing
+                        ? "Offline"
+                        : `P${k + 1}`}
               </span>
             </li>
           );

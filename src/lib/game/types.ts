@@ -15,6 +15,14 @@ export interface Seat {
   id: string;
   nick: string;
   bot?: boolean;
+  /** Online/friends: the computer is playing for this (absent) person until they take back control. */
+  takeover?: boolean;
+  /** Online/friends: the person has lost their connection. */
+  away?: boolean;
+  /** When they went away (host clock, ms epoch). */
+  awayAt?: number;
+  /** Offline time left this game (ms), not counting the current absence. Unset = the full allowance. */
+  bank?: number;
 }
 
 export interface Player {
