@@ -19,10 +19,12 @@ export interface Seat {
   takeover?: boolean;
   /** Online/friends: the person has lost their connection. */
   away?: boolean;
-  /** When they went away (host clock, ms epoch). */
+  /** When they were last heard from before going away (host clock, ms epoch). */
   awayAt?: number;
-  /** Offline time left this game (ms), not counting the current absence. Unset = the full allowance. */
-  bank?: number;
+  /** Online: turns this person let run out without rolling. */
+  misses?: number;
+  /** Out of the game (missed too many turns). Their tokens leave the board. */
+  out?: boolean;
 }
 
 export interface Player {

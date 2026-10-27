@@ -76,9 +76,11 @@ export function Board() {
   }, [game]);
 
   const colorKey = COLORS.map((c) => game.displayColor(c)).join(",");
+  // Tokens keep a fixed drawing order: moving an element within the SVG would
+  // cancel its slide, which made some moves jump. Movable tokens get their
+  // halo and tap target in a separate layer on top instead.
   const views = game.tokenViews();
-  // Movable tokens are drawn last so they sit on top.
-  const ordered = [...views.filter((t) => !t.movable), ...views.filter((t) => t.movable)];
+  const movableViews = views.filter((t) => t.movable && !t.hidden);
   const hex = (slot: Color) => th.pieces[game.displayColor(slot)];
 
   return (
@@ -90,14 +92,29 @@ export function Board() {
         <g ref={rotRef}>
           <BoardSurface th={th} colorKey={colorKey} />
           <g>
-            {ordered.map((t) => (
+            {views.map((t) => (
               <g
                 key={t.c + t.i}
                 className={"token" + (t.movable ? " movable" : "") + (t.stepping ? " stepping" : "")}
-                tabIndex={t.movable ? 0 : -1}
-                role={t.movable ? "button" : undefined}
-                aria-label={t.movable ? "Move this token" : undefined}
                 style={{ transform: `translate(${t.x}px,${t.y}px) scale(${t.scale})`, display: t.hidden ? "none" : undefined }}
+              >
+                <ellipse cx={0.03} cy={0.1} rx={0.34} ry={0.3} fill="rgba(0,0,0,.28)" />
+                <circle r={0.34} stroke="#1b1b1b" strokeWidth={0.05} fill={hex(t.c)} />
+                <circle r={0.17} fill="rgba(255,255,255,.85)" />
+                <circle r={0.09} fill={hex(t.c)} />
+              </g>
+            ))}
+          </g>
+          {/* Tokens you can move: halo + tap target, above every token. */}
+          <g>
+            {movableViews.map((t) => (
+              <g
+                key={t.c + t.i}
+                className="token movable"
+                tabIndex={0}
+                role="button"
+                aria-label="Move this token"
+                style={{ transform: `translate(${t.x}px,${t.y}px) scale(${t.scale})`, transition: "none" }}
                 onClick={(e) => {
                   (e.currentTarget as SVGGElement).blur();
                   game.move(t.c, t.i);
@@ -109,12 +126,8 @@ export function Board() {
                   }
                 }}
               >
-                <circle r={0.62} fill="transparent" />
                 <circle className="halo" r={0.5} fill="none" stroke="#f2c94c" strokeWidth={0.13} />
-                <ellipse cx={0.03} cy={0.1} rx={0.34} ry={0.3} fill="rgba(0,0,0,.28)" />
-                <circle r={0.34} stroke="#1b1b1b" strokeWidth={0.05} fill={hex(t.c)} />
-                <circle r={0.17} fill="rgba(255,255,255,.85)" />
-                <circle r={0.09} fill={hex(t.c)} />
+                <circle r={0.62} fill="transparent" />
               </g>
             ))}
           </g>

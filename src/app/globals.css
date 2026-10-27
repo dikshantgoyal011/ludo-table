@@ -314,6 +314,41 @@
   }
 }
 
+/* ---------------------------------------------------------------- turn timer ring */
+.turn-ring-track,
+.turn-ring {
+  fill: none;
+  width: calc(100% - 3px);
+  height: calc(100% - 3px);
+  stroke-width: 3;
+}
+.turn-ring-track {
+  stroke: rgba(255, 255, 255, 0.14);
+}
+/* Drains around the name tag; duration and starting point are set inline. */
+.turn-ring {
+  stroke-dasharray: 100 100;
+  animation-name: turn-ring;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+@keyframes turn-ring {
+  0% {
+    stroke-dashoffset: 0;
+    stroke: #4ade80;
+  }
+  50% {
+    stroke: #facc15;
+  }
+  80% {
+    stroke: #f97316;
+  }
+  100% {
+    stroke-dashoffset: 100;
+    stroke: #ef4444;
+  }
+}
+
 /* ---------------------------------------------------------------- typing… */
 .typing-dots {
   display: inline-flex;

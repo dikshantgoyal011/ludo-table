@@ -47,10 +47,13 @@ export const canMove = (p: number, v: number) => p !== FINISH && (p === -1 ? v =
 export const movable = (s: GameState, c: Color, v: number) =>
   s.tokens[c].map((p, i) => (canMove(p, v) ? i : -1)).filter((i) => i >= 0);
 
+/** Seats still playing: not finished and not out. */
+export const inPlay = (s: GameState) => seated(s).filter((c) => !s.winners.includes(c) && !s.seats[c]?.out);
+
 export function nextTurn(s: GameState) {
   s.roll = null;
   s.sixes = 0;
-  const active = seated(s).filter((c) => !s.winners.includes(c));
+  const active = inPlay(s);
   if (active.length <= 1) {
     if (active.length === 1) s.winners.push(active[0]);
     s.phase = "done";
@@ -137,6 +140,23 @@ export function applyRoll(s: GameState, c: Color, v: number): boolean {
     return true;
   }
   s.roll = v;
+  return true;
+}
+
+/**
+ * c let the turn timer run out without rolling: the turn passes and it counts
+ * as a miss. After `maxMisses` misses the player is out and their tokens leave the board.
+ */
+export function missTurn(s: GameState, c: Color, maxMisses: number) {
+  const seat = s.seats[c];
+  if (s.phase !== "playing" || s.turn !== c || s.roll || !seat) return false;
+  seat.misses = (seat.misses || 0) + 1;
+  if (seat.misses >= maxMisses) {
+    seat.out = true;
+    s.tokens[c] = [-1, -1, -1, -1];
+    addLog(s, c, `${seat.nick} missed ${maxMisses} turns and is out of the game.`);
+  } else addLog(s, c, `${seat.nick} missed their turn (${seat.misses}/${maxMisses}).`);
+  nextTurn(s);
   return true;
 }
 

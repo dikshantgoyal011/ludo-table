@@ -212,13 +212,15 @@ export function PlayersPanel() {
               <span className="shrink-0 text-xs text-muted-foreground">
                 {place >= 0
                   ? `#${place + 1}`
-                  : slot && s.seats[slot]?.takeover
-                    ? "Bot on"
-                    : slot && s.seats[slot]?.bot
-                      ? "Computer"
-                      : slot && s.seats[slot]?.away && playing
-                        ? "Offline"
-                        : `P${k + 1}`}
+                  : slot && s.seats[slot]?.out
+                    ? "Out"
+                    : slot && s.seats[slot]?.takeover
+                      ? "Bot on"
+                      : slot && s.seats[slot]?.bot
+                        ? "Computer"
+                        : slot && playing && game.awayInfo(s.seats[slot]!).away
+                          ? "Offline"
+                          : `P${k + 1}`}
               </span>
             </li>
           );

@@ -16,6 +16,8 @@ export type NetMessage =
   | ({ type: "chat" } & ChatMessage)
   | { type: "chatHistory"; msgs: ChatMessage[] }
   | { type: "typing"; id: string; on: boolean }
+  /** "I'm still here", both ways. The host answers a guest's ping right away. */
+  | { type: "ping"; id: string }
   /** Guest to host: take my seat back from the computer. */
   | { type: "takeBack"; id: string };
 
@@ -55,8 +57,6 @@ export interface RoomTransport {
   sendToHost(msg: NetMessage): boolean;
   /** Number of guests currently connected (host only). */
   guestCount(): number;
-  /** Player ids of the guests currently connected (host only). */
-  connectedIds(): string[];
   close(): void;
 }
 

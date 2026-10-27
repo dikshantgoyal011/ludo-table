@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { getController } from "@/hooks/use-game";
 import { isRoomCode, MODE_ORDER, MODES } from "@/lib/game/constants";
 import type { Mode } from "@/lib/game/types";
+import type { ActiveRoom } from "@/lib/services/types";
 
 const ICONS: Record<Mode, [string, string]> = {
   online: ["#2563d4", "#1d9a52"],
@@ -18,6 +19,7 @@ const ICONS: Record<Mode, [string, string]> = {
 export function MenuScreen() {
   const router = useRouter();
   const [resume, setResume] = useState<Mode | null>(null);
+  const [rejoin, setRejoin] = useState<ActiveRoom | null>(null);
 
   useEffect(() => {
     const game = getController();
@@ -29,6 +31,7 @@ export function MenuScreen() {
     }
     game.exitToMenu();
     setResume(game.savedOffline()?.mode ?? null);
+    setRejoin(game.activeRoom());
   }, [router]);
 
   return (
@@ -37,6 +40,19 @@ export function MenuScreen() {
         <h2 className="text-3xl leading-tight font-extrabold sm:text-4xl">How do you want to play?</h2>
         <p className="text-muted-foreground">Real dice rolls, every number equally likely.</p>
       </div>
+      {rejoin && (
+        <Button
+          size="lg"
+          className="w-full"
+          onClick={() => {
+            const path = getController().rejoin();
+            if (path) router.push(path);
+            else setRejoin(null);
+          }}
+        >
+          Rejoin your {rejoin.mode === "online" ? "online" : "friends"} game
+        </Button>
+      )}
       {resume && (
         <Button
           size="lg"

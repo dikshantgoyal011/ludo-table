@@ -71,6 +71,16 @@ export interface SavedGame {
   state: GameState;
 }
 
+/** The online / friends game this player is seated in, so they can rejoin after closing the page. */
+export interface ActiveRoom {
+  mode: "online" | "friends";
+  room: string;
+  /** Online: table size. */
+  count: number;
+  /** Last time it was saved (ms epoch). */
+  at: number;
+}
+
 export interface GameSaveRepository {
   /** The unfinished computer / pass-and-play game, if any. */
   loadOffline(): SavedGame | null;
@@ -79,6 +89,10 @@ export interface GameSaveRepository {
   /** Last known state of a network room (lets a host carry on after a reload). */
   loadRoom(code: string): GameState | null;
   saveRoom(code: string, state: GameState): void;
+  /** The network game to offer "Rejoin" for, if any. */
+  loadActiveRoom(): ActiveRoom | null;
+  saveActiveRoom(room: ActiveRoom): void;
+  clearActiveRoom(): void;
 }
 
 export interface Services {

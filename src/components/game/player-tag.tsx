@@ -1,8 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { Bot, MessageCircle } from "lucide-react";
 import { useGame, useSettings } from "@/hooks/use-game";
-import { COLORS, FINISH } from "@/lib/game/constants";
+import { COLORS, FINISH, MAX_MISSES } from "@/lib/game/constants";
 import type { Color } from "@/lib/game/types";
 import { themeOf } from "@/lib/theme/themes";
 import { cn } from "@/lib/utils";
@@ -16,6 +17,28 @@ export function TypingDots() {
       <span />
       <span />
     </span>
+  );
+}
+
+/**
+ * Turn timer drawn around the name tag's edge, draining as time runs out
+ * (green, then yellow, then red). Restarted for each turn via `key`.
+ */
+function TurnRing({ limit, startedAt }: { limit: number; startedAt: number }) {
+  // Measured once, so re-renders don't shift the animation.
+  const [elapsed] = useState(() => Math.max(0, Date.now() - startedAt));
+  return (
+    <svg className="pointer-events-none absolute -inset-0.5 z-10 h-[calc(100%+4px)] w-[calc(100%+4px)] overflow-visible" aria-hidden="true">
+      <rect className="turn-ring-track" x="1.5" y="1.5" rx="13" />
+      <rect
+        className="turn-ring"
+        x="1.5"
+        y="1.5"
+        rx="13"
+        pathLength={100}
+        style={{ animationDuration: `${limit}ms`, animationDelay: `-${Math.min(elapsed, limit)}ms` }}
+      />
+    </svg>
   );
 }
 
@@ -60,29 +83,35 @@ export function PlayerTag({ corner }: { corner: number }) {
                 ? "Moving…"
                 : "Rolling…"
           : `${home}/4 home` + (seat.bot && !seat.takeover ? " · Computer" : "");
-  if (isTurn && seat && game.mode === "online" && !seat.bot) meta += ` · ${game.turnSecsLeft()}s`;
-  // Offline: show how much offline time is left before the computer takes over.
-  if (seat?.away && s.phase === "playing" && place < 0)
-    meta = seat.bot ? "Offline" : `Offline · bot in ${Math.ceil(game.offlineLeft(seat) / 1000)}s`;
+  const timer = game.turnTimerOn(c);
+  if (timer) meta += ` · ${game.turnSecsLeft(c)}s`;
+  // Offline: show how long until the computer takes over.
+  const away = seat && s.phase === "playing" && place < 0 ? game.awayInfo(seat).away : false;
+  if (away && seat) meta = seat.bot ? "Offline" : `Offline · bot in ${Math.ceil(game.offlineLeft(seat) / 1000)}s`;
+  if (seat?.out) meta = "Out · missed 5 turns";
 
   const showChat = you && game.isNet() && game.online;
   const bubble = seat ? game.bubbles[seat.id] : undefined;
   const showBubble = !!bubble && Date.now() < bubble.until;
   const showTyping = !showBubble && !!seat && game.isTyping(seat.id);
   const takeover = !!seat?.takeover && s.phase === "playing";
+  // Online: 5 dots, one turns red for every missed turn.
+  const showMisses = game.mode === "online" && s.phase !== "lobby" && !!seat;
+  const misses = seat?.misses || 0;
 
   return (
     <div
       className={cn(
         "relative flex min-w-0 items-center gap-2 rounded-xl border-2 p-2 transition-colors",
         right && "flex-row-reverse text-right",
-        isTurn ? "border-primary" : "border-transparent",
+        isTurn && !timer ? "border-primary" : "border-transparent",
       )}
       style={{
         background: seat ? `color-mix(in srgb, ${hex} ${isTurn ? 34 : 18}%, transparent)` : "rgba(255,255,255,.03)",
-        opacity: seat ? 1 : 0.5,
+        opacity: !seat || seat.out ? 0.5 : away ? 0.7 : 1,
       }}
     >
+      {timer && <TurnRing key={game.turnId()} limit={game.turnLimit(c)} startedAt={game.turnSeenAt} />}
       {showBubble && (
         <div
           className={cn(
@@ -149,7 +178,20 @@ export function PlayerTag({ corner }: { corner: number }) {
             </button>
           )}
         </div>
-        <div className="truncate text-xs text-muted-foreground tabular-nums">{meta}</div>
+        <div className={cn("flex max-w-full min-w-0 items-center gap-1.5", right && "flex-row-reverse")}>
+          {showMisses && (
+            <span className="flex shrink-0 gap-[3px]" role="img" aria-label={`${misses} of ${MAX_MISSES} turns missed`}>
+              {Array.from({ length: MAX_MISSES }, (_, k) => (
+                <span
+                  key={k}
+                  className={cn("h-[7px] w-[7px] rounded-full", k < misses ? "bg-[#ef4444]" : "bg-foreground/25")}
+                  style={k < misses ? { boxShadow: "0 0 4px rgba(239,68,68,.8)" } : undefined}
+                />
+              ))}
+            </span>
+          )}
+          <span className={cn("truncate text-xs tabular-nums", away || seat?.out ? "font-semibold text-[#f87171]" : "text-muted-foreground")}>{meta}</span>
+        </div>
       </div>
       {/* Fixed-size slot so the layout doesn't jump when the dice moves */}
       <div className="flex h-12 w-12 shrink-0 items-center justify-center min-[400px]:h-14 min-[400px]:w-14 sm:h-16 sm:w-16">

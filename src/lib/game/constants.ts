@@ -13,12 +13,20 @@ export const FINISH = 56;
 /** Which slots are used for 1..4 players. Two players sit opposite each other. */
 export const SLOTS_FOR: Color[][] = [[], ["red"], ["red", "yellow"], ["red", "green", "yellow"], ["red", "green", "yellow", "blue"]];
 
-/** Online: a player who doesn't act in 30s gets an automatic move. */
-export const ONLINE_TURN_LIMIT = 30_000;
-/** Online/friends: how long a player may be offline in total per game before the computer plays for them. */
-export const OFFLINE_ALLOWANCE = 60_000;
-/** Online/friends: a dropped connection only counts as offline after this long (covers quick reconnects). */
-export const AWAY_GRACE = 3_000;
+/** Online: time per turn. Not rolling in time counts as a missed turn. */
+export const ONLINE_TURN_LIMIT = 15_000;
+/** Online: each missed turn takes this much off that player's turn time. */
+export const MISS_PENALTY = 2_000;
+/** Online: this many missed turns and the player is out of the game. */
+export const MAX_MISSES = 5;
+/** Online/friends: once a player is offline, the computer plays for them after this long. */
+export const OFFLINE_ALLOWANCE = 15_000;
+/** Online/friends: a player we haven't heard from for this long counts as offline. */
+export const AWAY_GRACE = 5_000;
+/** Online/friends: every device says "I'm here" this often. */
+export const PING_MS = 1_000;
+/** Guests: if the host has been silent this long, it's gone; take over the table. */
+export const HOST_SILENT_MS = 6_000;
 /** How long a "typing…" hint lasts without a fresh signal. */
 export const TYPING_TTL = 4_000;
 /** Online: once a table is full it starts after this short countdown. */

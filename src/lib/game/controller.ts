@@ -14,9 +14,13 @@ import {
   COLORS,
   DICE_ROLL_MS,
   FINISH,
+  HOST_SILENT_MS,
+  MAX_MISSES,
+  MISS_PENALTY,
   OFFLINE_ALLOWANCE,
   ONLINE_FULL_START_DELAY,
   ONLINE_TURN_LIMIT,
+  PING_MS,
   REMOTE_MOVE_DELAY,
   STEP_MS,
   TYPING_TTL,
@@ -32,6 +36,7 @@ import {
   clone,
   freshState,
   freshTokens,
+  missTurn,
   movable,
   seatName,
   seated,
@@ -120,8 +125,19 @@ export class GameController {
   private animBusyUntil = 0;
   private rotFrame = 0;
   private heartbeat: ReturnType<typeof setInterval> | null = null;
-  /** Host: when each player was last connected. */
+  /** Host: when each player was last heard from. */
   private lastSeen: Record<string, number> = {};
+  /** Guest: who hosts the table and when we last heard from them. */
+  private hostId = "";
+  private hostHeardAt = 0;
+  /** Guest: the host went silent; treat it as gone and take over the table. */
+  private onHostSilent: (() => void) | null = null;
+  /** Per token: bumped by every new move animation, so an older one can't cut a newer one short. */
+  private animGen: Record<string, number> = {};
+  /** Per token: when its current move animation ends. */
+  private tokenBusyUntil: Record<string, number> = {};
+  /** Per token: which move animation is walking it right now. */
+  private animOwner: Record<string, number> = {};
   private typingSentAt = 0;
   /** My colour while a game is on; changing the colour setting waits for the next game. */
   private lockedColor: Color | null = null;
@@ -246,7 +262,11 @@ export class GameController {
   }
   canRollNow() {
     const s = this.state;
-    return this.loaded && !this.rolling && s.phase === "playing" && !s.roll && this.mine(s, s.turn);
+    return this.loaded && this.connected() && !this.rolling && s.phase === "playing" && !s.roll && this.mine(s, s.turn);
+  }
+  /** Online/friends: only act while connected, or this device's game would drift from everyone else's. */
+  private connected() {
+    return !this.isNet() || this.online;
   }
   /** Which player the dice sits with. */
   dieColor(): Color | null {
@@ -256,16 +276,39 @@ export class GameController {
   secsLeft(at: number) {
     return Math.max(0, Math.ceil((at - Date.now()) / 1000));
   }
-  turnSecsLeft() {
-    return this.secsLeft(this.turnSeenAt + ONLINE_TURN_LIMIT);
+  /** Online: time per turn for seat c; every missed turn takes 2s off. */
+  turnLimit(c: Color) {
+    return ONLINE_TURN_LIMIT - MISS_PENALTY * (this.state.seats[c]?.misses || 0);
+  }
+  /** Online: is the turn timer running for c right now? */
+  turnTimerOn(c: Color) {
+    const s = this.state;
+    const seat = s.seats[c];
+    return this.mode === "online" && s.phase === "playing" && s.turn === c && !!seat && !seat.bot && !this.rolling;
+  }
+  turnSecsLeft(c: Color) {
+    return this.secsLeft(this.turnSeenAt + this.turnLimit(c));
+  }
+  /** Changes whenever a new turn timer starts. */
+  turnId() {
+    return this.turnKey;
   }
   capacity() {
     return this.state.capacity || this.wantCount;
   }
-  /** Offline time a player has left this game (ms), counting down while they're away. */
+  /**
+   * Is this player offline, and since when? Comes from the host; a guest
+   * whose host went silent also sees the host as offline straight away.
+   */
+  awayInfo(seat: Seat): { away: boolean; since: number } {
+    if (seat.away) return { away: true, since: seat.awayAt || Date.now() };
+    const hostGone = this.isNet() && this.loaded && !this.isHost && seat.id === this.hostId && Date.now() - this.hostHeardAt > AWAY_GRACE;
+    return hostGone ? { away: true, since: this.hostHeardAt } : { away: false, since: 0 };
+  }
+  /** Offline time left before the computer plays for this player (ms). */
   offlineLeft(seat: Seat) {
-    const bank = seat.bank ?? OFFLINE_ALLOWANCE;
-    return seat.away && seat.awayAt ? Math.max(0, bank - (Date.now() - seat.awayAt)) : bank;
+    const a = this.awayInfo(seat);
+    return a.away ? Math.max(0, OFFLINE_ALLOWANCE - (Date.now() - a.since)) : OFFLINE_ALLOWANCE;
   }
   /** Is the computer playing my seat because I was away? */
   myTakeover() {
@@ -295,7 +338,14 @@ export class GameController {
   private persist() {
     const saves = this.services.saves;
     if (this.isNet()) {
-      if (this.room) saves.saveRoom(this.room, this.state);
+      if (!this.room) return;
+      saves.saveRoom(this.room, this.state);
+      // Remember the game I'm playing in so I can rejoin if I close the page.
+      const c = this.mySlot();
+      const s = this.state;
+      if (s.phase === "playing" && c && !s.seats[c]?.out && !s.winners.includes(c))
+        saves.saveActiveRoom({ mode: this.mode as "online" | "friends", room: this.room, count: this.capacity(), at: Date.now() });
+      else if (saves.loadActiveRoom()?.room === this.room && s.phase !== "lobby") saves.clearActiveRoom();
     } else if (this.mode) saves.saveOffline({ mode: this.mode, state: this.state });
   }
 
@@ -427,7 +477,7 @@ export class GameController {
   };
   move = (c: Color, i: number) => {
     const s = this.state;
-    if (s.phase === "playing" && s.turn === c && this.mine(s, c)) this.doMove(c, i);
+    if (s.phase === "playing" && s.turn === c && this.mine(s, c) && this.connected()) this.doMove(c, i);
   };
   reset = () => {
     this.confirmReset = false;
@@ -595,6 +645,35 @@ export class GameController {
     void this.openRoom(code);
   }
 
+  /** The online / friends game I'm seated in, if I closed the page by mistake. */
+  activeRoom() {
+    return this.services.saves.loadActiveRoom();
+  }
+  /**
+   * Go back into that game. Returns the page to open, or null if there's
+   * nothing to rejoin. Friends rooms go through their invite link page.
+   */
+  rejoin(): string | null {
+    const a = this.activeRoom();
+    if (!a) return null;
+    if (a.mode === "friends") {
+      if (!(this.mode === "friends" && this.room === a.room)) this.leaveCurrent();
+      return `/r/${a.room}`;
+    }
+    this.leaveCurrent();
+    this.mode = "online";
+    this.wantCount = a.count;
+    // Show the last known board straight away; the table's live state replaces it once connected.
+    const carry = this.services.saves.loadRoom(a.room);
+    if (carry) {
+      this.state = carry;
+      this.loaded = true;
+      this.seenSeq = carry.last?.seq ?? 0;
+    }
+    void this.openRoom(a.room, carry);
+    return "/game";
+  }
+
   /** Leave whatever is running (network rooms, timers). */
   leaveCurrent() {
     if (this.isNet() && this.loaded && this.state.phase === "lobby" && this.joined()) {
@@ -605,6 +684,9 @@ export class GameController {
       }
     }
     this.teardown();
+    this.hostId = "";
+    this.hostHeardAt = 0;
+    this.onHostSilent = null;
     if (this.botTimer) clearTimeout(this.botTimer);
     this.botTimer = null;
     this.online = false;
@@ -668,7 +750,7 @@ export class GameController {
           scale,
           movable: moveSet.has(t.c + t.i),
           stepping: this.settings.steps && this.animPos[t.c + t.i] !== undefined,
-          hidden: !s.seats[t.c],
+          hidden: !s.seats[t.c] || !!s.seats[t.c]?.out,
         });
       });
     }
@@ -677,15 +759,22 @@ export class GameController {
 
   private animateMove(m: MoveAnim, caps: { c: Color; i: number; a: number }[], delay: number) {
     const key = m.c + m.i;
-    this.animPos[key] = m.a;
+    const steps = this.settings.steps && !reduceMotion();
+    // The same token can move again before its last move has finished (a 6, then
+    // an automatic move). Queue behind it instead of cutting it short.
+    const gen = (this.animGen[key] = (this.animGen[key] || 0) + 1);
+    const busy = steps ? Math.max(0, (this.tokenBusyUntil[key] || 0) - Date.now()) : 0;
+    if (busy > delay) delay = busy;
+    else this.animPos[key] = m.a; // (while queued, the earlier move is still walking it to m.a)
     caps.forEach((k) => {
       this.animPos[k.c + k.i] = k.a;
     });
-    const steps = this.settings.steps && !reduceMotion();
+    const latest = () => this.animGen[key] === gen;
     const finish = (wait: number) => {
       this.animTimers.push(
         setTimeout(() => {
-          delete this.animPos[key];
+          // A newer move of this token takes over from here.
+          if (latest()) delete this.animPos[key];
           if (m.b === FINISH) this.play("home");
           if (caps.length) {
             caps.forEach((k) => delete this.animPos[k.c + k.i]);
@@ -696,6 +785,7 @@ export class GameController {
       );
     };
     const run = () => {
+      this.animOwner[key] = gen;
       if (m.a === -1) {
         this.animPos[key] = 0;
         this.play("out");
@@ -704,14 +794,19 @@ export class GameController {
         return;
       }
       if (!steps) {
-        delete this.animPos[key];
+        if (latest()) delete this.animPos[key];
         this.play("move");
         this.emit();
         finish(360);
         return;
       }
       let p = m.a;
+      this.animPos[key] = p;
       const iv = setInterval(() => {
+        if (this.animOwner[key] !== gen) {
+          clearInterval(iv);
+          return;
+        }
         p++;
         this.animPos[key] = p;
         this.play("move");
@@ -725,6 +820,7 @@ export class GameController {
     };
     const total = delay + (m.a === -1 ? 300 : steps ? (m.b - m.a + 1) * STEP_MS : 360);
     this.animBusyUntil = Math.max(this.animBusyUntil, Date.now() + total);
+    this.tokenBusyUntil[key] = Date.now() + total;
     if (delay) this.animTimers.push(setTimeout(run, delay));
     else run();
   }
@@ -737,6 +833,9 @@ export class GameController {
     this.animTimers = [];
     this.animBusyUntil = 0;
     for (const k in this.animPos) delete this.animPos[k];
+    this.animGen = {};
+    this.animOwner = {};
+    this.tokenBusyUntil = {};
   }
 
   /** Compare two states and play the matching sounds / animations. */
@@ -927,43 +1026,68 @@ export class GameController {
   // ============================================================ timers
   private noteTurn() {
     const s = this.state;
-    const k = `${s.phase}|${s.turn}|${s.roll}|${s.last?.seq}`;
+    // A fresh timer for every turn, roll, and when a player takes back control from the computer.
+    const k = `${s.phase}|${s.turn}|${s.roll}|${s.last?.seq}|${s.turn ? !!s.seats[s.turn]?.bot : ""}`;
     if (k !== this.turnKey) {
       this.turnKey = k;
       this.turnSeenAt = Date.now();
     }
   }
 
-  /** Host housekeeping every second: online countdowns, idle-player moves and who's offline. */
+  /**
+   * Every second: "I'm here" pings, and on the host the online countdowns,
+   * turn timer (missed turns) and who's offline.
+   */
   private ensureHeartbeat() {
     if (this.heartbeat || typeof window === "undefined") return;
     this.heartbeat = setInterval(() => {
       if (!this.loaded || !this.isNet()) return;
       const s = this.state;
+      const now = Date.now();
+      if (this.online) {
+        if (this.isHost) this.transport?.broadcast({ type: "ping", id: this.myId });
+        else {
+          this.transport?.sendToHost({ type: "ping", id: this.myId });
+          // The host's page was closed (its connection may still look open for a long time).
+          if (this.hostHeardAt && now - this.hostHeardAt > HOST_SILENT_MS) this.onHostSilent?.();
+        }
+      }
       if (this.isHost && s.phase === "playing") this.checkPresence();
       if (this.isHost && this.mode === "online") {
-        if (s.phase === "lobby" && s.startAt && Date.now() >= s.startAt && s.players.length >= (s.capacity || this.wantCount)) this.startGame();
-        else if (s.phase === "playing" && !this.rolling && Date.now() - this.turnSeenAt > ONLINE_TURN_LIMIT) this.autoStep();
+        if (s.phase === "lobby" && s.startAt && now >= s.startAt && s.players.length >= (s.capacity || this.wantCount)) this.startGame();
+        else if (s.phase === "playing" && !this.rolling && s.turn && now - this.turnSeenAt > this.turnLimit(s.turn)) this.turnTimeout(s.turn);
       }
       if (s.phase === "lobby" ? s.startAt : s.phase === "playing") this.emit();
-    }, 1000);
+    }, PING_MS);
   }
 
   /**
-   * Host: mark players who lost their connection as away and spend their
-   * offline time; when it runs out the computer plays for them until they
-   * come back and take over again.
+   * Host, online: c's turn time ran out. Not rolling while connected is a
+   * missed turn (5 and you're out); an offline player or a pending token pick
+   * gets an automatic move instead.
+   */
+  private turnTimeout(c: Color) {
+    const s = this.state;
+    const seat = s.seats[c];
+    if (!seat || seat.bot) return;
+    if (!s.roll && !seat.away) this.commit((n) => missTurn(n, c, MAX_MISSES));
+    else this.autoStep();
+  }
+
+  /**
+   * Host: anyone not heard from for a few seconds is offline. After 15s offline
+   * the computer plays for them until they come back and take over again.
    */
   private checkPresence() {
     const now = Date.now();
-    const here = new Set([this.myId, ...(this.transport?.connectedIds() || [])]);
-    here.forEach((id) => (this.lastSeen[id] = now));
+    this.lastSeen[this.myId] = now;
     const s0 = this.state;
-    // Someone we haven't seen since becoming host gets the grace period from now.
+    // Someone we haven't heard from since becoming host gets the grace period from now.
     seated(s0).forEach((c) => (this.lastSeen[s0.seats[c]!.id] ??= now));
+    const skip = (s: GameState, c: Color) => s.winners.includes(c) || !!s.seats[c]?.out;
     const changed = seated(s0).some((c) => {
       const seat = s0.seats[c]!;
-      if (s0.winners.includes(c)) return false;
+      if (skip(s0, c)) return false;
       const gone = now - this.lastSeen[seat.id] > AWAY_GRACE;
       return gone !== !!seat.away || (seat.away && !seat.bot && this.offlineLeft(seat) <= 0);
     });
@@ -971,15 +1095,13 @@ export class GameController {
     this.commit((s) => {
       for (const c of seated(s)) {
         const seat = s.seats[c]!;
-        if (s.winners.includes(c)) continue;
+        if (skip(s, c)) continue;
         const gone = now - this.lastSeen[seat.id] > AWAY_GRACE;
         if (gone && !seat.away) {
           seat.away = true;
-          seat.awayAt = now;
-          if (seat.bank === undefined) seat.bank = OFFLINE_ALLOWANCE;
+          seat.awayAt = this.lastSeen[seat.id];
           addLog(s, c, `${seat.nick} went offline.`);
         } else if (!gone && seat.away) {
-          seat.bank = this.offlineLeft(seat);
           seat.away = false;
           delete seat.awayAt;
           addLog(s, c, seat.takeover ? `${seat.nick} is back. The computer keeps playing until they take over.` : `${seat.nick} is back.`);
@@ -987,7 +1109,7 @@ export class GameController {
         if (seat.away && !seat.bot && this.offlineLeft(seat) <= 0) {
           seat.bot = true;
           seat.takeover = true;
-          addLog(s, c, `${seat.nick} is still offline. The computer plays for them.`);
+          addLog(s, c, `${seat.nick} is offline. The computer plays for them.`);
         }
       }
     });
@@ -1099,11 +1221,34 @@ export class GameController {
         if (alive()) void this.openRoom(code, withState());
       }, ms);
     };
+    // The previous host and when we last heard from it: if we end up hosting,
+    // its offline time counts from then, not from when we took over.
+    const prevHost = this.hostId;
+    const prevHostHeard = this.hostHeardAt;
+    this.hostHeardAt = 0;
+    let lostAlready = false;
+    const lost = (reason: "host-left" | "network") => {
+      if (!alive() || lostAlready) return;
+      lostAlready = true;
+      this.online = false;
+      if (reason === "host-left") {
+        this.setNet("bad", "Host left · taking over the table…");
+        this.emit();
+        retry(600 + Math.random() * 1400, () => (this.loaded ? this.state : carry || null));
+      } else {
+        this.setNet("bad", "Reconnecting…");
+        this.emit();
+        retry(2500, () => (this.loaded ? this.state : null));
+      }
+    };
+    this.onHostSilent = () => lost("host-left");
     try {
       await t.open(code, {
         hosting: () => {
           if (!alive()) return;
           this.online = true;
+          this.hostId = this.myId;
+          if (prevHost && prevHost !== this.myId && prevHostHeard) this.lastSeen[prevHost] = prevHostHeard;
           let s = carry || (this.mode === "friends" && this.services.saves.loadRoom(code)) || freshState();
           if (this.mode === "online" && !s.capacity) s = { ...s, capacity: this.wantCount };
           this.state = s;
@@ -1130,29 +1275,22 @@ export class GameController {
         joinedHost: () => {
           if (!alive()) return;
           this.online = true;
+          this.hostHeardAt = Date.now();
           t.sendToHost({ type: "hello", id: this.myId });
           if (carry) t.sendToHost({ type: "state", state: carry });
           this.netSummary();
           this.emit();
         },
         hostMessage: (m) => {
-          if (m.type === "state") this.accept(m.state);
+          if (!alive()) return;
+          this.hostHeardAt = Date.now();
+          if (m.type === "ping") this.hostId = String(m.id || "");
+          else if (m.type === "state") this.accept(m.state);
           else if (m.type === "chat") this.addChat(m);
           else if (m.type === "chatHistory" && Array.isArray(m.msgs)) m.msgs.slice(-40).forEach((x) => this.addChat(x, true));
           else if (m.type === "typing") this.noteTyping(String(m.id || ""), !!m.on);
         },
-        lost: (reason) => {
-          if (!alive()) return;
-          if (reason === "host-left") {
-            this.setNet("bad", "Host left · taking over the table…");
-            this.emit();
-            retry(600 + Math.random() * 1400, () => (this.loaded ? this.state : carry || null));
-          } else {
-            this.setNet("bad", "Reconnecting…");
-            this.emit();
-            retry(2500, () => (this.loaded ? this.state : null));
-          }
-        },
+        lost,
       });
     } catch {
       if (!alive()) return;
@@ -1162,7 +1300,17 @@ export class GameController {
   }
 
   private onPeerMessage(link: PeerLink, m: NetMessage) {
-    if (m.type === "hello") link.pid = String(m.id || "");
+    // Anything from a guest means they're still here.
+    if (link.pid) this.lastSeen[link.pid] = Date.now();
+    if (m.type === "ping") {
+      if (!link.pid && m.id) link.pid = String(m.id);
+      if (link.pid) this.lastSeen[link.pid] = Date.now();
+      // Answer straight away (not on a timer), so guests hear from us even if this tab is in the background.
+      link.send({ type: "ping", id: this.myId });
+    } else if (m.type === "hello") {
+      link.pid = String(m.id || "");
+      this.lastSeen[link.pid] = Date.now();
+    }
     else if (m.type === "join" && typeof m.id === "string") {
       link.pid = m.id;
       this.hostJoin(m.id, String(m.nick || "Player").slice(0, 16));
@@ -1176,7 +1324,12 @@ export class GameController {
       this.noteTyping(id, !!m.on);
       this.transport?.broadcast({ type: "typing", id, on: !!m.on }, link);
     } else if (m.type === "takeBack" && link.pid && m.id === link.pid) this.hostTakeBack(link.pid);
-    else if (m.type === "state" && this.accept(m.state)) this.transport?.broadcast({ type: "state", state: this.state }, link);
+    else if (m.type === "state") {
+      // Send the result to everyone, the sender included: if the host changed
+      // something at the same moment, the sender must end up with the same state.
+      if (this.accept(m.state)) this.broadcast();
+      else link.send({ type: "state", state: this.state });
+    }
   }
 
   /** Invite link for the current friends room. */
