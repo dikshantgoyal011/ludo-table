@@ -6,7 +6,6 @@ import { Switch } from "@/components/ui/switch";
 import { useSettings } from "@/hooks/use-game";
 import { playSound } from "@/lib/audio/sfx";
 import { COLORS } from "@/lib/game/constants";
-import { SOUND_KEYS } from "@/lib/settings/settings";
 import { THEME_IDS, THEMES } from "@/lib/theme/themes";
 import { uiStore, useUi } from "@/lib/ui-store";
 import { cn } from "@/lib/utils";
@@ -31,7 +30,7 @@ export function SettingsDialog() {
             </Button>
           </DialogClose>
         </div>
-        <div className="flex flex-col gap-5 overflow-y-auto px-4 py-4">
+        <div className="flex flex-col gap-5 overflow-y-auto overscroll-contain px-4 py-4">
           <section className="flex flex-col gap-2">
             <SectionTitle>Theme</SectionTitle>
             <div className="grid grid-cols-2 gap-2">
@@ -98,25 +97,17 @@ export function SettingsDialog() {
           </section>
 
           <section className="flex flex-col gap-1">
-            <SectionTitle>Sounds</SectionTitle>
+            <SectionTitle>Sound</SectionTitle>
             <label className="flex items-center justify-between gap-3 px-1 py-2 text-sm font-semibold">
-              <span>All sounds</span>
-              <Switch checked={settings.sound.all} onCheckedChange={(v) => save({ ...settings, sound: { ...settings.sound, all: v } })} />
+              <span>Game sounds</span>
+              <Switch
+                checked={settings.sound.all}
+                onCheckedChange={(v) => {
+                  save({ ...settings, sound: { ...settings.sound, all: v } });
+                  if (v) playSound("dice");
+                }}
+              />
             </label>
-            <div className={cn("flex flex-col border-t border-border pt-1", !settings.sound.all && "opacity-50")}>
-              {SOUND_KEYS.map(([k, label]) => (
-                <label key={k} className="flex items-center justify-between gap-3 px-1 py-2 text-sm font-semibold">
-                  <span>{label}</span>
-                  <Switch
-                    checked={settings.sound[k]}
-                    onCheckedChange={(v) => {
-                      save({ ...settings, sound: { ...settings.sound, [k]: v } });
-                      if (v && settings.sound.all) playSound(k);
-                    }}
-                  />
-                </label>
-              ))}
-            </div>
           </section>
         </div>
       </DialogContent>

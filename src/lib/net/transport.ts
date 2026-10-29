@@ -5,7 +5,17 @@
 // A future backend can implement the same interface on top of WebSockets,
 // with the server playing the host role, and the game code stays as it is.
 
-import type { ChatMessage, GameState } from "@/lib/game/types";
+import type { ChatMessage, Color, GameState } from "@/lib/game/types";
+
+/** A player's voice chat status, as the host shares it with the table. */
+export interface VoiceMember {
+  /** Player id. */
+  id: string;
+  /** Where to call them (their transport address). */
+  peerId: string;
+  /** Their own microphone is muted. */
+  muted: boolean;
+}
 
 export type NetMessage =
   | { type: "hello"; id: string }
@@ -19,7 +29,29 @@ export type NetMessage =
   /** "I'm still here", both ways. The host answers a guest's ping right away. */
   | { type: "ping"; id: string }
   /** Guest to host: take my seat back from the computer. */
-  | { type: "takeBack"; id: string };
+  | { type: "takeBack"; id: string }
+  /**
+   * Guest to host: I rolled v / I picked token i. The host is the one place
+   * the game changes, so two devices can never change it at the same moment.
+   */
+  | { type: "roll"; id: string; c: Color; v: number }
+  | { type: "move"; id: string; c: Color; i: number }
+  /** Guest to host: my voice chat status (on = false: I left voice chat). */
+  | { type: "voice"; id: string; peerId: string; on: boolean; muted: boolean }
+  /** Host to everyone: who is in voice chat. */
+  | { type: "voiceRoster"; list: VoiceMember[] };
+
+/** An audio call with one other player (voice chat). */
+export interface VoiceCall {
+  /** Player id of the other end. */
+  readonly pid: string;
+  /** Their transport address. */
+  readonly peerId: string;
+  answer(stream: MediaStream): void;
+  onStream(cb: (stream: MediaStream) => void): void;
+  onClose(cb: () => void): void;
+  close(): void;
+}
 
 /** One connected guest, as seen by the host. */
 export interface PeerLink {
@@ -57,6 +89,12 @@ export interface RoomTransport {
   sendToHost(msg: NetMessage): boolean;
   /** Number of guests currently connected (host only). */
   guestCount(): number;
+  /** This device's address for direct calls, once connected. */
+  peerId(): string | null;
+  /** Voice chat: call another player directly. `myPid` tells them who's calling. */
+  call(peerId: string, myPid: string, stream: MediaStream): VoiceCall | null;
+  /** Voice chat: incoming calls. */
+  onCall(cb: (call: VoiceCall) => void): void;
   close(): void;
 }
 

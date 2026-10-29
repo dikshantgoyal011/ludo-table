@@ -5,7 +5,8 @@
 
 import { playSound } from "@/lib/audio/sfx";
 import { createPeerTransport } from "@/lib/net/peer-transport";
-import type { NetMessage, PeerLink, RoomTransport, TransportFactory } from "@/lib/net/transport";
+import type { NetMessage, PeerLink, RoomTransport, TransportFactory, VoiceMember } from "@/lib/net/transport";
+import { VoiceChat } from "@/lib/net/voice";
 import type { SoundName } from "@/lib/settings/settings";
 import type { Services } from "@/lib/services/types";
 import {
@@ -98,6 +99,10 @@ export class GameController {
   bubbles: Record<string, { text: string; until: number }> = {};
   /** Player id -> until when they count as typing. */
   typing: Record<string, number> = {};
+  // voice chat
+  voice = new VoiceChat(() => this.emit());
+  /** Who is in voice chat at this table (from the host). */
+  voiceRoster: VoiceMember[] = [];
   // winner popup
   winOpen = false;
   winFinal = false;
@@ -138,6 +143,12 @@ export class GameController {
   private tokenBusyUntil: Record<string, number> = {};
   /** Per token: which move animation is walking it right now. */
   private animOwner: Record<string, number> = {};
+  /** Guest: the roll number (seq) my own roll will get; its dice already played here. */
+  private ownRollSeq = 0;
+  /** Guest: when I last sent a roll / move to the host (0 = answered). */
+  private awaitingHost = 0;
+  /** Host: who's in voice chat. */
+  private voiceMembers = new Map<string, VoiceMember>();
   private typingSentAt = 0;
   /** My colour while a game is on; changing the colour setting waits for the next game. */
   private lockedColor: Color | null = null;
@@ -206,7 +217,7 @@ export class GameController {
   }
   play(name: SoundName) {
     const s = this.settings.sound;
-    if (!s.all || s[name] === false) return;
+    if (!s.all) return; // one switch for all game sounds
     playSound(name);
   }
 
@@ -262,7 +273,7 @@ export class GameController {
   }
   canRollNow() {
     const s = this.state;
-    return this.loaded && this.connected() && !this.rolling && s.phase === "playing" && !s.roll && this.mine(s, s.turn);
+    return this.loaded && this.connected() && !this.waitingForHost() && !this.rolling && s.phase === "playing" && !s.roll && this.mine(s, s.turn);
   }
   /** Online/friends: only act while connected, or this device's game would drift from everyone else's. */
   private connected() {
@@ -321,7 +332,8 @@ export class GameController {
   }
 
   // ============================================================ commit
-  private commit(mutate: (s: GameState) => boolean | void) {
+  /** Change the game. `remote`: the change is someone else's roll (their dice plays first). */
+  private commit(mutate: (s: GameState) => boolean | void, remote = false) {
     if (!this.loaded) return;
     const prevState = this.state;
     const s = clone(prevState);
@@ -330,7 +342,7 @@ export class GameController {
     if (s.turn !== prevState.turn || s.roll !== prevState.roll || s.last?.seq !== prevState.last?.seq || s.phase !== prevState.phase) s.turnAt = Date.now();
     this.state = s;
     this.persist();
-    this.onStateChange(prevState, s, false);
+    this.onStateChange(prevState, s, remote);
     this.emit();
     if (this.isNet()) this.broadcast();
   }
@@ -350,6 +362,11 @@ export class GameController {
   }
 
   // ============================================================ roll & move
+  /** Online/friends guest: the game only changes on the host. */
+  private get guest() {
+    return this.isNet() && !this.isHost;
+  }
+
   private doRoll(c: Color) {
     const s0 = this.state;
     if (this.rolling || s0.phase !== "playing" || s0.turn !== c || s0.roll) return;
@@ -358,16 +375,46 @@ export class GameController {
     this.rollColor = c;
     this.animateDie(v, c, () => {
       this.rolling = false;
-      this.commit((s) => {
-        if (!applyRoll(s, c, v)) return false;
-        this.seenSeq = s.last?.seq ?? null;
-      });
+      if (this.guest) {
+        // Ask the host to record it; the result comes back as the new state.
+        this.ownRollSeq = (this.state.last?.seq || 0) + 1;
+        this.awaitHost();
+        this.transport?.sendToHost({ type: "roll", id: this.myId, c, v });
+      } else
+        this.commit((s) => {
+          if (!applyRoll(s, c, v)) return false;
+          this.seenSeq = s.last?.seq ?? null;
+        });
       this.emit();
     });
     this.emit();
   }
 
+  /** Host: a guest rolled. Record it, then show their dice landing here too. */
+  private hostRoll(link: PeerLink, c: Color, v: number) {
+    const s = this.state;
+    const seat = s.seats[c];
+    if (!seat || seat.id !== link.pid || seat.bot || this.rolling || !(v >= 1 && v <= 6)) return;
+    if (s.phase !== "playing" || s.turn !== c || s.roll) return;
+    this.commit((n) => applyRoll(n, c, v), true);
+    this.onRemoteState();
+  }
+
+  /** Guest: sent a roll or move to the host; hold further actions until its answer arrives. */
+  private awaitHost() {
+    this.awaitingHost = Date.now();
+  }
+  private waitingForHost() {
+    return !!this.awaitingHost && Date.now() - this.awaitingHost < 3000;
+  }
+
   private doMove(c: Color, i: number) {
+    if (this.guest) {
+      this.awaitHost();
+      this.transport?.sendToHost({ type: "move", id: this.myId, c, i });
+      this.emit();
+      return;
+    }
     this.commit((s) => {
       if (s.phase !== "playing" || s.turn !== c || !s.roll) return false;
       if (!canMove(s.tokens[c][i], s.roll)) return false;
@@ -477,7 +524,7 @@ export class GameController {
   };
   move = (c: Color, i: number) => {
     const s = this.state;
-    if (s.phase === "playing" && s.turn === c && this.mine(s, c) && this.connected()) this.doMove(c, i);
+    if (s.phase === "playing" && s.turn === c && this.mine(s, c) && this.connected() && !this.waitingForHost()) this.doMove(c, i);
   };
   reset = () => {
     this.confirmReset = false;
@@ -702,6 +749,11 @@ export class GameController {
     this.confirmMenu = false;
     this.confirmReset = false;
     this.resetChat();
+    this.voice.stop();
+    this.voiceRoster = [];
+    this.voiceMembers.clear();
+    this.awaitingHost = 0;
+    this.ownRollSeq = 0;
     this.stopAnimations();
     this.hideWinner();
     this.emit();
@@ -854,7 +906,8 @@ export class GameController {
         }
       // A remote roll animates the dice first, so hold the token until it lands.
       const newRoll = !!next.last && (!prev.last || prev.last.seq !== next.last.seq);
-      const delay = remote && newRoll ? REMOTE_MOVE_DELAY : 0;
+      // (My own roll coming back from the host: its dice already played here.)
+      const delay = remote && newRoll && next.last!.seq !== this.ownRollSeq ? REMOTE_MOVE_DELAY : 0;
       moves.forEach((m) => this.animateMove(m, caps, delay));
       if (!moves.length && caps.length) this.play("capture");
     }
@@ -1023,6 +1076,72 @@ export class GameController {
     this.chatOpen = false;
   }
 
+  // ============================================================ voice chat
+  /** My mic button: join voice chat (mic on), or once in it, mute / unmute my mic. */
+  async toggleMic() {
+    if (!this.isNet() || !this.online) return;
+    if (!this.voice.on) {
+      try {
+        await this.voice.start();
+      } catch {
+        this.setBanner("Microphone blocked. Allow microphone access for this site to use voice chat.");
+        return;
+      }
+    } else this.voice.setMicMuted(!this.voice.micMuted);
+    this.announceVoice();
+  }
+  /** Leave voice chat completely (stop hearing everyone too). */
+  leaveVoice() {
+    this.voice.stop();
+    this.announceVoice();
+  }
+  inVoice(pid: string) {
+    return this.voiceRoster.some((m) => m.id === pid);
+  }
+  /** Has this player muted their own microphone? */
+  micMutedBy(pid: string) {
+    return pid === this.myId ? this.voice.micMuted : !!this.voiceRoster.find((m) => m.id === pid)?.muted;
+  }
+  isSpeaking(pid: string) {
+    return this.voice.speaking.has(pid === this.myId ? "me" : pid);
+  }
+  /** Stop / start hearing one player, for me only. */
+  mutePeer(pid: string, muted: boolean) {
+    this.voice.setPeerMuted(pid, muted);
+  }
+  private announceVoice() {
+    const m = { type: "voice" as const, id: this.myId, peerId: this.transport?.peerId() || "", on: this.voice.on, muted: this.voice.micMuted };
+    if (this.isHost) this.hostVoice(m);
+    else this.transport?.sendToHost(m);
+  }
+  /** Host: someone joined / left voice chat or muted their mic. */
+  private hostVoice(m: { id: string; peerId: string; on: boolean; muted: boolean }) {
+    if (m.on && m.peerId) this.voiceMembers.set(m.id, { id: m.id, peerId: m.peerId, muted: !!m.muted });
+    else if (!this.voiceMembers.delete(m.id)) return;
+    this.shareVoice();
+  }
+  /** Host: drop people from voice chat who went offline. */
+  private pruneVoice() {
+    const now = Date.now();
+    let changed = false;
+    for (const id of [...this.voiceMembers.keys()]) {
+      if (id === this.myId) continue;
+      const seen = this.lastSeen[id];
+      if (seen !== undefined && now - seen > AWAY_GRACE) changed = this.voiceMembers.delete(id) || changed;
+    }
+    if (changed) this.shareVoice();
+  }
+  private shareVoice() {
+    const list = [...this.voiceMembers.values()];
+    this.transport?.broadcast({ type: "voiceRoster", list });
+    this.setVoiceRoster(list);
+  }
+  private setVoiceRoster(list: VoiceMember[]) {
+    this.voiceRoster = list;
+    this.voice.sync(list, this.myId, this.transport);
+    this.emit();
+  }
+
   // ============================================================ timers
   private noteTurn() {
     const s = this.state;
@@ -1053,9 +1172,13 @@ export class GameController {
         }
       }
       if (this.isHost && s.phase === "playing") this.checkPresence();
+      if (this.isHost) this.pruneVoice();
+      // Retry voice calls that didn't connect.
+      if (this.voice.on) this.voice.sync(this.voiceRoster, this.myId, this.transport);
       if (this.isHost && this.mode === "online") {
         if (s.phase === "lobby" && s.startAt && now >= s.startAt && s.players.length >= (s.capacity || this.wantCount)) this.startGame();
-        else if (s.phase === "playing" && !this.rolling && s.turn && now - this.turnSeenAt > this.turnLimit(s.turn)) this.turnTimeout(s.turn);
+        // A second's grace on the host: a roll made just in time is still on its way here.
+        else if (s.phase === "playing" && !this.rolling && s.turn && now - this.turnSeenAt > this.turnLimit(s.turn) + 1000) this.turnTimeout(s.turn);
       }
       if (s.phase === "lobby" ? s.startAt : s.phase === "playing") this.emit();
     }, PING_MS);
@@ -1142,6 +1265,7 @@ export class GameController {
     if (this.loaded && (incoming.v || 0) < (this.state.v || 0)) return false;
     const first = !this.loaded;
     const prev = this.loaded ? this.state : null;
+    if (prev && (incoming.v || 0) > (prev.v || 0)) this.awaitingHost = 0; // the host answered
     this.state = incoming;
     this.loaded = true;
     this.persist();
@@ -1178,7 +1302,9 @@ export class GameController {
     if (last && last.seq !== this.seenSeq) {
       const first = this.seenSeq === null;
       this.seenSeq = last.seq;
-      if (!first) {
+      // My own roll, back from the host: its dice already played on this screen.
+      const mine = last.seq === this.ownRollSeq && this.mine(this.state, last.c);
+      if (!first && !mine) {
         this.rolling = true;
         this.rollColor = last.c;
         this.emit();
@@ -1215,6 +1341,7 @@ export class GameController {
     this.emit();
     const t = this.makeTransport();
     this.transport = t;
+    t.onCall((call) => this.voice.incoming(call));
     const alive = () => my === this.gen;
     const retry = (ms: number, withState: () => GameState | null) => {
       this.retryTimer = setTimeout(() => {
@@ -1258,10 +1385,15 @@ export class GameController {
           if (first) this.onFirstState();
           this.netSummary();
           this.onRemoteState();
+          // A new host starts a fresh voice chat list; guests re-announce themselves.
+          this.voiceMembers.clear();
+          if (this.voice.on) this.announceVoice();
+          else this.shareVoice();
         },
         peerOpened: (link) => {
           link.send({ type: "state", state: this.state });
           if (this.chat.length) link.send({ type: "chatHistory", msgs: this.chat });
+          if (this.voiceMembers.size) link.send({ type: "voiceRoster", list: [...this.voiceMembers.values()] });
           this.netSummary();
           this.emit();
         },
@@ -1269,6 +1401,7 @@ export class GameController {
         peerClosed: (link) => {
           if (!alive()) return;
           if (link.pid && this.state.phase === "lobby") this.hostLeave(link.pid);
+          if (link.pid && this.voiceMembers.delete(link.pid)) this.shareVoice();
           this.netSummary();
           this.emit();
         },
@@ -1278,6 +1411,7 @@ export class GameController {
           this.hostHeardAt = Date.now();
           t.sendToHost({ type: "hello", id: this.myId });
           if (carry) t.sendToHost({ type: "state", state: carry });
+          if (this.voice.on) this.announceVoice();
           this.netSummary();
           this.emit();
         },
@@ -1289,6 +1423,7 @@ export class GameController {
           else if (m.type === "chat") this.addChat(m);
           else if (m.type === "chatHistory" && Array.isArray(m.msgs)) m.msgs.slice(-40).forEach((x) => this.addChat(x, true));
           else if (m.type === "typing") this.noteTyping(String(m.id || ""), !!m.on);
+          else if (m.type === "voiceRoster" && Array.isArray(m.list)) this.setVoiceRoster(m.list);
         },
         lost,
       });
@@ -1324,6 +1459,12 @@ export class GameController {
       this.noteTyping(id, !!m.on);
       this.transport?.broadcast({ type: "typing", id, on: !!m.on }, link);
     } else if (m.type === "takeBack" && link.pid && m.id === link.pid) this.hostTakeBack(link.pid);
+    else if (m.type === "roll" && link.pid && m.id === link.pid) this.hostRoll(link, m.c, Number(m.v));
+    else if (m.type === "move" && link.pid && m.id === link.pid) {
+      const seat = this.state.seats[m.c];
+      if (seat?.id === link.pid && !seat.bot && !this.rolling) this.doMove(m.c, Number(m.i));
+    } else if (m.type === "voice" && link.pid && m.id === link.pid)
+      this.hostVoice({ id: link.pid, peerId: String(m.peerId || ""), on: !!m.on, muted: !!m.muted });
     else if (m.type === "state") {
       // Send the result to everyone, the sender included: if the host changed
       // something at the same moment, the sender must end up with the same state.

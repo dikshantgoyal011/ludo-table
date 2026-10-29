@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Mic, MicOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -28,6 +29,7 @@ export function ChatDialog() {
     game.sendChat(t);
   };
   const typers = game.typingNames();
+  const voiceCount = game.voiceRoster.length;
 
   return (
     <Dialog
@@ -50,7 +52,26 @@ export function ChatDialog() {
             </Button>
           </DialogClose>
         </div>
-        <ul ref={listRef} className="flex min-h-[180px] flex-1 flex-col gap-2 overflow-y-auto px-4 py-3" aria-live="polite">
+        <div className="flex items-center gap-2 border-b border-border px-4 py-2 text-sm">
+          {game.voice.on ? <Mic className="size-4 text-[#4ade80]" /> : <MicOff className="size-4 text-muted-foreground" />}
+          <span className="min-w-0 flex-1 truncate text-muted-foreground">
+            {game.voice.on
+              ? `Voice chat on${game.voice.micMuted ? " · your mic is muted" : ""}`
+              : voiceCount
+                ? `${voiceCount} in voice chat`
+                : "Voice chat: talk while you play"}
+          </span>
+          {game.voice.on ? (
+            <Button variant="outline" size="xs" onClick={() => game.leaveVoice()}>
+              Leave voice
+            </Button>
+          ) : (
+            <Button size="xs" onClick={() => void game.toggleMic()} disabled={!game.online}>
+              Join voice
+            </Button>
+          )}
+        </div>
+        <ul ref={listRef} className="flex min-h-[180px] flex-1 flex-col gap-2 overflow-y-auto overscroll-contain px-4 py-3" aria-live="polite">
           {!game.chat.length && <li className="my-auto text-center text-sm text-muted-foreground">No messages yet. Say hi!</li>}
           {game.chat.map((m) => {
             const me = m.id === game.myId;

@@ -1,7 +1,7 @@
 // Peer-to-peer rooms via PeerJS (free public signalling server).
 // Room "abc123" is hosted by whoever holds the peer id PREFIX + "abc123".
-import type { DataConnection, Peer as PeerType } from "peerjs";
-import type { NetMessage, PeerLink, RoomEvents, RoomTransport } from "./transport";
+import type { DataConnection, MediaConnection, Peer as PeerType } from "peerjs";
+import type { NetMessage, PeerLink, RoomEvents, RoomTransport, VoiceCall } from "./transport";
 
 const PREFIX = "ludotable-v4-";
 
@@ -20,18 +20,59 @@ class Link implements PeerLink {
   }
 }
 
+class PeerVoiceCall implements VoiceCall {
+  readonly pid: string;
+  constructor(private readonly mc: MediaConnection) {
+    const meta = mc.metadata as { pid?: unknown } | undefined;
+    this.pid = String(meta?.pid || "");
+  }
+  get peerId() {
+    return this.mc.peer;
+  }
+  answer(stream: MediaStream) {
+    this.mc.answer(stream);
+  }
+  onStream(cb: (stream: MediaStream) => void) {
+    this.mc.on("stream", cb);
+  }
+  onClose(cb: () => void) {
+    this.mc.on("close", cb);
+    this.mc.on("error", cb);
+  }
+  close() {
+    try {
+      this.mc.close();
+    } catch {
+      /* already closed */
+    }
+  }
+}
+
 export class PeerRoomTransport implements RoomTransport {
   private peer: PeerType | null = null;
   private links: Link[] = [];
   private hostConn: DataConnection | null = null;
   private closed = false;
+  private callHandler: ((call: VoiceCall) => void) | null = null;
   isHost = false;
+
+  /** Voice chat calls can arrive on whichever peer this device is using. */
+  private listenForCalls(peer: PeerType) {
+    peer.on("call", (mc) => {
+      if (this.closed || !this.callHandler) {
+        mc.close();
+        return;
+      }
+      this.callHandler(new PeerVoiceCall(mc));
+    });
+  }
 
   async open(code: string, events: RoomEvents) {
     const { Peer } = await import("peerjs");
     if (this.closed) return;
     const peer = new Peer(PREFIX + code);
     this.peer = peer;
+    this.listenForCalls(peer);
 
     peer.on("open", () => {
       if (this.closed) return;
@@ -83,6 +124,7 @@ export class PeerRoomTransport implements RoomTransport {
     this.isHost = false;
     const peer = new Peer();
     this.peer = peer;
+    this.listenForCalls(peer);
     peer.on("open", () => {
       if (this.closed) return;
       const conn = peer.connect(PREFIX + code, { reliable: true });
@@ -123,6 +165,24 @@ export class PeerRoomTransport implements RoomTransport {
 
   guestCount() {
     return this.links.filter((l) => l.open).length;
+  }
+
+  peerId() {
+    return this.peer && !this.peer.destroyed && this.peer.open ? this.peer.id : null;
+  }
+
+  call(peerId: string, myPid: string, stream: MediaStream) {
+    if (this.closed || !this.peer || this.peer.destroyed) return null;
+    try {
+      const mc = this.peer.call(peerId, stream, { metadata: { pid: myPid } });
+      return mc ? new PeerVoiceCall(mc) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  onCall(cb: (call: VoiceCall) => void) {
+    this.callHandler = cb;
   }
   close() {
     this.closed = true;

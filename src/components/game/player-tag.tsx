@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Bot, MessageCircle } from "lucide-react";
+import { Bot, MessageCircle, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
 import { useGame, useSettings } from "@/hooks/use-game";
 import { COLORS, FINISH, MAX_MISSES } from "@/lib/game/constants";
 import type { Color } from "@/lib/game/types";
@@ -162,6 +162,51 @@ export function PlayerTag({ corner }: { corner: number }) {
                 Bot on
               </span>
             ))}
+          {/* Voice chat: my mic, or a speaker to mute this player for me */}
+          {seat && showChat && (
+            <button
+              type="button"
+              onClick={() => void game.toggleMic()}
+              aria-label={!game.voice.on ? "Join voice chat" : game.voice.micMuted ? "Unmute my microphone" : "Mute my microphone"}
+              aria-pressed={game.voice.on && !game.voice.micMuted}
+              title={!game.voice.on ? "Join voice chat" : game.voice.micMuted ? "Unmute my mic" : "Mute my mic"}
+              className={cn(
+                "relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95",
+                !game.voice.on
+                  ? "bg-background/70 text-muted-foreground"
+                  : game.voice.micMuted
+                    ? "bg-[#ef4444] text-white"
+                    : "bg-[#16a34a] text-white",
+                game.voice.on && !game.voice.micMuted && game.isSpeaking(seat.id) && "ring-2 ring-[#4ade80] ring-offset-1 ring-offset-transparent",
+              )}
+            >
+              {game.voice.on && !game.voice.micMuted ? <Mic className="size-4" strokeWidth={2.2} /> : <MicOff className="size-4" strokeWidth={2.2} />}
+            </button>
+          )}
+          {seat && !you && game.inVoice(seat.id) &&
+            (game.voice.on ? (
+              <button
+                type="button"
+                onClick={() => game.mutePeer(seat.id, !game.voice.isPeerMuted(seat.id))}
+                aria-label={game.voice.isPeerMuted(seat.id) ? `Unmute ${seat.nick}` : `Mute ${seat.nick} for me`}
+                aria-pressed={game.voice.isPeerMuted(seat.id)}
+                title={game.voice.isPeerMuted(seat.id) ? `Unmute ${seat.nick}` : `Mute ${seat.nick} (only for you)`}
+                className={cn(
+                  "relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95",
+                  game.voice.isPeerMuted(seat.id) ? "bg-[#ef4444] text-white" : "bg-background/70 text-foreground",
+                  game.isSpeaking(seat.id) && "ring-2 ring-[#4ade80]",
+                )}
+              >
+                {game.voice.isPeerMuted(seat.id) ? <VolumeX className="size-4" strokeWidth={2.2} /> : <Volume2 className="size-4" strokeWidth={2.2} />}
+                {game.micMutedBy(seat.id) && (
+                  <MicOff className="absolute -right-1 -bottom-1 size-3.5 rounded-full bg-background p-0.5 text-[#f87171]" strokeWidth={2.6} />
+                )}
+              </button>
+            ) : (
+              <span title={`${seat.nick} is in voice chat`} className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-background/50 text-muted-foreground">
+                <Mic className="size-3.5" strokeWidth={2.2} />
+              </span>
+            ))}
           {showChat && (
             <button
               type="button"
@@ -194,7 +239,7 @@ export function PlayerTag({ corner }: { corner: number }) {
         </div>
       </div>
       {/* Fixed-size slot so the layout doesn't jump when the dice moves */}
-      <div className="flex h-12 w-12 shrink-0 items-center justify-center min-[400px]:h-14 min-[400px]:w-14 sm:h-16 sm:w-16">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center min-[400px]:h-11 min-[400px]:w-11 sm:h-[52px] sm:w-[52px]">
         {dieColor === c && <Dice3D />}
       </div>
     </div>

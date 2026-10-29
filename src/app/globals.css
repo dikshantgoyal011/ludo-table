@@ -143,7 +143,7 @@
 
 /* ---------------------------------------------------------------- 3D dice */
 .dice {
-  --die: 48px;
+  --die: 38px;
   width: var(--die);
   height: var(--die);
   perspective: calc(var(--die) * 6);
@@ -151,12 +151,12 @@
 }
 @media (min-width: 400px) {
   .dice {
-    --die: 54px;
+    --die: 42px;
   }
 }
 @media (min-width: 640px) {
   .dice {
-    --die: 60px;
+    --die: 46px;
   }
 }
 .dice-hop {
