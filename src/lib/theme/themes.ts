@@ -1,4 +1,5 @@
 import type { Color } from "@/lib/game/types";
+import type { BoardStyleId } from "./boards";
 
 export interface Theme {
   name: string;
@@ -7,6 +8,8 @@ export interface Theme {
   /** Browser UI colour (meta theme-color) */
   meta: string;
   scheme: "dark" | "light";
+  /** The board design this theme uses unless Settings picks another */
+  boardStyle: BoardStyleId;
   /** UI colours as "r g b" triplets, exposed as CSS variables --c-NAME */
   vars: Record<"felt" | "felt2" | "panel" | "line" | "ink" | "muted" | "paper" | "gold", string>;
   frame: string;
@@ -25,6 +28,7 @@ export type ThemeId = "darbar" | "classic" | "king" | "midnight" | "wood" | "can
 export const THEMES: Record<ThemeId, Theme> = {
   darbar: {
     name: "Royal Darbar",
+    boardStyle: "royal",
     bg: "radial-gradient(900px 620px at 50% 0%, #135c41, transparent 70%), linear-gradient(170deg, #0b3d2c 0%, #072a1e 60%, #041a12 100%)",
     meta: "#072a1e",
     scheme: "dark",
@@ -41,6 +45,7 @@ export const THEMES: Record<ThemeId, Theme> = {
   },
   classic: {
     name: "Classic felt",
+    boardStyle: "modern",
     bg: "radial-gradient(900px 600px at 30% 10%, #143630, transparent 70%), #0f2a24",
     meta: "#0f2a24",
     scheme: "dark",
@@ -57,6 +62,7 @@ export const THEMES: Record<ThemeId, Theme> = {
   },
   king: {
     name: "Ludo King",
+    boardStyle: "modern",
     bg: "radial-gradient(900px 700px at 50% 0%, #3d4fd1, transparent 70%), linear-gradient(170deg, #2a1f8f 0%, #16247a 55%, #0b154f 100%)",
     meta: "#16247a",
     scheme: "dark",
@@ -73,6 +79,7 @@ export const THEMES: Record<ThemeId, Theme> = {
   },
   midnight: {
     name: "Midnight",
+    boardStyle: "modern",
     bg: "radial-gradient(900px 600px at 70% 0%, #1d2a52, transparent 70%), #0a0f1f",
     meta: "#0a0f1f",
     scheme: "dark",
@@ -89,6 +96,7 @@ export const THEMES: Record<ThemeId, Theme> = {
   },
   wood: {
     name: "Wooden",
+    boardStyle: "carved",
     bg: "radial-gradient(900px 600px at 30% 10%, #5a3720, transparent 70%), #2b1a10",
     meta: "#2b1a10",
     scheme: "dark",
@@ -105,6 +113,7 @@ export const THEMES: Record<ThemeId, Theme> = {
   },
   candy: {
     name: "Candy",
+    boardStyle: "modern",
     bg: "linear-gradient(160deg, #ffe3f1 0%, #ece6ff 55%, #dff3ff 100%)",
     meta: "#ffe3f1",
     scheme: "light",

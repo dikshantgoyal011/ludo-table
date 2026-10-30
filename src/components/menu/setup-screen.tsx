@@ -160,7 +160,7 @@ export function SetupScreen({ mode }: { mode: Mode }) {
 
       {mode === "local" && <LocalSetup profile={profile} save={save} onStart={() => go("/game")} />}
 
-      <Button variant="outline" className="self-start" onClick={() => go("/")}>
+      <Button variant="outline" className="self-start" onClick={() => go("/ludo")}>
         ← Back
       </Button>
     </Card>

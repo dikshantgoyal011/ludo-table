@@ -6,7 +6,9 @@ import { Switch } from "@/components/ui/switch";
 import { useSettings } from "@/hooks/use-game";
 import { playSound } from "@/lib/audio/sfx";
 import { COLORS } from "@/lib/game/constants";
-import { THEME_IDS, THEMES } from "@/lib/theme/themes";
+import { BoardPreview } from "@/components/game/board";
+import { BOARD_STYLE_IDS, BOARD_STYLES } from "@/lib/theme/boards";
+import { THEME_IDS, THEMES, themeOf } from "@/lib/theme/themes";
 import { uiStore, useUi } from "@/lib/ui-store";
 import { cn } from "@/lib/utils";
 
@@ -23,7 +25,7 @@ export function SettingsDialog() {
       <DialogContent className="max-h-[88vh]">
         <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
           <DialogTitle>Settings</DialogTitle>
-          <DialogDescription className="sr-only">Theme, token movement and sounds</DialogDescription>
+          <DialogDescription className="sr-only">Theme, board, token movement and sounds</DialogDescription>
           <DialogClose asChild>
             <Button variant="outline" size="sm">
               Done
@@ -57,6 +59,38 @@ export function SettingsDialog() {
                     <span>
                       {on ? "✓ " : ""}
                       {th.name}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="flex flex-col gap-2">
+            <SectionTitle>Board</SectionTitle>
+            <div className="grid grid-cols-2 gap-2 min-[420px]:grid-cols-4">
+              {(["auto", ...BOARD_STYLE_IDS] as const).map((key) => {
+                const on = settings.board === key;
+                const th = themeOf(settings.theme);
+                const style = key === "auto" ? th.boardStyle : key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => save({ ...settings, board: key })}
+                    className={cn(
+                      "flex flex-col items-stretch gap-1.5 rounded-xl border-2 bg-secondary p-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95",
+                      on ? "border-primary" : "border-transparent",
+                    )}
+                  >
+                    <BoardPreview style={style} th={th} />
+                    <span className="text-xs leading-tight font-bold">
+                      {on ? "✓ " : ""}
+                      {key === "auto" ? "Match theme" : BOARD_STYLES[key].name}
+                    </span>
+                    <span className="text-[11px] leading-tight text-muted-foreground">
+                      {key === "auto" ? BOARD_STYLES[style].name : BOARD_STYLES[key].hint}
                     </span>
                   </button>
                 );

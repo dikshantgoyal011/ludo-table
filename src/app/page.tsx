@@ -1,5 +1,5 @@
-import { MenuScreen } from "@/components/menu/menu-screen";
+import { GameLibrary } from "@/components/menu/menu-screen";
 
 export default function HomePage() {
-  return <MenuScreen />;
+  return <GameLibrary />;
 }

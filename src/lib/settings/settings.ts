@@ -1,3 +1,4 @@
+import type { BoardChoice } from "@/lib/theme/boards";
 import type { ThemeId } from "@/lib/theme/themes";
 
 export const SOUND_KEYS = [
@@ -15,6 +16,8 @@ export type SoundName = (typeof SOUND_KEYS)[number][0];
 
 export interface Settings {
   theme: ThemeId;
+  /** Board design; "auto" uses the theme's own */
+  board: BoardChoice;
   /** true: tokens hop square by square; false: glide to the square */
   steps: boolean;
   sound: { all: boolean } & Record<SoundName, boolean>;
@@ -22,6 +25,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: "darbar",
+  board: "auto",
   steps: true,
   sound: { all: true, dice: true, move: true, out: true, capture: true, home: true, turn: true, chat: true, win: true },
 };

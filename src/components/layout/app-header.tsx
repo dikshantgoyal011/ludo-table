@@ -16,14 +16,15 @@ export function AppHeader() {
   const [roomOpen, setRoomOpen] = useState(false);
   const [code, setCode] = useState("");
 
-  const onMenu = pathname === "/";
+  const onMenu = pathname === "/" || pathname === "/ludo";
   const inGame = pathname === "/game" || pathname.startsWith("/r/");
   const friends = inGame && game.mode === "friends";
 
+  // Out of a Ludo game or its setup: back to the Ludo menu.
   const goMenu = () => {
     if (inGame && !game.requestMenu()) return;
     game.exitToMenu();
-    router.push("/");
+    router.push(inGame || pathname.startsWith("/play/") ? "/ludo" : "/");
   };
 
   const joinRoom = () => {

@@ -1,4 +1,5 @@
 import { DEFAULT_SETTINGS, type Settings } from "@/lib/settings/settings";
+import { isBoardChoice } from "@/lib/theme/boards";
 import { isThemeId } from "@/lib/theme/themes";
 import type { SettingsRepository } from "../types";
 import { Emitter, storage } from "../storage";
@@ -20,6 +21,7 @@ export class LocalSettingsRepository implements SettingsRepository {
     if (!sv || typeof sv !== "object") return;
     const s = this.settings;
     if (isThemeId(sv.theme)) s.theme = sv.theme;
+    if (isBoardChoice(sv.board)) s.board = sv.board;
     if (typeof sv.steps === "boolean") s.steps = sv.steps;
     if (sv.sound && typeof sv.sound === "object") {
       for (const k of Object.keys(s.sound) as (keyof Settings["sound"])[]) {

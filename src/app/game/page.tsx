@@ -15,7 +15,7 @@ export default function GamePage() {
   // Opened directly (e.g. after a reload) with no game running: offer the menu,
   // which shows "Continue your game" when there is a saved one.
   useEffect(() => {
-    if (mounted && !game.mode) router.replace("/");
+    if (mounted && !game.mode) router.replace("/ludo");
   }, [mounted, game.mode, router]);
 
   if (!mounted || !game.mode) return null;
