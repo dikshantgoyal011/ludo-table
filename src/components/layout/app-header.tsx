@@ -20,11 +20,11 @@ export function AppHeader() {
   const inGame = pathname === "/game" || pathname.startsWith("/r/");
   const friends = inGame && game.mode === "friends";
 
-  // Out of a Ludo game or its setup: back to the Ludo menu.
+  // Back to the home screen (from a game: only after "Leave game?" when others are playing).
   const goMenu = () => {
     if (inGame && !game.requestMenu()) return;
     game.exitToMenu();
-    router.push(inGame || pathname.startsWith("/play/") ? "/ludo" : "/");
+    router.push("/");
   };
 
   const joinRoom = () => {
@@ -60,10 +60,29 @@ export function AppHeader() {
   return (
     <>
       <header className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="flex shrink-0 items-center gap-2 leading-none whitespace-nowrap sm:gap-2.5">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.svg" alt="" width={44} height={44} className="h-9 w-9 shrink-0 min-[420px]:h-10 min-[420px]:w-10 sm:h-12 sm:w-12" />
-          <span className="brand-gold pt-1 font-[family-name:var(--font-brand)] text-2xl font-normal min-[420px]:text-[1.7rem] sm:text-4xl">Ludo Darbar</span>
+        <h1 className="shrink-0 leading-none">
+          <a
+            href="/"
+            aria-label="Ludo Darbar, home"
+            onClick={(e) => {
+              e.preventDefault();
+              if (pathname === "/") {
+                window.scrollTo({ top: 0, behavior: "smooth" });
+                return;
+              }
+              if (inGame && !game.requestMenu()) {
+                game.setBanner("Tap Ludo Darbar again to leave this game.");
+                return;
+              }
+              game.exitToMenu();
+              router.push("/");
+            }}
+            className="flex items-center gap-2 rounded-xl whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[.98] sm:gap-2.5"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.svg" alt="" width={44} height={44} className="h-9 w-9 shrink-0 min-[420px]:h-10 min-[420px]:w-10 sm:h-12 sm:w-12" />
+            <span className="brand-gold pt-1 font-[family-name:var(--font-brand)] text-2xl font-normal min-[420px]:text-[1.7rem] sm:text-4xl">Ludo Darbar</span>
+          </a>
         </h1>
         <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
           {inGame && game.mode && (

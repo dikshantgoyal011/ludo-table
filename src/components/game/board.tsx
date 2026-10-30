@@ -302,7 +302,7 @@ function FrameCorners() {
 }
 
 /** One token, drawn to suit the board. */
-function TokenArt({ style, fill }: { style: BoardStyleId; fill: string }) {
+export function TokenArt({ style, fill }: { style: BoardStyleId; fill: string }) {
   if (style === "royal")
     return (
       <>
@@ -342,15 +342,25 @@ export function useBoardStyle(): [BoardStyleId, Theme] {
 
 const svgId = (raw: string) => "b" + raw.replace(/[^a-zA-Z0-9]/g, "");
 
-/** Small non-interactive board for the Settings picker. */
-export function BoardPreview({ style, th }: { style: BoardStyleId; th: Theme }) {
+/**
+ * Non-interactive board: the Settings picker, and the home page's live preview
+ * (`children` are drawn on a layer above it, in board units 0-15).
+ */
+export function BoardPreview({ style, th, children, className }: { style: BoardStyleId; th: Theme; children?: React.ReactNode; className?: string }) {
   const uid = svgId(useId());
   const Surface = SURFACES[style];
   return (
-    <div className="relative aspect-square w-full rounded-lg p-1" style={frameStyle(style, th)}>
-      <svg viewBox="0 0 15 15" className="block h-full w-full rounded-sm" aria-hidden="true">
-        <Surface th={th} colorKey={COLORS.join(",")} uid={uid} />
-      </svg>
+    <div className={cn("relative aspect-square w-full rounded-lg p-1", className)} style={frameStyle(style, th)}>
+      <div className="relative h-full w-full">
+        <svg viewBox="0 0 15 15" className="board-layer absolute inset-0 block h-full w-full rounded-sm" aria-hidden="true">
+          <Surface th={th} colorKey={COLORS.join(",")} uid={uid} />
+        </svg>
+        {children && (
+          <svg viewBox="0 0 15 15" className="board-layer absolute inset-0 block h-full w-full" aria-hidden="true">
+            {children}
+          </svg>
+        )}
+      </div>
     </div>
   );
 }
@@ -397,7 +407,7 @@ export function Board() {
             {views.map((t) => (
               <g
                 key={t.c + t.i}
-                className={"token" + (t.movable ? " movable" : "") + (t.stepping ? " stepping" : "")}
+                className={"token" + (t.movable ? " movable" : "") + (t.stepping ? " stepping" : "") + (t.returning ? " returning" : "")}
                 style={{ transform: `translate(${t.x}px,${t.y}px) scale(${t.scale})`, display: t.hidden ? "none" : undefined }}
               >
                 <TokenArt style={style} fill={hex(t.c)} />

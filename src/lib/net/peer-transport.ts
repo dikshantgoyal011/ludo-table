@@ -7,10 +7,14 @@ const PREFIX = "ludotable-v4-";
 /** A guest whose connection to the host hasn't opened by now gives up and tries again. */
 const CONNECT_TIMEOUT = 10_000;
 
-/** Start downloading PeerJS early (e.g. while the menu shows), so opening a room doesn't wait for it. */
-export function preloadPeer() {
-  void import("peerjs").catch(() => {});
-}
+/**
+ * PeerJS, loaded when a room opens. The browser downloads it ahead of time
+ * when it's idle (webpackPrefetch: a low-priority <link rel="prefetch">), so
+ * opening a room doesn't wait for the download, and it only runs (about 0.4s
+ * of work on a phone) when it's needed. Running it early froze whatever
+ * screen was showing.
+ */
+const loadPeer = () => import(/* webpackPrefetch: true */ "peerjs");
 
 class Link implements PeerLink {
   pid?: string;
@@ -97,7 +101,7 @@ export class PeerRoomTransport implements RoomTransport {
   }
 
   async open(code: string, events: RoomEvents) {
-    const { Peer } = await import("peerjs");
+    const { Peer } = await loadPeer();
     if (this.closed) return;
     // Try to host the room and, at the same time, register a second address to
     // join it with. If the room is already hosted we connect straight away

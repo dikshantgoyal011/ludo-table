@@ -48,7 +48,7 @@ export function WinDialog() {
             variant="outline"
             onClick={() => {
               game.exitToMenu();
-              router.push("/ludo");
+              router.push("/");
             }}
           >
             Back to menu

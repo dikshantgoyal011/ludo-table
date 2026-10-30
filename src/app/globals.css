@@ -92,13 +92,34 @@
   html {
     -webkit-tap-highlight-color: transparent;
   }
+  html {
+    /* Behind everything (and what shows when a phone over-scrolls). */
+    background-color: var(--page-base, #072a1e);
+  }
   body {
     min-height: 100%;
     font-family: var(--font-display);
     color: var(--foreground);
-    background:
+  }
+  /*
+   * The page background sits on its own layer fixed to the screen. Painted on
+   * the page itself it was sized to one screen height and started over (a hard
+   * cut) further down; with background-attachment: fixed phones repainted it on
+   * every scroll. The theme sets --page-bg (theme-applier.tsx).
+   */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: var(
+      --page-bg,
       radial-gradient(900px 620px at 50% 0%, #135c41, transparent 70%),
-      linear-gradient(170deg, #0b3d2c 0%, #072a1e 60%, #041a12 100%);
+      linear-gradient(170deg, #0b3d2c 0%, #072a1e 60%, #041a12 100%)
+    );
+  }
+  body {
     padding-top: env(safe-area-inset-top, 0px);
     padding-bottom: env(safe-area-inset-bottom, 0px);
     padding-left: max(12px, env(safe-area-inset-left, 0px));
@@ -120,6 +141,73 @@
   filter: drop-shadow(0 1px 0 rgba(60, 36, 4, 0.9)) drop-shadow(0 3px 6px rgba(0, 0, 0, 0.35));
 }
 
+/* ---------------------------------------------------------------- home: Darbar showcase */
+/* A palace-window (jharokha) frame: rounded arch on top, gold rims. */
+.darbar-arch {
+  position: relative;
+  padding: 18% 7% 6%;
+  border-radius: 50% 50% 26px 26px / 22% 22% 26px 26px;
+  background:
+    radial-gradient(120% 60% at 50% 0%, rgb(232 184 74 / 0.22), transparent 60%),
+    linear-gradient(180deg, #0f5139 0%, #082e21 60%, #05211a 100%);
+  box-shadow:
+    inset 0 0 0 2px #f0cf72,
+    inset 0 0 0 6px #3b2a0a,
+    inset 0 0 0 7.5px #c8962e,
+    0 24px 48px rgb(0 0 0 / 0.45);
+}
+/* Faint lattice (jaali) behind the showcase. */
+.darbar-jaali {
+  background-image:
+    linear-gradient(45deg, rgb(232 184 74 / 0.06) 1px, transparent 1px),
+    linear-gradient(-45deg, rgb(232 184 74 / 0.06) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.demo-tumble {
+  animation: demo-tumble 0.7s cubic-bezier(0.3, 0.6, 0.3, 1) both;
+}
+@keyframes demo-tumble {
+  0% {
+    transform: translateY(0) rotate(0deg);
+  }
+  35% {
+    transform: translateY(-55%) rotate(200deg) scale(0.92);
+  }
+  70% {
+    transform: translateY(0) rotate(340deg);
+  }
+  85% {
+    transform: translateY(-10%) rotate(355deg);
+  }
+  100% {
+    transform: translateY(0) rotate(360deg);
+  }
+}
+.demo-bob {
+  animation: demo-bob 0.55s ease-in-out infinite alternate;
+}
+@keyframes demo-bob {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-0.12px);
+  }
+}
+.showcase-fade {
+  animation: showcase-fade 0.35s ease-out both;
+}
+@keyframes showcase-fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* ---------------------------------------------------------------- board */
 /* Board picture and token layer each get their own GPU layer (see board.tsx). */
 .board-layer {
@@ -132,6 +220,10 @@
 }
 .token.stepping {
   transition: transform 0.13s ease-out;
+}
+/* A cut token flying home can cross the whole board: give it time (RETURN_MS in the controller). */
+.token.returning {
+  transition: transform 0.65s cubic-bezier(0.45, 0.05, 0.25, 1);
 }
 .token.movable {
   cursor: pointer;
@@ -409,7 +501,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .typing-dots span {
+  .typing-dots span,
+  .demo-tumble,
+  .demo-bob,
+  .showcase-fade {
     animation: none;
   }
   .token {

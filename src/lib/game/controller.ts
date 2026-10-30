@@ -57,8 +57,13 @@ export interface TokenView {
   scale: number;
   movable: boolean;
   stepping: boolean;
+  /** Cut: flying back to its yard (a longer glide, it can cross the board). */
+  returning: boolean;
   hidden: boolean;
 }
+
+/** How long a cut token takes to fly home (matches .token.returning in globals.css). */
+const RETURN_MS = 650;
 
 interface MoveAnim {
   c: Color;
@@ -163,6 +168,10 @@ export class GameController {
   private tokenBusyUntil: Record<string, number> = {};
   /** Per token: which move animation is walking it right now. */
   private animOwner: Record<string, number> = {};
+  /** Tokens gliding out of the yard right now (not one-square hops). */
+  private comingOut = new Set<string>();
+  /** Cut tokens flying back to their yard right now. */
+  private returning = new Set<string>();
   /** Guest: the roll number (seq) my own roll will get; its dice already played here. */
   private ownRollSeq = 0;
   /**
@@ -887,12 +896,17 @@ export class GameController {
           y,
           scale,
           movable: moveSet.has(t.c + t.i),
-          stepping: this.settings.steps && this.animPos[t.c + t.i] !== undefined,
+          // Quick one-square hops while walking; coming out of the yard is a longer glide.
+          stepping: this.settings.steps && this.animPos[t.c + t.i] !== undefined && !this.comingOut.has(t.c + t.i),
+          returning: this.returning.has(t.c + t.i),
           hidden: !s.seats[t.c] || !!s.seats[t.c]?.out,
         });
       });
     }
-    return out;
+    // Always the same order (red 0-3, green 0-3, ...). Grouped by square, the
+    // order changed whenever a token changed square; the board then moved token
+    // elements around, and moving an element cancels its slide: the token jumped.
+    return out.sort((a, b) => CI[a.c] * 4 + a.i - (CI[b.c] * 4 + b.i));
   }
 
   private animateMove(m: MoveAnim, caps: { c: Color; i: number; a: number }[], delay: number) {
@@ -916,6 +930,7 @@ export class GameController {
           if (m.b === FINISH) this.play("home");
           if (caps.length) {
             caps.forEach((k) => delete this.animPos[k.c + k.i]);
+            this.sendHome(caps.map((k) => k.c + k.i));
             this.play("capture");
           }
           this.emit();
@@ -926,9 +941,11 @@ export class GameController {
       this.animOwner[key] = gen;
       if (m.a === -1) {
         this.animPos[key] = 0;
+        this.comingOut.add(key);
         this.play("out");
         this.emit();
-        finish(300);
+        this.animTimers.push(setTimeout(() => this.comingOut.delete(key), 380));
+        finish(380);
         return;
       }
       if (!steps) {
@@ -956,11 +973,17 @@ export class GameController {
       }, STEP_MS);
       this.animTimers.push(iv as unknown as ReturnType<typeof setTimeout>);
     };
-    const total = delay + (m.a === -1 ? 300 : steps ? (m.b - m.a + 1) * STEP_MS : 360);
+    const total = delay + (m.a === -1 ? 380 : steps ? (m.b - m.a + 1) * STEP_MS : 360);
     this.animBusyUntil = Math.max(this.animBusyUntil, Date.now() + total);
     this.tokenBusyUntil[key] = Date.now() + total;
     if (delay) this.animTimers.push(setTimeout(run, delay));
     else run();
+  }
+
+  /** Cut tokens glide back to their yard slowly enough to follow across the board. */
+  private sendHome(keys: string[]) {
+    keys.forEach((k) => this.returning.add(k));
+    this.animTimers.push(setTimeout(() => keys.forEach((k) => this.returning.delete(k)), RETURN_MS + 50));
   }
 
   private stopAnimations() {
@@ -973,6 +996,8 @@ export class GameController {
     for (const k in this.animPos) delete this.animPos[k];
     this.animGen = {};
     this.animOwner = {};
+    this.comingOut.clear();
+    this.returning.clear();
     this.tokenBusyUntil = {};
   }
 
@@ -1000,7 +1025,10 @@ export class GameController {
         this.diceLandsAt - Date.now(),
       );
       moves.forEach((m) => this.animateMove(m, caps, delay));
-      if (!moves.length && caps.length) this.play("capture");
+      if (!moves.length && caps.length) {
+        this.sendHome(caps.map((k) => k.c + k.i));
+        this.play("capture");
+      }
     }
     if (next.phase === "playing" && prev.phase === "playing" && next.turn !== prev.turn && this.mode !== "local" && this.mine(next, next.turn)) {
       setTimeout(() => this.play("turn"), Math.max(250, this.animBusyUntil - Date.now()));
@@ -1492,6 +1520,9 @@ export class GameController {
           this.persist();
           if (first) this.onFirstState();
           this.netSummary();
+          // Took over a game in progress: mark the old host offline now, not on the
+          // next heartbeat (their tag flickered back to online for up to a second).
+          if (this.state.phase === "playing") this.checkPresence();
           this.onRemoteState();
           // A new host starts a fresh voice chat list; guests re-announce themselves.
           this.voiceMembers.clear();

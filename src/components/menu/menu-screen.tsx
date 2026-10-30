@@ -3,24 +3,45 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Bot, Globe, Smartphone, Sparkles, Users, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getController } from "@/hooks/use-game";
 import { isRoomCode, MODE_ORDER, MODES } from "@/lib/game/constants";
 import type { Mode } from "@/lib/game/types";
-import { VARIANTS, type Variant } from "@/lib/game/variants";
+import { variantById, type Variant } from "@/lib/game/variants";
 import type { ActiveRoom } from "@/lib/services/types";
 import { cn } from "@/lib/utils";
+import { GamePicker } from "./game-picker";
+import { GamePreview } from "./game-preview";
 
-const ICONS: Record<Mode, [string, string]> = {
-  online: ["#2563d4", "#1d9a52"],
-  computer: ["#d8382e", "#a9c3ba"],
-  local: ["#efb20a", "#d8382e"],
-  friends: ["#1d9a52", "#efb20a"],
+const MODE_ICONS: Record<Mode, LucideIcon> = { online: Globe, computer: Bot, local: Smartphone, friends: Users };
+const MODE_SHORT: Record<Mode, string> = {
+  online: "Matched with players anywhere",
+  computer: "You against 1 to 3 bots",
+  local: "Pass one phone around",
+  friends: "Private room with a link",
 };
 
+/** Remembered between visits, and shared with the setup screens' game switcher. */
+const GAME_KEY = "ludo.game";
+export function rememberGame(id: string) {
+  try {
+    localStorage.setItem(GAME_KEY, id);
+  } catch {
+    /* private mode */
+  }
+}
+function rememberedGame() {
+  try {
+    return localStorage.getItem(GAME_KEY);
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Shared by both menus: sends old /#code invite links to their room, leaves any
- * game, and offers to rejoin or continue one.
+ * Sends old /#code invite links to their room, leaves any game, and offers to
+ * rejoin or continue one.
  */
 function ResumeButtons() {
   const router = useRouter();
@@ -40,12 +61,13 @@ function ResumeButtons() {
     setRejoin(game.activeRoom());
   }, [router]);
 
+  if (!rejoin && !resume) return null;
   return (
-    <>
+    <div className="flex flex-col gap-2 sm:flex-row">
       {rejoin && (
         <Button
           size="lg"
-          className="w-full"
+          className="w-full sm:flex-1"
           onClick={() => {
             const path = getController().rejoin();
             if (path) router.push(path);
@@ -58,7 +80,7 @@ function ResumeButtons() {
       {resume && (
         <Button
           size="lg"
-          className="w-full"
+          className="w-full sm:flex-1"
           onClick={() => {
             if (getController().resumeOffline()) router.push("/game");
           }}
@@ -66,151 +88,144 @@ function ResumeButtons() {
           Continue your {MODES[resume].chip.toLowerCase()} Ludo game
         </Button>
       )}
-    </>
+    </div>
   );
 }
 
-/** Small board drawing for a game card. */
-function MiniBoard({ kind, accent }: { kind: Variant["board"]; accent: string }) {
-  const cols = ["#c8262b", "#16894a", "#e9a912", "#1f5fcc"];
-  if (kind === "cross")
-    return (
-      <svg viewBox="0 0 30 30" className="h-full w-full" aria-hidden="true">
-        <path d="M11 1h8v10h10v8H19v10h-8V19H1v-8h10z" fill="#f8f0da" stroke={accent} strokeWidth="1.2" strokeLinejoin="round" />
-        <rect x="13.5" y="2.5" width="3" height="8" fill={cols[1]} />
-        <rect x="19.5" y="13.5" width="8" height="3" fill={cols[2]} />
-        <rect x="13.5" y="19.5" width="3" height="8" fill={cols[3]} />
-        <rect x="2.5" y="13.5" width="8" height="3" fill={cols[0]} />
-        <circle cx="15" cy="15" r="3" fill={accent} />
-      </svg>
-    );
-  if (kind === "plane")
-    return (
-      <svg viewBox="0 0 30 30" className="h-full w-full" aria-hidden="true">
-        <rect x="1" y="1" width="28" height="28" rx="5" fill="#f8f0da" stroke={accent} strokeWidth="1.2" />
-        {[0, 1, 2, 3].map((k) => (
-          <path key={k} d="M15 15 L15 3 A12 12 0 0 1 27 15 Z" fill={cols[k]} opacity=".9" transform={`rotate(${k * 90} 15 15)`} />
-        ))}
-        <path d="M15 8l1.6 5 5 1v1.6l-5-.6-.4 4 1.8 1.4V22L15 21l-3 1v-1.6l1.8-1.4-.4-4-5 .6V14l5-1z" fill="#fff" stroke="#333" strokeWidth=".5" />
-      </svg>
-    );
-  const n = kind === "grid5" ? 5 : 7;
-  const s = 28 / n;
-  const mid = Math.floor(n / 2);
-  const marks = [
-    [mid, mid],
-    [0, mid],
-    [mid, 0],
-    [n - 1, mid],
-    [mid, n - 1],
-  ];
+/** The four ways to play a game that's ready. */
+function PlayModes() {
   return (
-    <svg viewBox="0 0 30 30" className="h-full w-full" aria-hidden="true">
-      <rect x="1" y="1" width="28" height="28" rx="2" fill="#f3e2bc" stroke={accent} strokeWidth="1.2" />
-      {Array.from({ length: n - 1 }, (_, i) => (
-        <path key={i} d={`M${1 + s * (i + 1)} 1V29M1 ${1 + s * (i + 1)}H29`} stroke="#8a5a2a" strokeWidth=".5" />
-      ))}
-      {marks.map(([r, c], k) => (
-        <path
-          key={k}
-          d={`M${1 + c * s + s * 0.2} ${1 + r * s + s * 0.2}l${s * 0.6} ${s * 0.6}m0 ${-s * 0.6}l${-s * 0.6} ${s * 0.6}`}
-          stroke={k === 0 ? accent : cols[k - 1]}
-          strokeWidth="1.1"
-          strokeLinecap="round"
-        />
-      ))}
+    <div className="grid grid-cols-2 gap-2.5">
+      {MODE_ORDER.map((key, k) => {
+        const Icon = MODE_ICONS[key];
+        const primary = k === 0;
+        return (
+          <Link
+            key={key}
+            href={`/play/${key}`}
+            className={cn(
+              "group flex min-h-[92px] flex-col justify-between gap-2 rounded-2xl border p-3 text-left transition outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[.97]",
+              primary
+                ? "border-[#f6d985] bg-[linear-gradient(150deg,#f6d985,#d9a73e_55%,#b07a1c)] text-[#2a1d06] shadow-[0_10px_24px_rgba(0,0,0,.35)]"
+                : "border-primary/45 bg-background/40 hover:border-primary hover:bg-background/60",
+            )}
+          >
+            <span className={cn("flex h-9 w-9 items-center justify-center rounded-full", primary ? "bg-[#2a1d06]/15" : "bg-primary/15 text-primary ring-1 ring-primary/40")}>
+              <Icon className="size-[18px]" strokeWidth={2.2} />
+            </span>
+            <span className="flex flex-col">
+              <span className="text-[15px] leading-tight font-extrabold">{MODES[key].title}</span>
+              <span className={cn("text-xs leading-snug", primary ? "text-[#2a1d06]/75" : "text-muted-foreground")}>{MODE_SHORT[key]}</span>
+            </span>
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Gold dome on top of the arch, as in the logo. */
+function ArchDome() {
+  return (
+    <svg viewBox="-60 -120 120 130" className="absolute -top-7 left-1/2 h-14 w-14 -translate-x-1/2 drop-shadow-[0_4px_6px_rgba(0,0,0,.45)]" aria-hidden="true">
+      <defs>
+        <linearGradient id="arch-dome" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#a8721a" />
+          <stop offset=".4" stopColor="#ffe9a0" />
+          <stop offset="1" stopColor="#8a5a10" />
+        </linearGradient>
+      </defs>
+      <g stroke="#4a2e06" strokeWidth="4" strokeLinejoin="round">
+        <rect x="-40" y="-14" width="80" height="22" rx="4" fill="url(#arch-dome)" />
+        <path d="M-36 -14 C-52 -42 -18 -58 0 -80 C18 -58 52 -42 36 -14 Z" fill="url(#arch-dome)" />
+        <path d="M0 -80 V-102" strokeWidth="5" strokeLinecap="round" />
+        <circle cx="0" cy="-92" r="6" fill="url(#arch-dome)" />
+      </g>
     </svg>
   );
 }
 
-/** Home page: every Ludo variation, the ones not built yet faded with "Coming soon". */
-export function GameLibrary() {
+/** The selected game: its live preview in a palace arch, what it is, and how to play it. */
+function Showcase({ v, onPick }: { v: Variant; onPick: (id: string) => void }) {
   return (
-    <section className="mx-auto flex w-full max-w-3xl flex-col gap-4 py-2">
-      <div className="flex flex-col gap-1">
-        <p className="text-sm font-bold tracking-[0.18em] text-primary uppercase">Every Ludo ever played</p>
-        <h2 className="text-3xl leading-tight font-extrabold sm:text-4xl">Which game do you want to play?</h2>
-        <p className="text-muted-foreground">Each one plays like the Ludo you know, with a twist or two.</p>
+    <section
+      key={v.id}
+      aria-label={v.name}
+      className="darbar-jaali showcase-fade grid grid-cols-1 gap-5 rounded-[28px] border border-primary/35 bg-card/60 px-4 pt-9 pb-5 shadow-[0_18px_50px_rgba(0,0,0,.35)] sm:px-6 sm:pb-6 md:grid-cols-[minmax(0,400px)_minmax(0,1fr)] md:items-center md:gap-8"
+    >
+      <div className="darbar-arch mx-auto w-full max-w-[300px] sm:max-w-[400px]">
+        <ArchDome />
+        <GamePreview variant={v} />
       </div>
-      <ResumeButtons />
-      <ul className="grid grid-cols-1 gap-3 min-[520px]:grid-cols-2 lg:grid-cols-3">
-        {VARIANTS.map((v) => {
-          const body = (
-            <>
-              <span className="flex items-start gap-3">
-                <span className="h-14 w-14 shrink-0 rounded-xl p-1.5 shadow-inner" style={{ background: v.tint[0] }}>
-                  <MiniBoard kind={v.board} accent={v.tint[1]} />
-                </span>
-                <span className="flex min-w-0 flex-col">
-                  <span className="text-xl leading-tight font-extrabold">{v.name}</span>
-                  <span className="text-xs font-semibold tracking-wide uppercase" style={{ color: v.tint[1] }}>
-                    {v.origin}
-                  </span>
-                </span>
-              </span>
-              <span className="text-sm leading-snug text-muted-foreground">{v.hint}</span>
-            </>
-          );
-          const card =
-            "relative flex h-full flex-col gap-2.5 overflow-hidden rounded-2xl border p-4 text-left";
-          return (
-            <li key={v.id}>
-              {v.href ? (
-                <Link
-                  href={v.href}
-                  className={cn(
-                    card,
-                    "border-primary/70 bg-card shadow-[0_0_0_1px_rgb(var(--c-gold)/.25),0_8px_24px_rgba(0,0,0,.25)] transition outline-none hover:border-primary focus-visible:ring-2 focus-visible:ring-ring active:scale-[.98]",
-                  )}
-                >
-                  {body}
-                  <span className="mt-auto self-start rounded-full bg-primary px-3 py-1 text-sm font-bold text-primary-foreground">Play now</span>
-                </Link>
-              ) : (
-                <div className={cn(card, "border-border bg-card/60")} aria-disabled="true">
-                  <div className="flex flex-col gap-2.5 opacity-45 grayscale-[35%]">{body}</div>
-                  <span className="pointer-events-none absolute top-3 right-3 rotate-3 rounded-full border border-primary/70 bg-background/90 px-3 py-1 text-[11px] font-extrabold tracking-[0.18em] text-primary uppercase shadow-lg">
-                    Coming soon
-                  </span>
-                </div>
-              )}
+
+      <div className="flex min-w-0 flex-col gap-4">
+        <div className="flex flex-col gap-1.5">
+          <span className="text-xs font-bold tracking-[0.2em] text-primary uppercase">{v.origin}</span>
+          <h2 className="brand-gold font-[family-name:var(--font-brand)] text-[2.6rem] leading-[1.05] font-normal sm:text-5xl">{v.name}</h2>
+          <p className="text-sm leading-relaxed text-muted-foreground sm:text-[15px]">{v.hint}</p>
+        </div>
+        <ul className="flex flex-col gap-1.5">
+          {v.points.map((p) => (
+            <li key={p} className="flex items-start gap-2 text-sm font-semibold">
+              <svg viewBox="-1 -1 2 2" className="mt-[3px] h-3.5 w-3.5 shrink-0" aria-hidden="true">
+                <polygon points="0,-1 .22,-.22 1,0 .22,.22 0,1 -.22,.22 -1,0 -.22,-.22" fill="#e8b84a" />
+              </svg>
+              {p}
             </li>
-          );
-        })}
-      </ul>
+          ))}
+        </ul>
+        {v.ready ? (
+          <>
+            <PlayModes />
+            <p className="text-xs text-muted-foreground">Random dice that give you a little help when you&apos;re stuck.</p>
+          </>
+        ) : (
+          <div className="flex flex-col gap-3 rounded-2xl border border-dashed border-primary/50 bg-background/40 p-4">
+            <span className="flex items-center gap-2 text-sm font-extrabold tracking-[0.16em] text-primary uppercase">
+              <Sparkles className="size-4" /> Coming soon
+            </span>
+            <p className="text-sm text-muted-foreground">We&apos;re building {v.name} right now. Until then, the classic is ready to play.</p>
+            <Button className="self-start" onClick={() => onPick("ludo")}>
+              Play Ludo meanwhile
+            </Button>
+          </div>
+        )}
+      </div>
     </section>
   );
 }
 
-/** Ludo: pick how to play. */
-export function MenuScreen() {
+/** Home page: pick a game, watch it play, and start it right here. */
+export function GameHub({ initial }: { initial?: string }) {
+  const [selected, setSelected] = useState(initial || "ludo");
+
+  // ?game= in the link wins, then the game picked last time.
+  useEffect(() => {
+    if (initial) return;
+    const fromUrl = new URLSearchParams(window.location.search).get("game");
+    const id = fromUrl || rememberedGame();
+    if (id && variantById(id).id === id) setSelected(id);
+  }, [initial]);
+
+  const pick = (id: string) => {
+    setSelected(id);
+    rememberGame(id);
+    // Keep the address shareable without navigating.
+    window.history.replaceState(null, "", id === "ludo" ? "/" : `/?game=${id}`);
+  };
+
+  const v = variantById(selected);
   return (
-    <section className="mx-auto flex w-full max-w-xl flex-col gap-4 py-2">
-      <div className="flex flex-col gap-1">
-        <Link href="/" className="self-start text-sm font-bold tracking-[0.18em] text-primary uppercase underline-offset-4 hover:underline">
-          ← All games
-        </Link>
-        <h2 className="text-3xl leading-tight font-extrabold sm:text-4xl">How do you want to play Ludo?</h2>
-        <p className="text-muted-foreground">Random dice that give you a little help when you&apos;re stuck.</p>
-      </div>
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 py-1">
       <ResumeButtons />
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {MODE_ORDER.map((key) => (
-          <Link
-            key={key}
-            href={`/play/${key}`}
-            className="flex flex-col items-start gap-2 rounded-2xl border border-border bg-card p-4 text-left transition outline-none hover:border-primary focus-visible:ring-2 focus-visible:ring-ring active:scale-[.98]"
-          >
-            <span className="flex gap-1" aria-hidden="true">
-              {ICONS[key].map((col) => (
-                <span key={col} className="h-3 w-3 rounded-full" style={{ background: col }} />
-              ))}
-            </span>
-            <span className="text-xl leading-tight font-extrabold">{MODES[key].title}</span>
-            <span className="text-sm leading-snug text-muted-foreground">{MODES[key].desc}</span>
-          </Link>
-        ))}
+      <div className="flex flex-col gap-1">
+        <div className="flex items-end justify-between gap-3">
+          <h2 className="text-sm font-bold tracking-[0.2em] text-primary uppercase">Every Ludo ever played</h2>
+          <span className="hidden text-xs text-muted-foreground sm:inline lg:hidden">Swipe to see them all</span>
+        </div>
+        <GamePicker selected={selected} onSelect={pick} />
       </div>
-    </section>
+      <Showcase v={v} onPick={pick} />
+    </div>
   );
 }
