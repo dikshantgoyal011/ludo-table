@@ -74,7 +74,7 @@ export function TurnCard() {
     // Everyone at the table: finishers in order, then the rest by how far they got.
     const rest = COLORS.filter((c) => s.seats[c] && !s.winners.includes(c)).sort((a, b) => progress(s, b) - progress(s, a));
     hint = [...s.winners, ...rest]
-      .map((c, k) => `${k + 1}. ${s.seats[c]?.nick || NAMES[c]}${s.seats[c]?.out ? " (out)" : ""}`)
+      .map((c, k) => `${k + 1}. ${s.seats[c]?.nick || NAMES[c]}${s.seats[c]?.out ? (s.seats[c]?.left ? " (left)" : " (out)") : ""}`)
       .join("   ");
     action = (
       <Button
@@ -218,7 +218,9 @@ export function PlayersPanel() {
                 {place >= 0
                   ? `#${place + 1}`
                   : slot && s.seats[slot]?.out
-                    ? "Out"
+                    ? s.seats[slot]?.left
+                      ? "Left"
+                      : "Out"
                     : slot && s.seats[slot]?.takeover
                       ? "Bot on"
                       : slot && s.seats[slot]?.bot

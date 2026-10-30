@@ -88,7 +88,7 @@ export function PlayerTag({ corner }: { corner: number }) {
   // Offline: show how long until the computer takes over.
   const away = seat && s.phase === "playing" && place < 0 ? game.awayInfo(seat).away : false;
   if (away && seat) meta = seat.bot ? "Offline" : `Offline · bot in ${Math.ceil(game.offlineLeft(seat) / 1000)}s`;
-  if (seat?.out) meta = "Out · missed 5 turns";
+  if (seat?.out) meta = seat.left ? "Left the game" : "Out · missed 5 turns";
 
   const showChat = you && game.isNet() && game.online;
   const bubble = seat ? game.bubbles[seat.id] : undefined;

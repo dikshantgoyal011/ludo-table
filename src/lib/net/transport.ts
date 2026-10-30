@@ -102,6 +102,11 @@ export interface RoomTransport {
   call(peerId: string, myPid: string, stream: MediaStream): VoiceCall | null;
   /** Voice chat: incoming calls. */
   onCall(cb: (call: VoiceCall) => void): void;
+  /**
+   * Look at room `code` without joining or hosting it: the game its host is
+   * running, or null if nobody is hosting it (or they don't answer).
+   */
+  probe?(code: string): Promise<GameState | null>;
   close(): void;
 }
 

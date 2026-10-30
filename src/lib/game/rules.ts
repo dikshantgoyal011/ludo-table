@@ -163,6 +163,21 @@ export function missTurn(s: GameState, c: Color, maxMisses: number) {
   return true;
 }
 
+/**
+ * c has left the game for good (online: offline too long). Their tokens leave
+ * the board; if only one player is left, the game ends and they win.
+ */
+export function leaveGame(s: GameState, c: Color) {
+  const seat = s.seats[c];
+  if (s.phase !== "playing" || !seat || seat.out || s.winners.includes(c)) return false;
+  seat.out = true;
+  seat.left = true;
+  s.tokens[c] = [-1, -1, -1, -1];
+  addLog(s, c, `${seat.nick} left the game.`);
+  if (s.turn === c || inPlay(s).length <= 1) nextTurn(s);
+  return true;
+}
+
 /** Simple computer strategy: finish > capture > bring out > reach safety > advance furthest. */
 export function chooseMove(s: GameState, c: Color, v: number) {
   let best = -1;

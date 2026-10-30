@@ -23,8 +23,10 @@ export interface Seat {
   awayAt?: number;
   /** Online: turns this person let run out without rolling. */
   misses?: number;
-  /** Out of the game (missed too many turns). Their tokens leave the board. */
+  /** Out of the game (missed too many turns, or left). Their tokens leave the board. */
   out?: boolean;
+  /** Out because they left (online: offline too long), not for missed turns. */
+  left?: boolean;
 }
 
 export interface Player {

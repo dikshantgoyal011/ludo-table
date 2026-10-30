@@ -8,8 +8,9 @@ import { createPeerTransport } from "@/lib/net/peer-transport";
 import type { NetMessage, PeerLink, RoomTransport, TransportFactory, VoiceMember } from "@/lib/net/transport";
 import { VoiceChat } from "@/lib/net/voice";
 import type { SoundName } from "@/lib/settings/settings";
-import type { Services } from "@/lib/services/types";
+import type { ActiveRoom, Services } from "@/lib/services/types";
 import {
+  ABANDON_MS,
   AWAY_GRACE,
   CI,
   COLORS,
@@ -38,6 +39,7 @@ import {
   clone,
   freshState,
   freshTokens,
+  leaveGame,
   missTurn,
   movable,
   seatName,
@@ -78,6 +80,13 @@ type GameEvent = { type: "roll"; value: number; color: Color } | { type: "confet
 type Pending = { kind: "roll"; c: Color; v: number; seq: number; at: number } | { kind: "move"; c: Color; i: number; seq: number; at: number };
 
 const newGameId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
+/** "Continue your pass-and-play game" is offered for this long after the last move. */
+const LOCAL_RESUME_MS = 60 * 60_000;
+/** Rejoining a game whose table nobody is at: wait this long for the others before calling it over. */
+const REJOIN_WAIT_MS = 12_000;
+/** Presence checks run every second; a longer gap means this device wasn't watching (asleep, in the background). */
+const WATCH_GAP_MS = 5_000;
 
 /** Online: someone waiting alone at a table other than the first looks again for an earlier table this often. */
 const RESEARCH_MS = 8_000;
@@ -196,6 +205,15 @@ export class GameController {
   private preRolledSeq = 0;
   /** When this device started hosting its current table. */
   private hostingSince = 0;
+  /** Host: since when presence has been checked without a gap, and the last check. */
+  private watchingSince = 0;
+  private lastPresenceCheck = 0;
+  /** Rejoining an online game (its id): checked against the table once connected. */
+  private rejoinGid: string | null = null;
+  /** Rejoined, but nobody else was at the table: when to call the game over unless someone comes back. */
+  private rejoinUntil = 0;
+  /** A note for the home screen, e.g. why a rejoin didn't work. */
+  notice = "";
   private preRolledColor: Color | null = null;
   /** Host: who's in voice chat. */
   private voiceMembers = new Map<string, VoiceMember>();
@@ -409,9 +427,9 @@ export class GameController {
       const c = this.mySlot();
       const s = this.state;
       if (s.phase === "playing" && c && !s.seats[c]?.out && !s.winners.includes(c))
-        saves.saveActiveRoom({ mode: this.mode as "online" | "friends", room: this.room, count: this.capacity(), at: Date.now() });
+        saves.saveActiveRoom({ mode: this.mode as "online" | "friends", room: this.room, count: this.capacity(), at: Date.now(), gid: s.gid });
       else if (saves.loadActiveRoom()?.room === this.room && s.phase !== "lobby") saves.clearActiveRoom();
-    } else if (this.mode) saves.saveOffline({ mode: this.mode, state: this.state });
+    } else if (this.mode) saves.saveOffline({ mode: this.mode, state: this.state, at: Date.now() });
   }
 
   // ============================================================ roll & move
@@ -696,10 +714,27 @@ export class GameController {
   }
 
   // ============================================================ starting modes
-  /** Unfinished offline game to offer on the menu. */
+  /**
+   * Unfinished game to offer on the menu: pass-and-play only (a game against
+   * the computer is quick to start again), and only for an hour after the last move.
+   */
   savedOffline() {
+    const saved = this.recentOffline();
+    return saved && saved.mode === "local" ? saved : null;
+  }
+  private recentOffline() {
     const saved = this.services.saves.loadOffline();
-    return saved && saved.state.phase === "playing" && (saved.mode === "computer" || saved.mode === "local") ? saved : null;
+    const fresh = saved && Date.now() - (saved.at || 0) < LOCAL_RESUME_MS;
+    return fresh && saved.state.phase === "playing" && (saved.mode === "computer" || saved.mode === "local") ? saved : null;
+  }
+  /** The game page was reloaded: pick the computer / pass-and-play game up again, no questions asked. */
+  resumeAfterReload() {
+    const saved = this.recentOffline();
+    if (!saved) return false;
+    this.leaveCurrent();
+    this.mode = saved.mode;
+    this.startOffline(saved.state);
+    return true;
   }
 
   private startOffline(s: GameState, animateRotation = false) {
@@ -797,6 +832,59 @@ export class GameController {
   activeRoom() {
     return this.services.saves.loadActiveRoom();
   }
+
+  /** Is s my game `gid`, still being played, with me still in it (not out, not finished)? */
+  private stillMine(s: GameState | null, gid: string | null | undefined) {
+    if (!s || !validState(s) || s.phase !== "playing") return false;
+    if (gid && s.gid && s.gid !== gid) return false;
+    const c = COLORS.find((col) => s.seats[col]?.id === this.myId);
+    return !!c && !s.seats[c]!.out && !s.winners.includes(c);
+  }
+
+  /**
+   * The game I could rejoin, if it's really still on: asks its table (without
+   * joining). Nobody there, a different game, or me no longer in it: the
+   * record is cleared and there's nothing to offer.
+   */
+  async checkActiveRoom(): Promise<ActiveRoom | null> {
+    const a = this.activeRoom();
+    if (!a) return null;
+    const ask = async () => {
+      const t = this.makeTransport();
+      if (!t.probe) return undefined;
+      try {
+        return await t.probe(a.room);
+      } catch {
+        return null;
+      } finally {
+        t.close();
+      }
+    };
+    let s = await ask();
+    if (s === undefined) return a; // can't check: offer it as before
+    // Nobody hosting right now: the table may be changing hands (that takes a few seconds). Look once more.
+    if (!s) {
+      await new Promise((r) => setTimeout(r, 8000));
+      s = await ask();
+    }
+    if (this.stillMine(s ?? null, a.gid)) return this.activeRoom();
+    if (this.activeRoom()?.room === a.room) this.services.saves.clearActiveRoom();
+    return null;
+  }
+
+  /** The game I tried to get back into is over: back to the home screen with a note. */
+  private rejoinFailed(note: string) {
+    this.services.saves.clearActiveRoom();
+    this.exitToMenu();
+    this.notice = note;
+    this.emit();
+  }
+  /** A note for the home screen (read once). */
+  takeNotice() {
+    const n = this.notice;
+    this.notice = "";
+    return n;
+  }
   /**
    * Go back into that game. Returns the page to open, or null if there's
    * nothing to rejoin. Friends rooms go through their invite link page.
@@ -813,6 +901,8 @@ export class GameController {
     this.wantCount = a.count;
     // Show the last known board straight away; the table's live state replaces it once connected.
     const carry = this.services.saves.loadRoom(a.room);
+    // Check, once connected, that it's still this game and I'm still in it.
+    this.rejoinGid = carry?.gid ?? a.gid ?? "";
     if (carry) {
       this.state = carry;
       this.loaded = true;
@@ -835,6 +925,8 @@ export class GameController {
     this.hostId = "";
     this.hostHeardAt = 0;
     this.onHostSilent = null;
+    this.rejoinGid = null;
+    this.rejoinUntil = 0;
     if (this.botTimer) clearTimeout(this.botTimer);
     this.botTimer = null;
     this.online = false;
@@ -1320,6 +1412,11 @@ export class GameController {
         }
       }
       if (this.pending.length && now - this.pending[0].at > PENDING_TIMEOUT) this.dropPending();
+      // Rejoined, and nobody else from the game turned up: everyone had gone.
+      if (this.rejoinUntil && now > this.rejoinUntil) {
+        this.rejoinFailed("That game has ended. Everyone else had left the table.");
+        return;
+      }
       if (this.isHost && s.phase === "playing") this.checkPresence();
       if (this.isHost) this.pruneVoice();
       // Retry voice calls that didn't connect.
@@ -1365,11 +1462,29 @@ export class GameController {
     // Someone we haven't heard from since becoming host gets the grace period from now.
     seated(s0).forEach((c) => (this.lastSeen[s0.seats[c]!.id] ??= now));
     const skip = (s: GameState, c: Color) => s.winners.includes(c) || !!s.seats[c]?.out;
+    // Online, with at most one player still here: anyone offline this long (the
+    // computer playing for them all the while) has left for good, so the game
+    // can end. With two or more still playing, the computer keeps standing in
+    // for absent players and they can come back. (Not while I'm rejoining and
+    // still waiting to see who else returns.)
+    const stillHere = seated(s0).filter((c) => !skip(s0, c) && now - (this.lastSeen[s0.seats[c]!.id] ?? now) <= AWAY_GRACE).length;
+    // The time someone has been gone only counts while this device was actually
+    // watching: after a gap in these checks (phone asleep, tab in the background)
+    // everyone looks silent, but they may well be playing on. Start counting again.
+    if (now - this.lastPresenceCheck > WATCH_GAP_MS) this.watchingSince = now;
+    this.lastPresenceCheck = now;
+    const abandoned = (seat: Seat) =>
+      this.mode === "online" &&
+      !this.rejoinUntil &&
+      stillHere <= 1 &&
+      !!seat.away &&
+      !!seat.bot &&
+      now - Math.max(seat.awayAt || now, this.watchingSince) > ABANDON_MS;
     const changed = seated(s0).some((c) => {
       const seat = s0.seats[c]!;
       if (skip(s0, c)) return false;
       const gone = now - this.lastSeen[seat.id] > AWAY_GRACE;
-      return gone !== !!seat.away || (seat.away && !seat.bot && this.offlineLeft(seat) <= 0);
+      return gone !== !!seat.away || (seat.away && !seat.bot && this.offlineLeft(seat) <= 0) || abandoned(seat);
     });
     if (!changed) return;
     this.commit((s) => {
@@ -1391,6 +1506,8 @@ export class GameController {
           seat.takeover = true;
           addLog(s, c, `${seat.nick} is offline. The computer plays for them.`);
         }
+        // Gone for good: out of the game; if one player is left, they win.
+        if (s.phase === "playing" && abandoned(seat)) leaveGame(s, c);
       }
     });
   }
@@ -1449,6 +1566,15 @@ export class GameController {
     this.hostState = this.pending.length ? incoming : null;
     this.state = shown;
     this.loaded = true;
+    // Rejoining: the table's game must still be mine, still on, with me still in it.
+    if (this.rejoinGid !== null && !fromGuest && !this.isHost) {
+      const gid = this.rejoinGid;
+      this.rejoinGid = null;
+      if (!this.stillMine(incoming, gid)) {
+        this.rejoinFailed(incoming.phase === "done" ? "That game has already finished." : "That game has ended.");
+        return true;
+      }
+    }
     this.persist();
     if (prev) this.onStateChange(prev, this.state, true);
     if (first) this.onFirstState();
@@ -1567,6 +1693,9 @@ export class GameController {
           this.online = true;
           this.hostId = this.myId;
           this.hostingSince = Date.now();
+          // Rejoined an online game and nobody else is at its table: give the
+          // others a moment (they may be reconnecting) before calling it over.
+          if (this.rejoinGid !== null && this.mode === "online") this.rejoinUntil = Date.now() + REJOIN_WAIT_MS;
           if (prevHost && prevHost !== this.myId && prevHostHeard) this.lastSeen[prevHost] = prevHostHeard;
           let s = carry || (this.mode === "friends" && this.services.saves.loadRoom(code)) || freshState();
           if (this.mode === "online" && !s.capacity) s = { ...s, capacity: this.wantCount };
@@ -1641,6 +1770,11 @@ export class GameController {
     } else if (m.type === "hello") {
       link.pid = String(m.id || "");
       this.lastSeen[link.pid] = Date.now();
+      // Someone from this game came back: it's on.
+      if (this.rejoinUntil && seated(this.state).some((c) => this.state.seats[c]!.id === link.pid && link.pid !== this.myId)) {
+        this.rejoinUntil = 0;
+        this.rejoinGid = null;
+      }
     }
     else if (m.type === "join" && typeof m.id === "string") {
       link.pid = m.id;

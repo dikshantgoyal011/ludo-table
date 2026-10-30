@@ -1,11 +1,14 @@
 // Peer-to-peer rooms via PeerJS (free public signalling server).
 // Room "abc123" is hosted by whoever holds the peer id PREFIX + "abc123".
 import type { DataConnection, MediaConnection, Peer as PeerType } from "peerjs";
+import type { GameState } from "@/lib/game/types";
 import type { NetMessage, PeerLink, RoomEvents, RoomTransport, VoiceCall } from "./transport";
 
 const PREFIX = "ludotable-v4-";
 /** A guest whose connection to the host hasn't opened by now gives up and tries again. */
 const CONNECT_TIMEOUT = 10_000;
+/** Looking at a room (is my game still on?): no answer by now counts as nobody there. */
+const PROBE_TIMEOUT = 9_000;
 
 /**
  * PeerJS, loaded when a room opens. The browser downloads it ahead of time
@@ -188,6 +191,34 @@ export class PeerRoomTransport implements RoomTransport {
     peer.on("error", (e: { type?: string }) => {
       if (this.closed || this.peer !== peer) return;
       events.lost(e.type === "peer-unavailable" ? "host-left" : "network");
+    });
+  }
+
+  async probe(code: string): Promise<GameState | null> {
+    const { Peer } = await loadPeer();
+    if (this.closed) return null;
+    return new Promise((resolve) => {
+      const peer = new Peer();
+      this.peer = peer;
+      let done = false;
+      const finish = (s: GameState | null) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        destroy(peer);
+        resolve(s);
+      };
+      const timer = setTimeout(() => finish(null), PROBE_TIMEOUT);
+      peer.on("open", () => {
+        const conn = peer.connect(PREFIX + code, { reliable: true, serialization: "json" });
+        // The host sends its game as soon as anyone connects.
+        conn.on("data", (m) => {
+          const msg = m as NetMessage;
+          if (msg && typeof msg === "object" && msg.type === "state") finish(msg.state);
+        });
+        conn.on("close", () => finish(null));
+      });
+      peer.on("error", () => finish(null));
     });
   }
 

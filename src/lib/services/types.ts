@@ -69,6 +69,8 @@ export interface SettingsRepository {
 export interface SavedGame {
   mode: Mode;
   state: GameState;
+  /** When it was last saved (ms epoch). */
+  at?: number;
 }
 
 /** The online / friends game this player is seated in, so they can rejoin after closing the page. */
@@ -79,6 +81,8 @@ export interface ActiveRoom {
   count: number;
   /** Last time it was saved (ms epoch). */
   at: number;
+  /** Which game it was (GameState.gid), so a new game at that table isn't mistaken for it. */
+  gid?: string;
 }
 
 export interface GameSaveRepository {

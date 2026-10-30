@@ -41,12 +41,15 @@ function rememberedGame() {
 
 /**
  * Sends old /#code invite links to their room, leaves any game, and offers to
- * rejoin or continue one.
+ * rejoin an online / friends game that's still on, or continue a recent
+ * pass-and-play game. (Games against the computer aren't offered: starting a
+ * new one is just as quick.)
  */
 function ResumeButtons() {
   const router = useRouter();
   const [resume, setResume] = useState<Mode | null>(null);
   const [rejoin, setRejoin] = useState<ActiveRoom | null>(null);
+  const [notice, setNotice] = useState("");
 
   useEffect(() => {
     const game = getController();
@@ -57,13 +60,27 @@ function ResumeButtons() {
       return;
     }
     game.exitToMenu();
+    setNotice(game.takeNotice());
     setResume(game.savedOffline()?.mode ?? null);
-    setRejoin(game.activeRoom());
+    // Only offer to rejoin once the table confirms the game is still on with me in it.
+    let alive = true;
+    void game.checkActiveRoom().then((a) => alive && setRejoin(a));
+    return () => {
+      alive = false;
+    };
   }, [router]);
 
-  if (!rejoin && !resume) return null;
+  if (!rejoin && !resume && !notice) return null;
   return (
-    <div className="flex flex-col gap-2 sm:flex-row">
+    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+      {notice && (
+        <div role="status" className="flex w-full items-center justify-between gap-3 rounded-xl border border-primary/40 bg-primary/10 px-3 py-2 text-sm">
+          <span>{notice}</span>
+          <button type="button" className="shrink-0 font-bold text-primary" onClick={() => setNotice("")}>
+            OK
+          </button>
+        </div>
+      )}
       {rejoin && (
         <Button
           size="lg"

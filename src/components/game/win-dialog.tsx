@@ -32,7 +32,7 @@ export function WinDialog() {
   const rest = COLORS.filter((c) => s.seats[c] && !s.winners.includes(c)).sort((a, b) => progress(s, b) - progress(s, a));
   const rows: { c: Color; place: number | null; note: string }[] = [
     ...s.winners.map((c, k) => ({ c, place: k, note: "" })),
-    ...rest.map((c) => ({ c, place: null, note: s.seats[c]?.out ? "Out" : final ? "" : "Still playing" })),
+    ...rest.map((c) => ({ c, place: null, note: s.seats[c]?.out ? (s.seats[c]?.left ? "Left" : "Out") : final ? "" : "Still playing" })),
   ];
   const name = (c: Color) => (s.seats[c]?.nick || NAMES[c]) + (game.isYou(c) ? " (you)" : "");
 

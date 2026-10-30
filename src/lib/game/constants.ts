@@ -21,6 +21,12 @@ export const MISS_PENALTY = 2_000;
 export const MAX_MISSES = 5;
 /** Online/friends: once a player is offline, the computer plays for them after this long. */
 export const OFFLINE_ALLOWANCE = 15_000;
+/**
+ * Online, once at most one player is still connected: anyone offline this
+ * long in total (the computer having played for them since OFFLINE_ALLOWANCE)
+ * has left the game for good. If only one player is left, they win.
+ */
+export const ABANDON_MS = 90_000;
 /** Online/friends: a player we haven't heard from for this long counts as offline. */
 export const AWAY_GRACE = 5_000;
 /** Online/friends: every device says "I'm here" this often. */
