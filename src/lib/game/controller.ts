@@ -28,6 +28,7 @@ import {
 } from "./constants";
 import { rollDie } from "./dice";
 import { basePoint } from "./geometry";
+import { diceOdds } from "./luck";
 import {
   addLog,
   applyMove,
@@ -403,7 +404,8 @@ export class GameController {
   private doRoll(c: Color) {
     const s0 = this.state;
     if (this.rolling || s0.phase !== "playing" || s0.turn !== c || s0.roll) return;
-    const v = rollDie();
+    // Random, with odds that lean on the state of the game (luck.ts).
+    const v = rollDie(diceOdds(s0, c).p);
     this.rolling = true;
     this.rollColor = c;
     // Everyone else's dice starts spinning now too, not after mine has landed.
@@ -581,7 +583,7 @@ export class GameController {
       if (s.phase !== "lobby" || s.players.length < 2) return false;
       if (this.mode === "online" && s.players.length < (s.capacity || this.wantCount)) return false;
       s.seats = seatsFor(s.players);
-      Object.assign(s, { phase: "playing", tokens: freshTokens(), winners: [], roll: null, sixes: 0, turn: seated(s)[0], last: null, startAt: null });
+      Object.assign(s, { phase: "playing", tokens: freshTokens(), winners: [], roll: null, sixes: 0, turn: seated(s)[0], last: null, startAt: null, luck: {} });
       s.log = [{ c: "" as const, t: `Game on! ${seatName(s, s.turn as Color)} goes first.` }, ...s.log].slice(0, 20);
     });
   }

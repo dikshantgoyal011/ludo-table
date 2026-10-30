@@ -7,7 +7,7 @@
 - **Play on this device** – pass-and-play, every player picks a different colour.
 - **Play with friends** – private room with a code or invite link (`/r/<code>`), plus table chat.
 
-Fair dice (browser cryptographic randomness, every face equally likely) shown as a real 3D dice that tumbles when rolled. Themes (including a Ludo King style), step-by-step or glide token movement, sound effects you can mute one by one, and confetti + a winner popup at the end.
+Random dice (browser cryptographic randomness) shown as a real 3D dice that tumbles when rolled. The odds lean a little with the game to keep it engaging: help after many rolls stuck in the yard or waiting for an exact number near home, slightly better odds of cutting a player who's ahead, fewer long droughts and repeat streaks, and a completely fair dice when two players are close to winning. Every number always stays between 10% and 30% likely, and the same rules apply to every player (see `src/lib/game/luck.ts`). Themes (including a Ludo King style), step-by-step or glide token movement, sound effects, and confetti + a winner popup at the end.
 
 Built with **Next.js (App Router) + TypeScript + Tailwind CSS v4 + shadcn/ui**.
 

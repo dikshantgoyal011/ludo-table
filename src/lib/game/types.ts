@@ -38,6 +38,18 @@ export interface LastRoll {
   seq: number;
 }
 
+/** Per player: what their recent rolls were like (see luck.ts). */
+export interface LuckStats {
+  /** For faces 1-6 (index 0-5): this player's rolls since that face last came up. */
+  since: number[];
+  /** Rolls in a row without a 6 while no token of theirs is on the board. */
+  stuck: number;
+  /** Rolls in a row that missed the exact number a token near home needs. */
+  homeMiss: number;
+  /** This player's last two rolls, newest first. */
+  last: number[];
+}
+
 export interface LogLine {
   c: Color | "";
   t: string;
@@ -59,6 +71,8 @@ export interface GameState {
   /** Online tables only: how many players this table is for (2, 3 or 4). */
   capacity?: number;
   log: LogLine[];
+  /** Each player's recent rolls, for the dice odds (luck.ts). */
+  luck?: Partial<Record<Color, LuckStats>>;
   /** Version, bumped on every change; newer always wins on the network. */
   v?: number;
 }

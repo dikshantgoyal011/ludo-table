@@ -3,6 +3,7 @@
 // the same rules can later run on a server.
 import { CI, COLORS, FINISH, NAMES, SAFE, SLOTS_FOR } from "./constants";
 import { trackIdx } from "./geometry";
+import { recordRoll } from "./luck";
 import type { Color, GameState, Player, Seat } from "./types";
 
 export const freshTokens = (): Record<Color, number[]> => ({
@@ -25,6 +26,7 @@ export const freshState = (): GameState => ({
   startAt: null,
   turnAt: 0,
   log: [{ c: "", t: "Table is set." }],
+  luck: {},
 });
 
 export const clone = <T,>(o: T): T => JSON.parse(JSON.stringify(o));
@@ -120,6 +122,7 @@ export function applyMove(s: GameState, c: Color, i: number, v: number) {
  */
 export function applyRoll(s: GameState, c: Color, v: number): boolean {
   if (s.phase !== "playing" || s.turn !== c || s.roll) return false;
+  recordRoll(s, c, v);
   const seq = (s.last?.seq || 0) + 1;
   s.last = { v, c, seq };
   addLog(s, c, `${seatName(s, c)} rolled ${v}.`);

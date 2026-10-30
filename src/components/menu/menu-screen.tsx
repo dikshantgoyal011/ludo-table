@@ -191,7 +191,7 @@ export function MenuScreen() {
           ← All games
         </Link>
         <h2 className="text-3xl leading-tight font-extrabold sm:text-4xl">How do you want to play Ludo?</h2>
-        <p className="text-muted-foreground">Real dice rolls, every number equally likely.</p>
+        <p className="text-muted-foreground">Random dice that give you a little help when you&apos;re stuck.</p>
       </div>
       <ResumeButtons />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
