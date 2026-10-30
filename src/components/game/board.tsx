@@ -43,6 +43,8 @@ interface SurfaceProps {
   th: Theme;
   colorKey: string;
   uid: string;
+  /** How far the board is turned (degrees), so pictures can stay upright */
+  turn?: number;
 }
 
 function useSlotColors(th: Theme, colorKey: string) {
@@ -94,7 +96,7 @@ const ModernSurface = memo(function ModernSurface({ th, colorKey }: SurfaceProps
 });
 
 /** Ivory and gold palace board: jewel-coloured yards under jharokha arches, Mughal stars. */
-const RoyalSurface = memo(function RoyalSurface({ th, colorKey, uid }: SurfaceProps) {
+const RoyalSurface = memo(function RoyalSurface({ th, colorKey, uid, turn = 0 }: SurfaceProps) {
   const { hex, light } = useSlotColors(th, colorKey);
   const id = (n: string) => `${uid}-${n}`;
   const url = (n: string) => `url(#${id(n)})`;
@@ -142,9 +144,12 @@ const RoyalSurface = memo(function RoyalSurface({ th, colorKey, uid }: SurfacePr
             ].map(([dx, dy]) => (
               <polygon key={`${dx}${dy}`} points={star8(c0 + dx, r0 + dy, 0.2)} fill={url("gold")} stroke={GOLD_DARK} strokeWidth={0.025} />
             ))}
-            <path d={archPath(c0, r0)} fill={url("ivory")} stroke={GOLD_DARK} strokeWidth={0.17} />
-            <path d={archPath(c0, r0)} fill="none" stroke={url("gold")} strokeWidth={0.09} />
-            <circle cx={c0 + 3} cy={r0 + 0.36} r={0.13} fill={url("gold")} stroke={GOLD_DARK} strokeWidth={0.03} />
+            {/* The arch stays upright however the board is turned for this player. */}
+            <g transform={turn ? `rotate(${-turn} ${c0 + 3} ${r0 + 3})` : undefined}>
+              <path d={archPath(c0, r0)} fill={url("ivory")} stroke={GOLD_DARK} strokeWidth={0.17} />
+              <path d={archPath(c0, r0)} fill="none" stroke={url("gold")} strokeWidth={0.09} />
+              <circle cx={c0 + 3} cy={r0 + 0.36} r={0.13} fill={url("gold")} stroke={GOLD_DARK} strokeWidth={0.03} />
+            </g>
             {YARD_SPOTS.map(([dy, dx]) => (
               <g key={`${dy}${dx}`}>
                 <circle cx={c0 + dx} cy={r0 + dy} r={0.62} fill={light(c)} stroke={url("gold")} strokeWidth={0.09} />
@@ -354,13 +359,13 @@ export function Board() {
   const game = useGame();
   const [style, th] = useBoardStyle();
   const uid = svgId(useId());
-  const rotRef = useRef<SVGGElement>(null);
+  const rotRef = useRef<HTMLDivElement>(null);
 
   // Rotation is driven by the controller (animated only when you join).
   useEffect(() => {
     const apply = () => {
       const a = game.rot.angle;
-      rotRef.current?.setAttribute("transform", a ? `rotate(${a} 7.5 7.5)` : "");
+      if (rotRef.current) rotRef.current.style.transform = a ? `rotate(${a}deg)` : "";
     };
     apply();
     return game.onRotate(apply);
@@ -378,9 +383,16 @@ export function Board() {
   return (
     <div className={cn("relative aspect-square w-full rounded-xl", style === "modern" ? "p-1.5 sm:p-2.5" : "p-2 sm:p-3")} style={frameStyle(style, th)}>
       {style === "royal" && <FrameCorners />}
-      <svg viewBox="0 0 15 15" className="block h-full w-full touch-manipulation rounded-md" role="img" aria-label="Ludo board">
-        <g ref={rotRef}>
-          <Surface th={th} colorKey={colorKey} uid={uid} />
+      {/*
+        Two layers: the printed board is drawn once and kept by the GPU; only the
+        light token layer above it repaints while tokens move. (Repainting the
+        whole board for every step of a token made phones stutter.)
+      */}
+      <div ref={rotRef} className="relative h-full w-full overflow-hidden rounded-md">
+        <svg viewBox="0 0 15 15" className="board-layer absolute inset-0 block h-full w-full" aria-hidden="true">
+          <Surface th={th} colorKey={colorKey} uid={uid} turn={game.rot.target} />
+        </svg>
+        <svg viewBox="0 0 15 15" className="board-layer absolute inset-0 block h-full w-full touch-manipulation" role="img" aria-label="Ludo board">
           <g>
             {views.map((t) => (
               <g
@@ -418,8 +430,8 @@ export function Board() {
               </g>
             ))}
           </g>
-        </g>
-      </svg>
+        </svg>
+      </div>
     </div>
   );
 }

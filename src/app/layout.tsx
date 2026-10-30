@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Baloo_2, IBM_Plex_Mono, Rozha_One } from "next/font/google";
 import { AppHeader } from "@/components/layout/app-header";
 import { Confetti } from "@/components/game/confetti";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
@@ -22,21 +23,20 @@ export const viewport: Viewport = {
   themeColor: "#072a1e",
 };
 
-const bootThemes = Object.fromEntries(
+// Fonts are downloaded at build time and served with the app. Loading them from
+// Google at runtime blocked the whole page whenever that request was slow.
+const baloo = Baloo_2({ subsets: ["latin"], weight: ["500", "600", "700", "800"], variable: "--font-baloo", display: "swap" });
+const plexMono = IBM_Plex_Mono({ subsets: ["latin"], weight: "500", variable: "--font-plex-mono", display: "swap" });
+const rozha = Rozha_One({ subsets: ["latin"], weight: "400", variable: "--font-rozha", display: "swap" });
+
+const bootThemes =Object.fromEntries(
   Object.entries(THEMES).map(([id, t]) => [id, { vars: t.vars, pip: t.pip, bg: t.bg, scheme: t.scheme, meta: t.meta }]),
 );
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="h-full" suppressHydrationWarning>
+    <html lang="en" className={`h-full ${baloo.variable} ${plexMono.variable} ${rozha.variable}`} suppressHydrationWarning>
       <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=IBM+Plex+Mono:wght@500&family=Rozha+One&display=swap"
-        />
         <script dangerouslySetInnerHTML={{ __html: themeBootScript(bootThemes) }} />
       </head>
       <body className="min-h-full antialiased" suppressHydrationWarning>

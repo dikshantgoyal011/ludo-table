@@ -36,6 +36,13 @@ export type NetMessage =
    */
   | { type: "roll"; id: string; c: Color; v: number }
   | { type: "move"; id: string; c: Color; i: number }
+  /**
+   * "My dice is spinning and will show v" (roll number `seq`), sent the moment
+   * the player taps it, so everyone's dice spins together instead of one
+   * dice-animation later. The host relays a guest's. The game itself only
+   * changes with the roll that follows.
+   */
+  | { type: "dice"; id: string; c: Color; v: number; seq: number }
   /** Guest to host: my voice chat status (on = false: I left voice chat). */
   | { type: "voice"; id: string; peerId: string; on: boolean; muted: boolean }
   /** Host to everyone: who is in voice chat. */

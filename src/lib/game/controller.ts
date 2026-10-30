@@ -68,6 +68,25 @@ interface MoveAnim {
 
 type GameEvent = { type: "roll"; value: number; color: Color } | { type: "confetti" };
 
+/** A guest's own roll or move, shown before the host confirms it. `seq`: the roll it belongs to. */
+type Pending = { kind: "roll"; c: Color; v: number; seq: number; at: number } | { kind: "move"; c: Color; i: number; seq: number; at: number };
+
+/** Unconfirmed actions older than this are dropped (the message must have been lost). */
+const PENDING_TIMEOUT = 4_000;
+
+function applyPending(s: GameState, a: Pending) {
+  if (a.kind === "roll") return applyRoll(s, a.c, a.v);
+  if (s.phase !== "playing" || s.turn !== a.c || !s.roll || (s.last?.seq || 0) !== a.seq || !canMove(s.tokens[a.c][a.i], s.roll)) return false;
+  applyMove(s, a.c, a.i, s.roll);
+  return true;
+}
+
+/** Has the host's state already got this action in it? */
+function confirmedBy(s: GameState, a: Pending) {
+  const seq = s.last?.seq || 0;
+  return a.kind === "roll" ? seq >= a.seq : seq > a.seq || (seq === a.seq && !s.roll);
+}
+
 const reduceMotion = () =>
   typeof window !== "undefined" && !!window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -145,8 +164,18 @@ export class GameController {
   private animOwner: Record<string, number> = {};
   /** Guest: the roll number (seq) my own roll will get; its dice already played here. */
   private ownRollSeq = 0;
-  /** Guest: when I last sent a roll / move to the host (0 = answered). */
-  private awaitingHost = 0;
+  /**
+   * Guest: my rolls and moves the host hasn't confirmed yet. They show here
+   * straight away (the rules give the host the same result), so playing never
+   * waits for the network; the host's answer replaces them.
+   */
+  private pending: Pending[] = [];
+  /** Guest: the host's latest state, without my unconfirmed actions on top. */
+  private hostState: GameState | null = null;
+  /** When the dice on this screen lands; tokens wait for it. */
+  private diceLandsAt = 0;
+  /** Someone else's roll whose dice already started spinning here (from their "dice" message). */
+  private preRolledSeq = 0;
   /** Host: who's in voice chat. */
   private voiceMembers = new Map<string, VoiceMember>();
   private typingSentAt = 0;
@@ -273,7 +302,7 @@ export class GameController {
   }
   canRollNow() {
     const s = this.state;
-    return this.loaded && this.connected() && !this.waitingForHost() && !this.rolling && s.phase === "playing" && !s.roll && this.mine(s, s.turn);
+    return this.loaded && this.connected() && !this.rolling && s.phase === "playing" && !s.roll && this.mine(s, s.turn);
   }
   /** Online/friends: only act while connected, or this device's game would drift from everyone else's. */
   private connected() {
@@ -373,13 +402,16 @@ export class GameController {
     const v = rollDie();
     this.rolling = true;
     this.rollColor = c;
+    // Everyone else's dice starts spinning now too, not after mine has landed.
+    if (this.isNet()) this.transport?.broadcast({ type: "dice", id: this.myId, c, v, seq: (s0.last?.seq || 0) + 1 });
     this.animateDie(v, c, () => {
       this.rolling = false;
       if (this.guest) {
-        // Ask the host to record it; the result comes back as the new state.
-        this.ownRollSeq = (this.state.last?.seq || 0) + 1;
-        this.awaitHost();
+        // Show it now and ask the host to record it; its answer confirms it.
+        const seq = (this.state.last?.seq || 0) + 1;
+        this.ownRollSeq = seq;
         this.transport?.sendToHost({ type: "roll", id: this.myId, c, v });
+        if (this.predict({ kind: "roll", c, v, seq, at: Date.now() })) this.seenSeq = seq;
       } else
         this.commit((s) => {
           if (!applyRoll(s, c, v)) return false;
@@ -394,25 +426,61 @@ export class GameController {
   private hostRoll(link: PeerLink, c: Color, v: number) {
     const s = this.state;
     const seat = s.seats[c];
-    if (!seat || seat.id !== link.pid || seat.bot || this.rolling || !(v >= 1 && v <= 6)) return;
+    // Checked against the game only, never this screen's animations: a guest's
+    // roll or move that arrives while its dice still spins here must not be lost.
+    if (!seat || seat.id !== link.pid || seat.bot || !(v >= 1 && v <= 6)) return;
     if (s.phase !== "playing" || s.turn !== c || s.roll) return;
     this.commit((n) => applyRoll(n, c, v), true);
     this.onRemoteState();
   }
 
-  /** Guest: sent a roll or move to the host; hold further actions until its answer arrives. */
-  private awaitHost() {
-    this.awaitingHost = Date.now();
+  /** Someone else tapped their dice: spin it here now; the roll itself follows. */
+  private showRemoteDice(c: Color, v: number, seq: number) {
+    const s = this.state;
+    if (s.phase !== "playing" || s.turn !== c || s.roll || !(v >= 1 && v <= 6)) return false;
+    if (seq !== (s.last?.seq || 0) + 1 || this.preRolledSeq === seq) return false;
+    this.preRolledSeq = seq;
+    this.rolling = true;
+    this.rollColor = c;
+    this.animateDie(v, c, () => {
+      this.rolling = false;
+      this.emit();
+    });
+    return true;
   }
-  private waitingForHost() {
-    return !!this.awaitingHost && Date.now() - this.awaitingHost < 3000;
+
+  /** Guest: apply my own roll / move here at once, on top of the host's state. */
+  private predict(a: Pending) {
+    const prev = this.state;
+    const s = clone(prev);
+    if (!applyPending(s, a)) return false;
+    if (!this.pending.length) this.hostState = prev;
+    this.pending.push(a);
+    // Same version as the host's state: its answer (a newer version) replaces this.
+    if (s.turn !== prev.turn || s.roll !== prev.roll || s.last?.seq !== prev.last?.seq) s.turnAt = Date.now();
+    this.state = s;
+    this.onStateChange(prev, s, false);
+    this.emit();
+    return true;
+  }
+
+  /** Guest: the host never answered (lost message); go back to what it last sent. */
+  private dropPending() {
+    const prev = this.state;
+    const back = this.hostState;
+    this.pending = [];
+    this.hostState = null;
+    if (!back) return;
+    this.state = back;
+    this.onStateChange(prev, back, true);
+    this.emit();
   }
 
   private doMove(c: Color, i: number) {
     if (this.guest) {
-      this.awaitHost();
+      const seq = this.state.last?.seq || 0;
       this.transport?.sendToHost({ type: "move", id: this.myId, c, i });
-      this.emit();
+      this.predict({ kind: "move", c, i, seq, at: Date.now() });
       return;
     }
     this.commit((s) => {
@@ -458,6 +526,7 @@ export class GameController {
     this.fire({ type: "roll", value: finalV, color: c });
     this.emit();
     const ms = reduceMotion() ? 0 : DICE_ROLL_MS;
+    this.diceLandsAt = Date.now() + ms;
     setTimeout(() => {
       this.dieFace = finalV;
       done();
@@ -524,7 +593,7 @@ export class GameController {
   };
   move = (c: Color, i: number) => {
     const s = this.state;
-    if (s.phase === "playing" && s.turn === c && this.mine(s, c) && this.connected() && !this.waitingForHost()) this.doMove(c, i);
+    if (s.phase === "playing" && s.turn === c && this.mine(s, c) && this.connected()) this.doMove(c, i);
   };
   reset = () => {
     this.confirmReset = false;
@@ -752,8 +821,11 @@ export class GameController {
     this.voice.stop();
     this.voiceRoster = [];
     this.voiceMembers.clear();
-    this.awaitingHost = 0;
+    this.pending = [];
+    this.hostState = null;
     this.ownRollSeq = 0;
+    this.preRolledSeq = 0;
+    this.diceLandsAt = 0;
     this.stopAnimations();
     this.hideWinner();
     this.emit();
@@ -907,7 +979,12 @@ export class GameController {
       // A remote roll animates the dice first, so hold the token until it lands.
       const newRoll = !!next.last && (!prev.last || prev.last.seq !== next.last.seq);
       // (My own roll coming back from the host: its dice already played here.)
-      const delay = remote && newRoll && next.last!.seq !== this.ownRollSeq ? REMOTE_MOVE_DELAY : 0;
+      // (A move that arrives while a dice is still spinning here also waits for it to land.)
+      const seq = next.last?.seq;
+      const delay = Math.max(
+        remote && newRoll && seq !== this.ownRollSeq && seq !== this.preRolledSeq ? REMOTE_MOVE_DELAY : 0,
+        this.diceLandsAt - Date.now(),
+      );
       moves.forEach((m) => this.animateMove(m, caps, delay));
       if (!moves.length && caps.length) this.play("capture");
     }
@@ -1171,6 +1248,7 @@ export class GameController {
           if (this.hostHeardAt && now - this.hostHeardAt > HOST_SILENT_MS) this.onHostSilent?.();
         }
       }
+      if (this.pending.length && now - this.pending[0].at > PENDING_TIMEOUT) this.dropPending();
       if (this.isHost && s.phase === "playing") this.checkPresence();
       if (this.isHost) this.pruneVoice();
       // Retry voice calls that didn't connect.
@@ -1265,8 +1343,22 @@ export class GameController {
     if (this.loaded && (incoming.v || 0) < (this.state.v || 0)) return false;
     const first = !this.loaded;
     const prev = this.loaded ? this.state : null;
-    if (prev && (incoming.v || 0) > (prev.v || 0)) this.awaitingHost = 0; // the host answered
-    this.state = incoming;
+    // My own actions the host hasn't got to yet stay on top of its state, so
+    // nothing jumps back while they're on their way.
+    let shown = incoming;
+    if (this.pending.length) {
+      const s = clone(incoming);
+      const keep: Pending[] = [];
+      for (const a of this.pending) {
+        if (confirmedBy(incoming, a)) continue;
+        if (!applyPending(s, a)) break;
+        keep.push(a);
+      }
+      this.pending = keep;
+      if (keep.length) shown = s;
+    }
+    this.hostState = this.pending.length ? incoming : null;
+    this.state = shown;
     this.loaded = true;
     this.persist();
     if (prev) this.onStateChange(prev, this.state, true);
@@ -1304,7 +1396,9 @@ export class GameController {
       this.seenSeq = last.seq;
       // My own roll, back from the host: its dice already played on this screen.
       const mine = last.seq === this.ownRollSeq && this.mine(this.state, last.c);
-      if (!first && !mine) {
+      // Its dice already started spinning here when the "dice" message came.
+      const spun = last.seq === this.preRolledSeq;
+      if (!first && !mine && !spun) {
         this.rolling = true;
         this.rollColor = last.c;
         this.emit();
@@ -1420,6 +1514,7 @@ export class GameController {
           this.hostHeardAt = Date.now();
           if (m.type === "ping") this.hostId = String(m.id || "");
           else if (m.type === "state") this.accept(m.state);
+          else if (m.type === "dice" && m.id !== this.myId) this.showRemoteDice(m.c, Number(m.v), Number(m.seq));
           else if (m.type === "chat") this.addChat(m);
           else if (m.type === "chatHistory" && Array.isArray(m.msgs)) m.msgs.slice(-40).forEach((x) => this.addChat(x, true));
           else if (m.type === "typing") this.noteTyping(String(m.id || ""), !!m.on);
@@ -1460,9 +1555,13 @@ export class GameController {
       this.transport?.broadcast({ type: "typing", id, on: !!m.on }, link);
     } else if (m.type === "takeBack" && link.pid && m.id === link.pid) this.hostTakeBack(link.pid);
     else if (m.type === "roll" && link.pid && m.id === link.pid) this.hostRoll(link, m.c, Number(m.v));
+    else if (m.type === "dice" && link.pid && m.id === link.pid) {
+      const seat = this.state.seats[m.c];
+      if (seat?.id === link.pid && !seat.bot && this.showRemoteDice(m.c, Number(m.v), Number(m.seq))) this.transport?.broadcast(m, link);
+    }
     else if (m.type === "move" && link.pid && m.id === link.pid) {
       const seat = this.state.seats[m.c];
-      if (seat?.id === link.pid && !seat.bot && !this.rolling) this.doMove(m.c, Number(m.i));
+      if (seat?.id === link.pid && !seat.bot) this.doMove(m.c, Number(m.i));
     } else if (m.type === "voice" && link.pid && m.id === link.pid)
       this.hostVoice({ id: link.pid, peerId: String(m.peerId || ""), on: !!m.on, muted: !!m.muted });
     else if (m.type === "state") {

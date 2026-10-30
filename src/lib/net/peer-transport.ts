@@ -4,6 +4,13 @@ import type { DataConnection, MediaConnection, Peer as PeerType } from "peerjs";
 import type { NetMessage, PeerLink, RoomEvents, RoomTransport, VoiceCall } from "./transport";
 
 const PREFIX = "ludotable-v4-";
+/** A guest whose connection to the host hasn't opened by now gives up and tries again. */
+const CONNECT_TIMEOUT = 10_000;
+
+/** Start downloading PeerJS early (e.g. while the menu shows), so opening a room doesn't wait for it. */
+export function preloadPeer() {
+  void import("peerjs").catch(() => {});
+}
 
 class Link implements PeerLink {
   pid?: string;
@@ -48,8 +55,18 @@ class PeerVoiceCall implements VoiceCall {
   }
 }
 
+const destroy = (p: PeerType | null) => {
+  try {
+    p?.destroy();
+  } catch {
+    /* ignore */
+  }
+};
+
 export class PeerRoomTransport implements RoomTransport {
   private peer: PeerType | null = null;
+  /** Registered alongside the hosting attempt, ready to join if the room is taken. */
+  private spare: PeerType | null = null;
   private links: Link[] = [];
   private hostConn: DataConnection | null = null;
   private closed = false;
@@ -59,7 +76,7 @@ export class PeerRoomTransport implements RoomTransport {
   /** Voice chat calls can arrive on whichever peer this device is using. */
   private listenForCalls(peer: PeerType) {
     peer.on("call", (mc) => {
-      if (this.closed || !this.callHandler) {
+      if (this.closed || !this.callHandler || peer !== this.peer) {
         mc.close();
         return;
       }
@@ -67,19 +84,43 @@ export class PeerRoomTransport implements RoomTransport {
     });
   }
 
+  private keepAlive(peer: PeerType) {
+    peer.on("disconnected", () => {
+      if (!this.closed && peer === this.peer && !peer.destroyed) {
+        try {
+          peer.reconnect();
+        } catch {
+          /* ignore */
+        }
+      }
+    });
+  }
+
   async open(code: string, events: RoomEvents) {
     const { Peer } = await import("peerjs");
     if (this.closed) return;
-    const peer = new Peer(PREFIX + code);
-    this.peer = peer;
-    this.listenForCalls(peer);
+    // Try to host the room and, at the same time, register a second address to
+    // join it with. If the room is already hosted we connect straight away
+    // instead of waiting for the server's "taken" reply first (about a second).
+    const host = new Peer(PREFIX + code);
+    const spare = new Peer();
+    this.peer = host;
+    this.spare = spare;
+    let spareFailed = false;
+    spare.on("error", () => {
+      if (this.spare === spare) spareFailed = true;
+    });
+    this.listenForCalls(host);
+    this.keepAlive(host);
 
-    peer.on("open", () => {
+    host.on("open", () => {
       if (this.closed) return;
+      destroy(this.spare);
+      this.spare = null;
       this.isHost = true;
       events.hosting();
     });
-    peer.on("connection", (conn) => {
+    host.on("connection", (conn) => {
       if (this.closed) return;
       const link = new Link(conn);
       this.links.push(link);
@@ -95,41 +136,38 @@ export class PeerRoomTransport implements RoomTransport {
         if (!this.closed) events.peerClosed(link);
       });
     });
-    peer.on("error", (e: { type?: string }) => {
-      if (this.closed) return;
+    host.on("error", (e: { type?: string }) => {
+      if (this.closed || this.peer !== host) return;
       if (e.type === "unavailable-id") {
         // Someone already hosts this room: join them as a guest.
-        try {
-          peer.destroy();
-        } catch {
-          /* ignore */
-        }
-        this.joinAsGuest(Peer, code, events);
+        destroy(host);
+        const ready = this.spare && !spareFailed ? this.spare : new Peer();
+        if (ready !== this.spare) destroy(this.spare);
+        this.spare = null;
+        this.joinAsGuest(ready, code, events);
       } else if (e.type === "network" || e.type === "server-error" || e.type === "socket-error") {
         events.lost("network");
       }
     });
-    peer.on("disconnected", () => {
-      if (!this.closed && this.peer && !this.peer.destroyed) {
-        try {
-          this.peer.reconnect();
-        } catch {
-          /* ignore */
-        }
-      }
-    });
   }
 
-  private joinAsGuest(Peer: typeof PeerType, code: string, events: RoomEvents) {
+  private joinAsGuest(peer: PeerType, code: string, events: RoomEvents) {
     this.isHost = false;
-    const peer = new Peer();
     this.peer = peer;
     this.listenForCalls(peer);
-    peer.on("open", () => {
-      if (this.closed) return;
-      const conn = peer.connect(PREFIX + code, { reliable: true });
+    this.keepAlive(peer);
+    const connect = () => {
+      if (this.closed || this.peer !== peer) return;
+      // JSON: lighter to encode than PeerJS's default binary packing.
+      const conn = peer.connect(PREFIX + code, { reliable: true, serialization: "json" });
       this.hostConn = conn;
+      // The server may still list a host whose phone dropped off without closing
+      // the connection; nobody answers then. Give up and try again instead of waiting forever.
+      const timer = setTimeout(() => {
+        if (!this.closed && this.hostConn === conn && !conn.open) events.lost("network");
+      }, CONNECT_TIMEOUT);
       conn.on("open", () => {
+        clearTimeout(timer);
         if (!this.closed) events.joinedHost();
       });
       conn.on("data", (m) => {
@@ -137,11 +175,14 @@ export class PeerRoomTransport implements RoomTransport {
         events.hostMessage(m as NetMessage);
       });
       conn.on("close", () => {
-        if (!this.closed) events.lost("host-left");
+        clearTimeout(timer);
+        if (!this.closed && this.hostConn === conn) events.lost("host-left");
       });
-    });
+    };
+    if (peer.open) connect();
+    else peer.on("open", connect);
     peer.on("error", (e: { type?: string }) => {
-      if (this.closed) return;
+      if (this.closed || this.peer !== peer) return;
       events.lost(e.type === "peer-unavailable" ? "host-left" : "network");
     });
   }
@@ -196,14 +237,10 @@ export class PeerRoomTransport implements RoomTransport {
     this.links = [];
     this.hostConn = null;
     this.isHost = false;
-    if (this.peer) {
-      try {
-        this.peer.destroy();
-      } catch {
-        /* ignore */
-      }
-      this.peer = null;
-    }
+    destroy(this.spare);
+    this.spare = null;
+    destroy(this.peer);
+    this.peer = null;
   }
 }
 
