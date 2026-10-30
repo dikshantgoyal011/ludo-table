@@ -77,6 +77,11 @@ type GameEvent = { type: "roll"; value: number; color: Color } | { type: "confet
 /** A guest's own roll or move, shown before the host confirms it. `seq`: the roll it belongs to. */
 type Pending = { kind: "roll"; c: Color; v: number; seq: number; at: number } | { kind: "move"; c: Color; i: number; seq: number; at: number };
 
+const newGameId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
+/** Online: someone waiting alone at a table other than the first looks again for an earlier table this often. */
+const RESEARCH_MS = 8_000;
+
 /** Unconfirmed actions older than this are dropped (the message must have been lost). */
 const PENDING_TIMEOUT = 4_000;
 
@@ -149,7 +154,10 @@ export class GameController {
   private seenSeq: number | null = null;
   private autoJoin = false;
   private turnKey = "";
-  private winStage = 0;
+  /** This game: confetti fired / my own finish shown / final rankings shown. */
+  private celebrated = false;
+  private finishShown = false;
+  private finalShown = false;
   private animPos: Record<string, number> = {};
   private animTimers: ReturnType<typeof setTimeout>[] = [];
   private animBusyUntil = 0;
@@ -186,6 +194,8 @@ export class GameController {
   private diceLandsAt = 0;
   /** Someone else's roll whose dice already started spinning here (from their "dice" message). */
   private preRolledSeq = 0;
+  /** When this device started hosting its current table. */
+  private hostingSince = 0;
   private preRolledColor: Color | null = null;
   /** Host: who's in voice chat. */
   private voiceMembers = new Map<string, VoiceMember>();
@@ -592,7 +602,7 @@ export class GameController {
       if (s.phase !== "lobby" || s.players.length < 2) return false;
       if (this.mode === "online" && s.players.length < (s.capacity || this.wantCount)) return false;
       s.seats = seatsFor(s.players);
-      Object.assign(s, { phase: "playing", tokens: freshTokens(), winners: [], roll: null, sixes: 0, turn: seated(s)[0], last: null, startAt: null, luck: {} });
+      Object.assign(s, { phase: "playing", tokens: freshTokens(), winners: [], roll: null, sixes: 0, turn: seated(s)[0], last: null, startAt: null, luck: {}, gid: newGameId() });
       s.log = [{ c: "" as const, t: `Game on! ${seatName(s, s.turn as Color)} goes first.` }, ...s.log].slice(0, 20);
     });
   }
@@ -621,7 +631,7 @@ export class GameController {
     this.confirmReset = false;
     this.commit((s) => {
       const { players, seats, capacity } = s;
-      Object.assign(s, freshState(), { players, seats });
+      Object.assign(s, freshState(), { players, seats, gid: newGameId() });
       if (capacity) s.capacity = capacity;
       if (this.isNet()) s.seats = seatsFor(players);
       else {
@@ -1036,26 +1046,45 @@ export class GameController {
     // Celebrate the first player home right away (others may keep playing),
     // and show final rankings when the game is over.
     const wait = Math.max(300, this.animBusyUntil - Date.now() + 200);
-    if (prev.phase !== "done" && next.phase === "done") setTimeout(() => this.showWinner(true), wait);
-    else if (next.phase === "playing" && !(prev.winners || []).length && (next.winners || []).length) setTimeout(() => this.showWinner(false), wait);
+    if (prev.phase !== "done" && next.phase === "done") setTimeout(() => this.onFinish(true), wait);
+    else if (next.phase === "playing" && (next.winners || []).length > (prev.winners || []).length) setTimeout(() => this.onFinish(false), wait);
     if (!(next.winners || []).length || (next.phase !== "done" && next.phase !== "playing")) this.hideWinner();
   }
 
   // ============================================================ winner popup
-  private showWinner(final: boolean) {
+  /**
+   * Someone got all their tokens home (`final`: and the game is over).
+   * Confetti only on the winner's own device. While others play on, only the
+   * player who finished sees their result; everyone else just sees the place
+   * badge on that player's name tag. When the game ends, everyone gets the
+   * final rankings.
+   */
+  private onFinish(final: boolean) {
     const s = this.state;
-    const stage = final ? 2 : 1;
-    if (!s.winners.length || this.winStage >= stage) return;
-    if (final && s.phase !== "done") return;
-    this.winStage = stage;
-    this.winFinal = final;
-    this.winOpen = true;
-    this.play("win");
-    if (!reduceMotion()) this.fire({ type: "confetti" });
+    if (!s.winners.length) return;
+    // Pass-and-play: everyone is at this device.
+    const mine = (c: Color) => (this.mode === "local" ? !!s.seats[c] : this.isYou(c));
+    if (!this.celebrated && mine(s.winners[0])) {
+      this.celebrated = true;
+      this.play("win");
+      if (!reduceMotion()) this.fire({ type: "confetti" });
+    }
+    if (final) {
+      if (s.phase !== "done" || this.finalShown) return;
+      this.finalShown = true;
+      this.winFinal = true;
+      this.winOpen = true;
+    } else if (this.mode !== "local" && !this.finishShown && s.winners.some((c) => this.isYou(c))) {
+      this.finishShown = true;
+      this.winFinal = false;
+      this.winOpen = true;
+    }
     this.emit();
   }
   private hideWinner() {
-    this.winStage = 0;
+    this.celebrated = false;
+    this.finishShown = false;
+    this.finalShown = false;
     this.winOpen = false;
   }
   closeWinner() {
@@ -1296,6 +1325,14 @@ export class GameController {
       // Retry voice calls that didn't connect.
       if (this.voice.on) this.voice.sync(this.voiceRoster, this.myId, this.transport);
       if (this.isHost && this.mode === "online") {
+        // Waiting alone at a later table: an earlier one may have freed up with
+        // someone waiting there (two players could each end up hosting a table
+        // and never meet). Look again from the first table; only later tables
+        // move, so waiting players always end up at the same one.
+        if (s.phase === "lobby" && this.searchN > 0 && s.players.length <= 1 && !s.startAt && !this.transport?.guestCount() && now - this.hostingSince > RESEARCH_MS) {
+          this.startOnline(this.wantCount);
+          return;
+        }
         if (s.phase === "lobby" && s.startAt && now >= s.startAt && s.players.length >= (s.capacity || this.wantCount)) this.startGame();
         // A second's grace on the host: a roll made just in time is still on its way here.
         else if (s.phase === "playing" && !this.rolling && s.turn && now - this.turnSeenAt > this.turnLimit(s.turn) + 1000) this.turnTimeout(s.turn);
@@ -1379,10 +1416,20 @@ export class GameController {
     this.transport?.broadcast({ type: "state", state: this.state });
   }
 
-  /** A state arrived from the network. */
-  private accept(incoming: unknown) {
+  /**
+   * A state arrived from the network. `fromGuest`: a guest offered its saved
+   * copy (coming back, or after a host change); the host only takes it if it's
+   * the same game. From the host: a different game simply replaces ours.
+   */
+  private accept(incoming: unknown, fromGuest = false) {
     if (!validState(incoming)) return false;
-    if (this.loaded && (incoming.v || 0) < (this.state.v || 0)) return false;
+    const sameGame = (incoming.gid || "") === (this.state.gid || "");
+    if (this.loaded && fromGuest && !sameGame) return false;
+    if (this.loaded && sameGame && (incoming.v || 0) < (this.state.v || 0)) return false;
+    if (!sameGame) {
+      this.pending = [];
+      this.hostState = null;
+    }
     const first = !this.loaded;
     const prev = this.loaded ? this.state : null;
     // My own actions the host hasn't got to yet stay on top of its state, so
@@ -1494,6 +1541,14 @@ export class GameController {
       if (!alive() || lostAlready) return;
       lostAlready = true;
       this.online = false;
+      // An online match that's over has nothing to keep alive: don't take over or
+      // reconnect (carrying the finished game into a new table is what made
+      // "Find another game" land in the old match again).
+      if (this.mode === "online" && this.loaded && this.state.phase === "done") {
+        this.setNet("", "Game over · the other players have left the table");
+        this.emit();
+        return;
+      }
       if (reason === "host-left") {
         this.setNet("bad", "Host left · taking over the table…");
         this.emit();
@@ -1511,6 +1566,7 @@ export class GameController {
           if (!alive()) return;
           this.online = true;
           this.hostId = this.myId;
+          this.hostingSince = Date.now();
           if (prevHost && prevHost !== this.myId && prevHostHeard) this.lastSeen[prevHost] = prevHostHeard;
           let s = carry || (this.mode === "friends" && this.services.saves.loadRoom(code)) || freshState();
           if (this.mode === "online" && !s.capacity) s = { ...s, capacity: this.wantCount };
@@ -1612,7 +1668,7 @@ export class GameController {
     else if (m.type === "state") {
       // Send the result to everyone, the sender included: if the host changed
       // something at the same moment, the sender must end up with the same state.
-      if (this.accept(m.state)) this.broadcast();
+      if (this.accept(m.state, true)) this.broadcast();
       else link.send({ type: "state", state: this.state });
     }
   }

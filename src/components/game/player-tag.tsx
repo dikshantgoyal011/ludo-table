@@ -112,6 +112,26 @@ export function PlayerTag({ corner }: { corner: number }) {
       }}
     >
       {timer && <TurnRing key={game.turnId()} limit={game.turnLimit(c)} startedAt={game.turnSeenAt} />}
+      {/* Finished: a medal with the place, while the others play on. */}
+      {place >= 0 && (
+        <span
+          className={cn(
+            "medal-pop pointer-events-none absolute z-20 flex h-8 min-w-8 items-center justify-center rounded-full px-1.5 text-xs font-extrabold shadow-[0_3px_8px_rgba(0,0,0,.45)] ring-2 ring-white/70",
+            top ? "-bottom-2.5" : "-top-2.5",
+            right ? "left-2" : "right-2",
+            place === 0
+              ? "bg-[linear-gradient(145deg,#fff1b8,#e2b048_55%,#a8741c)] text-[#3a2606]"
+              : place === 1
+                ? "bg-[linear-gradient(145deg,#f4f6f8,#a9b2bd)] text-[#2b3138]"
+                : place === 2
+                  ? "bg-[linear-gradient(145deg,#f0c39a,#b06c35)] text-[#3a1d08]"
+                  : "bg-secondary text-foreground",
+          )}
+          aria-label={`Finished ${["1st", "2nd", "3rd", "4th"][place]}`}
+        >
+          {["1st", "2nd", "3rd", "4th"][place]}
+        </span>
+      )}
       {showBubble && (
         <div
           className={cn(

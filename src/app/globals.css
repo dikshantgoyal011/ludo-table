@@ -215,6 +215,19 @@
   }
 }
 
+/* A player's place medal pops onto their name tag when they finish. */
+.medal-pop {
+  animation: medal-pop 0.5s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+}
+@keyframes medal-pop {
+  from {
+    transform: scale(0) rotate(-30deg);
+  }
+  to {
+    transform: none;
+  }
+}
+
 /* ---------------------------------------------------------------- board */
 /* Board picture and token layer each get their own GPU layer (see board.tsx). */
 .board-layer {
@@ -511,6 +524,7 @@
   .typing-dots span,
   .demo-tumble,
   .demo-bob,
+  .medal-pop,
   .showcase-fade {
     animation: none;
   }

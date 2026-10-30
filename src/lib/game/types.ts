@@ -71,6 +71,12 @@ export interface GameState {
   /** Online tables only: how many players this table is for (2, 3 or 4). */
   capacity?: number;
   log: LogLine[];
+  /**
+   * Which game this is (new for every game started). A saved copy of one game
+   * is never accepted into another: a player coming back with an old, finished
+   * game must not replace a new table.
+   */
+  gid?: string;
   /** Each player's recent rolls, for the dice odds (luck.ts). */
   luck?: Partial<Record<Color, LuckStats>>;
   /** Version, bumped on every change; newer always wins on the network. */

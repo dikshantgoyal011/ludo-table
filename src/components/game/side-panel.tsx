@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useGame, useProfile, useSettings } from "@/hooks/use-game";
-import { COLORS } from "@/lib/game/constants";
+import { COLORS, NAMES } from "@/lib/game/constants";
+import { progress } from "@/lib/game/luck";
 import { seated } from "@/lib/game/rules";
 import type { Color } from "@/lib/game/types";
 import { themeOf } from "@/lib/theme/themes";
@@ -70,7 +71,11 @@ export function TurnCard() {
     swatch = s.winners[0] ? th.pieces[game.displayColor(s.winners[0])] : "#f2c94c";
     label = "Game over";
     title = s.winners[0] ? `${s.seats[s.winners[0]]?.nick || "Someone"} wins!` : "Game over";
-    hint = s.winners.map((c, k) => `${k + 1}. ${s.seats[c]?.nick || c}`).join("   ");
+    // Everyone at the table: finishers in order, then the rest by how far they got.
+    const rest = COLORS.filter((c) => s.seats[c] && !s.winners.includes(c)).sort((a, b) => progress(s, b) - progress(s, a));
+    hint = [...s.winners, ...rest]
+      .map((c, k) => `${k + 1}. ${s.seats[c]?.nick || NAMES[c]}${s.seats[c]?.out ? " (out)" : ""}`)
+      .join("   ");
     action = (
       <Button
         onClick={() => {
