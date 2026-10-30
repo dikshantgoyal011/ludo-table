@@ -21,7 +21,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  theme: "classic",
+  theme: "darbar",
   steps: true,
   sound: { all: true, dice: true, move: true, out: true, capture: true, home: true, turn: true, chat: true, win: true },
 };

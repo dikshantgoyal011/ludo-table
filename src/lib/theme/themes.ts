@@ -20,9 +20,25 @@ export interface Theme {
   light: Record<Color, string>;
 }
 
-export type ThemeId = "classic" | "king" | "midnight" | "wood" | "candy";
+export type ThemeId = "darbar" | "classic" | "king" | "midnight" | "wood" | "candy";
 
 export const THEMES: Record<ThemeId, Theme> = {
+  darbar: {
+    name: "Royal Darbar",
+    bg: "radial-gradient(900px 620px at 50% 0%, #135c41, transparent 70%), linear-gradient(170deg, #0b3d2c 0%, #072a1e 60%, #041a12 100%)",
+    meta: "#072a1e",
+    scheme: "dark",
+    vars: { felt: "7 42 30", felt2: "12 61 44", panel: "15 72 52", line: "120 98 46", ink: "250 242 218", muted: "200 190 152", paper: "250 243 222", gold: "232 184 74" },
+    frame: "linear-gradient(145deg, #f6d985, #c8962e 40%, #8a5d14 75%, #e2b552)",
+    frameEdge: "#fbe3a0",
+    board: "#f8f0da",
+    track: "#fffaf0",
+    stroke: "#6a5226",
+    star: "#cfae5e",
+    pip: "#2a1d0c",
+    pieces: { red: "#c8262b", green: "#16894a", yellow: "#e9a912", blue: "#1f5fcc" },
+    light: { red: "#f3c6c3", green: "#bfe3cc", yellow: "#f8e3a6", blue: "#c4d4f3" },
+  },
   classic: {
     name: "Classic felt",
     bg: "radial-gradient(900px 600px at 30% 10%, #143630, transparent 70%), #0f2a24",
@@ -107,4 +123,4 @@ export const THEMES: Record<ThemeId, Theme> = {
 
 export const THEME_IDS = Object.keys(THEMES) as ThemeId[];
 export const isThemeId = (v: unknown): v is ThemeId => typeof v === "string" && v in THEMES;
-export const themeOf = (id: string) => THEMES[id as ThemeId] || THEMES.classic;
+export const themeOf = (id: string) => THEMES[id as ThemeId] || THEMES.darbar;

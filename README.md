@@ -1,6 +1,6 @@
-# Ludo Table
+# Ludo Darbar
 
-Ludo in the browser, made for phones:
+*Every Ludo ever played.* Ludo in the browser, made for phones, with Pachisi, Chowka Bara, Challas Aath and other variations to follow:
 
 - **Play online** – pick a 2, 3 or 4-player game and get matched only with people who picked the same size.
 - **Play with computer** – you against 1 to 3 computer players.

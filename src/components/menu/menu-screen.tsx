@@ -37,6 +37,7 @@ export function MenuScreen() {
   return (
     <section className="mx-auto flex w-full max-w-xl flex-col gap-4 py-2">
       <div className="flex flex-col gap-1">
+        <p className="text-sm font-bold tracking-[0.18em] text-primary uppercase">Every Ludo ever played</p>
         <h2 className="text-3xl leading-tight font-extrabold sm:text-4xl">How do you want to play?</h2>
         <p className="text-muted-foreground">Real dice rolls, every number equally likely.</p>
       </div>

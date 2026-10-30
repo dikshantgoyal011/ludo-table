@@ -42,7 +42,7 @@ export function AppHeader() {
     if (!link) return;
     if (navigator.share) {
       try {
-        await navigator.share({ title: "Ludo Table", text: `Join my Ludo room ${game.room}`, url: link });
+        await navigator.share({ title: "Ludo Darbar", text: `Join my Ludo room ${game.room}`, url: link });
         return;
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") return;
@@ -59,14 +59,10 @@ export function AppHeader() {
   return (
     <>
       <header className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="flex shrink-0 items-center gap-1 text-xl leading-none font-extrabold whitespace-nowrap min-[420px]:text-2xl sm:text-4xl">
-          Ludo Table
-          <span className="ml-1 hidden gap-0.5 min-[420px]:inline-flex" aria-hidden="true">
-            <i className="h-2 w-2 rounded-full bg-pred" />
-            <i className="h-2 w-2 rounded-full bg-pgreen" />
-            <i className="h-2 w-2 rounded-full bg-pyellow" />
-            <i className="h-2 w-2 rounded-full bg-pblue" />
-          </span>
+        <h1 className="flex shrink-0 items-center gap-2 leading-none whitespace-nowrap sm:gap-2.5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.svg" alt="" width={44} height={44} className="h-9 w-9 shrink-0 min-[420px]:h-10 min-[420px]:w-10 sm:h-12 sm:w-12" />
+          <span className="brand-gold pt-1 font-[family-name:var(--font-brand)] text-2xl font-normal min-[420px]:text-[1.7rem] sm:text-4xl">Ludo Darbar</span>
         </h1>
         <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
           {inGame && game.mode && (

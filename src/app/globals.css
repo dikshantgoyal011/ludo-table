@@ -3,20 +3,20 @@
 
 /*
  * Colours come from the active theme (see src/lib/theme/themes.ts), which
- * writes the --c-* triplets onto <html>. The defaults below are "Classic felt".
+ * writes the --c-* triplets onto <html>. The defaults below are "Royal Darbar".
  * shadcn/ui tokens (--background, --primary, ...) are mapped onto them so every
  * shadcn component follows the theme.
  */
 :root {
-  --c-felt: 15 42 36;
-  --c-felt2: 20 54 48;
-  --c-panel: 26 63 56;
-  --c-line: 44 90 81;
-  --c-ink: 243 239 226;
-  --c-muted: 169 195 186;
-  --c-paper: 247 242 227;
-  --c-gold: 242 201 76;
-  --pip: #23302c;
+  --c-felt: 7 42 30;
+  --c-felt2: 12 61 44;
+  --c-panel: 15 72 52;
+  --c-line: 120 98 46;
+  --c-ink: 250 242 218;
+  --c-muted: 200 190 152;
+  --c-paper: 250 243 222;
+  --c-gold: 232 184 74;
+  --pip: #2a1d0c;
 
   --background: rgb(var(--c-felt));
   --foreground: rgb(var(--c-ink));
@@ -75,6 +75,8 @@
 
   --font-display: "Baloo 2", "Trebuchet MS", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  /* Wordmark only; everything you read while playing stays in the display font. */
+  --font-brand: "Rozha One", Georgia, "Times New Roman", serif;
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -93,7 +95,9 @@
     min-height: 100%;
     font-family: var(--font-display);
     color: var(--foreground);
-    background: radial-gradient(900px 600px at 30% 10%, #143630, transparent 70%), #0f2a24;
+    background:
+      radial-gradient(900px 620px at 50% 0%, #135c41, transparent 70%),
+      linear-gradient(170deg, #0b3d2c 0%, #072a1e 60%, #041a12 100%);
     background-attachment: fixed;
     padding-top: env(safe-area-inset-top, 0px);
     padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -104,6 +108,16 @@
   button:not(:disabled) {
     cursor: pointer;
   }
+}
+
+/* ---------------------------------------------------------------- brand */
+/* Gold-leaf lettering for the Ludo Darbar wordmark. */
+.brand-gold {
+  background: linear-gradient(180deg, #fff1b8 0%, #f0c55a 45%, #c38a22 70%, #f4d27a 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 1px 0 rgba(60, 36, 4, 0.9)) drop-shadow(0 3px 6px rgba(0, 0, 0, 0.35));
 }
 
 /* ---------------------------------------------------------------- tokens */
