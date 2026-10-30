@@ -176,6 +176,7 @@ export class GameController {
   private diceLandsAt = 0;
   /** Someone else's roll whose dice already started spinning here (from their "dice" message). */
   private preRolledSeq = 0;
+  private preRolledColor: Color | null = null;
   /** Host: who's in voice chat. */
   private voiceMembers = new Map<string, VoiceMember>();
   private typingSentAt = 0;
@@ -218,7 +219,10 @@ export class GameController {
     else if (!this.lockedColor) this.lockedColor = this.pref;
     this.noteTurn();
     this.updateRotation();
-    if (!this.rolling) {
+    // The dice shows the game's latest roll, except while someone else's dice has
+    // landed here before their roll itself arrived: then it keeps the number it
+    // landed on (going back to the previous roll for a moment looked like a second roll).
+    if (!this.rolling && !this.awaitingPreRoll()) {
       const lv = this.state.roll || this.state.last?.v;
       if (lv) this.dieFace = lv;
     }
@@ -434,12 +438,19 @@ export class GameController {
     this.onRemoteState();
   }
 
+  /** Has someone's dice spun here for a roll that hasn't reached this device's game yet? */
+  private awaitingPreRoll() {
+    const s = this.state;
+    return !!this.preRolledColor && this.preRolledSeq > (s.last?.seq || 0) && s.turn === this.preRolledColor && !s.roll;
+  }
+
   /** Someone else tapped their dice: spin it here now; the roll itself follows. */
   private showRemoteDice(c: Color, v: number, seq: number) {
     const s = this.state;
     if (s.phase !== "playing" || s.turn !== c || s.roll || !(v >= 1 && v <= 6)) return false;
     if (seq !== (s.last?.seq || 0) + 1 || this.preRolledSeq === seq) return false;
     this.preRolledSeq = seq;
+    this.preRolledColor = c;
     this.rolling = true;
     this.rollColor = c;
     this.animateDie(v, c, () => {
@@ -825,6 +836,7 @@ export class GameController {
     this.hostState = null;
     this.ownRollSeq = 0;
     this.preRolledSeq = 0;
+    this.preRolledColor = null;
     this.diceLandsAt = 0;
     this.stopAnimations();
     this.hideWinner();
