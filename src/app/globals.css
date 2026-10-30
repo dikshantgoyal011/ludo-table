@@ -120,11 +120,18 @@
     );
   }
   body {
+    -webkit-font-smoothing: antialiased;
+  }
+  /*
+   * The page's side gutters live on this wrapper, not on <body>: while a dialog
+   * is open its scroll lock rewrites body padding (to 0), so the page jumped
+   * sideways when Settings opened and back when it closed.
+   */
+  .page-shell {
     padding-top: env(safe-area-inset-top, 0px);
     padding-bottom: env(safe-area-inset-bottom, 0px);
     padding-left: max(12px, env(safe-area-inset-left, 0px));
     padding-right: max(12px, env(safe-area-inset-right, 0px));
-    -webkit-font-smoothing: antialiased;
   }
   button:not(:disabled) {
     cursor: pointer;

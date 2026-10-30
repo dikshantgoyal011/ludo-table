@@ -1,5 +1,6 @@
 "use client";
 
+import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
@@ -14,6 +15,38 @@ import { cn } from "@/lib/utils";
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <h3 className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">{children}</h3>;
+}
+
+/**
+ * A choice card. The tick sits in the corner and is always there (just hidden
+ * when not chosen), and labels stay on one line, so choosing something never
+ * changes the size of anything.
+ */
+function Choice({ on, onClick, className, style, children }: { on: boolean; onClick: () => void; className?: string; style?: React.CSSProperties; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={onClick}
+      className={cn(
+        "relative min-w-0 rounded-xl border-2 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring active:scale-95",
+        on ? "border-primary" : "border-transparent",
+        className,
+      )}
+      style={style}
+    >
+      {children}
+      <span
+        aria-hidden="true"
+        className={cn(
+          "absolute top-1.5 right-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground shadow transition-opacity",
+          on ? "opacity-100" : "opacity-0",
+        )}
+      >
+        <Check className="size-3.5" strokeWidth={3} />
+      </span>
+    </button>
+  );
 }
 
 export function SettingsDialog() {
@@ -40,15 +73,11 @@ export function SettingsDialog() {
                 const th = THEMES[key];
                 const on = settings.theme === key;
                 return (
-                  <button
+                  <Choice
                     key={key}
-                    type="button"
-                    aria-pressed={on}
+                    on={on}
                     onClick={() => save({ ...settings, theme: key })}
-                    className={cn(
-                      "flex flex-col items-start gap-2 rounded-xl border-2 p-2.5 text-left text-sm font-bold outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95",
-                      on ? "border-primary" : "border-transparent",
-                    )}
+                    className="flex flex-col items-start gap-2 p-2.5 pr-7 text-sm font-bold"
                     style={{ background: th.bg, color: `rgb(${th.vars.ink})` }}
                   >
                     <span className="flex gap-1">
@@ -56,11 +85,8 @@ export function SettingsDialog() {
                         <span key={c} className="h-3.5 w-3.5 rounded-full ring-1 ring-black/10" style={{ background: th.pieces[c] }} />
                       ))}
                     </span>
-                    <span>
-                      {on ? "✓ " : ""}
-                      {th.name}
-                    </span>
-                  </button>
+                    <span className="block w-full truncate">{th.name}</span>
+                  </Choice>
                 );
               })}
             </div>
@@ -74,25 +100,13 @@ export function SettingsDialog() {
                 const th = themeOf(settings.theme);
                 const style = key === "auto" ? th.boardStyle : key;
                 return (
-                  <button
-                    key={key}
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => save({ ...settings, board: key })}
-                    className={cn(
-                      "flex flex-col items-stretch gap-1.5 rounded-xl border-2 bg-secondary p-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95",
-                      on ? "border-primary" : "border-transparent",
-                    )}
-                  >
+                  <Choice key={key} on={on} onClick={() => save({ ...settings, board: key })} className="flex flex-col items-stretch gap-1.5 bg-secondary p-2">
                     <BoardPreview style={style} th={th} />
-                    <span className="text-xs leading-tight font-bold">
-                      {on ? "✓ " : ""}
-                      {key === "auto" ? "Match theme" : BOARD_STYLES[key].name}
-                    </span>
-                    <span className="text-[11px] leading-tight text-muted-foreground">
+                    <span className="truncate text-xs leading-tight font-bold">{key === "auto" ? "Match theme" : BOARD_STYLES[key].name}</span>
+                    <span className="truncate text-[11px] leading-tight text-muted-foreground">
                       {key === "auto" ? BOARD_STYLES[style].name : BOARD_STYLES[key].hint}
                     </span>
-                  </button>
+                  </Choice>
                 );
               })}
             </div>
@@ -109,22 +123,10 @@ export function SettingsDialog() {
               ).map(([val, label, hint]) => {
                 const on = settings.steps === val;
                 return (
-                  <button
-                    key={label}
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => save({ ...settings, steps: val })}
-                    className={cn(
-                      "flex flex-col items-start gap-0.5 rounded-xl border-2 bg-secondary p-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95",
-                      on ? "border-primary" : "border-transparent",
-                    )}
-                  >
-                    <span className="text-sm font-bold">
-                      {on ? "✓ " : ""}
-                      {label}
-                    </span>
-                    <span className="text-xs text-muted-foreground">{hint}</span>
-                  </button>
+                  <Choice key={label} on={on} onClick={() => save({ ...settings, steps: val })} className="flex flex-col items-start gap-0.5 bg-secondary p-2.5 pr-7">
+                    <span className="block w-full truncate text-sm font-bold">{label}</span>
+                    <span className="block w-full truncate text-xs text-muted-foreground">{hint}</span>
+                  </Choice>
                 );
               })}
             </div>

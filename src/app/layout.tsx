@@ -41,9 +41,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-full antialiased" suppressHydrationWarning>
         <ThemeApplier />
+        <div className="page-shell">
         <div className="mx-auto flex max-w-6xl flex-col gap-3 py-3 lg:gap-5 lg:py-6">
           <AppHeader />
           {children}
+        </div>
         </div>
         <SettingsDialog />
         <Confetti />
