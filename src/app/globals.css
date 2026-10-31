@@ -278,28 +278,47 @@
 .token.movable {
   cursor: pointer;
 }
-/* No browser focus box around a tapped token; keyboard users get the halo instead. */
+/* No browser focus box around a tapped token (the ripples already mark it). */
 .token:focus {
   outline: none;
 }
-.token:focus-visible .halo {
-  opacity: 1;
-  stroke: #ffffff;
+/* Tokens you can move: the token breathes (grows and shrinks, so it looks the same
+   however the board is turned) while white rings keep spreading out from it. */
+.token.movable .token-art,
+.token.movable .token-shadow,
+.token-ripple {
+  transform-box: fill-box;
+  transform-origin: center;
 }
-.token .halo {
-  opacity: 0;
+.token.movable .token-art {
+  animation: token-breathe 0.8s ease-in-out infinite alternate;
 }
-.token.movable .halo {
-  opacity: 1;
-  animation: pulse 1s ease-in-out infinite;
-}
-@keyframes pulse {
-  0%,
-  100% {
-    stroke-opacity: 0.95;
+@keyframes token-breathe {
+  to {
+    transform: scale(1.16);
   }
-  50% {
-    stroke-opacity: 0.2;
+}
+.token.movable .token-shadow {
+  animation: token-breathe-shadow 0.8s ease-in-out infinite alternate;
+}
+@keyframes token-breathe-shadow {
+  to {
+    transform: scale(1.2);
+    opacity: 0.7;
+  }
+}
+.token-ripple {
+  opacity: 0;
+  animation: token-ripple 1.6s ease-out infinite;
+}
+@keyframes token-ripple {
+  from {
+    transform: scale(0.75);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1.9);
+    opacity: 0;
   }
 }
 
@@ -561,10 +580,17 @@
   .token {
     transition: none;
   }
-  .token.movable .halo,
+  .token.movable .token-art,
+  .token.movable .token-shadow,
   .dice.rolling .dice-hop,
   .dice.rolling .dice-shadow,
   .dice.ready .dice-hop {
     animation: none;
+  }
+  /* A still ring instead of the ripples */
+  .token-ripple {
+    animation: none;
+    opacity: 1;
+    transform: scale(1.15);
   }
 }

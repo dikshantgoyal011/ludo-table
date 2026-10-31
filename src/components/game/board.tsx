@@ -439,12 +439,19 @@ function FrameCorners({ kind }: { kind: "rosette" | "lotus" }) {
   );
 }
 
-/** One token, drawn to suit the board. */
-export function TokenArt({ style, fill }: { style: BoardStyleId; fill: string }) {
+/** The shadow a token casts on the board. */
+export function TokenShadow({ style }: { style: BoardStyleId }) {
+  if (style === "royal" || style === "sandstone") return <ellipse cx={0.03} cy={0.11} rx={0.36} ry={0.31} fill="rgba(0,0,0,.32)" />;
+  if (style === "carved") return <ellipse cx={0.03} cy={0.1} rx={0.35} ry={0.3} fill="rgba(0,0,0,.35)" />;
+  return <ellipse cx={0.03} cy={0.1} rx={0.34} ry={0.3} fill="rgba(0,0,0,.28)" />;
+}
+
+/** One token, drawn to suit the board (`shadow={false}` when the shadow is drawn separately). */
+export function TokenArt({ style, fill, shadow = true }: { style: BoardStyleId; fill: string; shadow?: boolean }) {
   if (style === "royal" || style === "sandstone")
     return (
       <>
-        <ellipse cx={0.03} cy={0.11} rx={0.36} ry={0.31} fill="rgba(0,0,0,.32)" />
+        {shadow && <TokenShadow style={style} />}
         <circle r={0.36} fill={GOLD} stroke={GOLD_DARK} strokeWidth={0.04} />
         <circle r={0.27} fill={fill} stroke="#fff3c4" strokeWidth={0.025} />
         <ellipse cx={-0.08} cy={-0.1} rx={0.12} ry={0.08} fill="rgba(255,255,255,.55)" />
@@ -454,7 +461,7 @@ export function TokenArt({ style, fill }: { style: BoardStyleId; fill: string })
   if (style === "carved")
     return (
       <>
-        <ellipse cx={0.03} cy={0.1} rx={0.35} ry={0.3} fill="rgba(0,0,0,.35)" />
+        {shadow && <TokenShadow style={style} />}
         <circle r={0.34} fill={fill} stroke="#3b2414" strokeWidth={0.05} />
         <circle r={0.22} fill="none" stroke="rgba(0,0,0,.28)" strokeWidth={0.04} />
         <circle r={0.22} fill="none" stroke="rgba(255,255,255,.25)" strokeWidth={0.02} transform="translate(-.02 -.02)" />
@@ -463,7 +470,7 @@ export function TokenArt({ style, fill }: { style: BoardStyleId; fill: string })
     );
   return (
     <>
-      <ellipse cx={0.03} cy={0.1} rx={0.34} ry={0.3} fill="rgba(0,0,0,.28)" />
+      {shadow && <TokenShadow style={style} />}
       <circle r={0.34} stroke="#1b1b1b" strokeWidth={0.05} fill={fill} />
       <circle r={0.17} fill="rgba(255,255,255,.85)" />
       <circle r={0.09} fill={fill} />
@@ -522,7 +529,7 @@ export function Board() {
   const colorKey = COLORS.map((c) => game.displayColor(c)).join(",");
   // Tokens keep a fixed drawing order: moving an element within the SVG would
   // cancel its slide, which made some moves jump. Movable tokens get their
-  // halo and tap target in a separate layer on top instead.
+  // ripples and tap target in a separate layer on top instead.
   const views = game.tokenViews();
   const movableViews = views.filter((t) => t.movable && !t.hidden);
   const hex = (slot: Color) => th.pieces[game.displayColor(slot)];
@@ -549,11 +556,16 @@ export function Board() {
                 className={"token" + (t.movable ? " movable" : "") + (t.stepping ? " stepping" : "") + (t.returning ? " returning" : "")}
                 style={{ transform: `translate(${t.x}px,${t.y}px) scale(${t.scale})`, display: t.hidden ? "none" : undefined }}
               >
-                <TokenArt style={style} fill={hex(t.c)} />
+                <g className="token-shadow">
+                  <TokenShadow style={style} />
+                </g>
+                <g className="token-art">
+                  <TokenArt style={style} fill={hex(t.c)} shadow={false} />
+                </g>
               </g>
             ))}
           </g>
-          {/* Tokens you can move: halo + tap target, above every token. */}
+          {/* Tokens you can move: ripples and the tap target, above every token. */}
           <g>
             {movableViews.map((t) => (
               <g
@@ -574,7 +586,11 @@ export function Board() {
                   }
                 }}
               >
-                <circle className="halo" r={0.5} fill="none" stroke="#f2c94c" strokeWidth={0.13} />
+                {/* White on a dark edge, so it shows on every token colour and board square */}
+                <g className="token-ripple">
+                  <circle r={0.42} fill="none" stroke="rgba(0,0,0,.5)" strokeWidth={0.12} />
+                  <circle r={0.42} fill="none" stroke="#ffffff" strokeWidth={0.07} />
+                </g>
                 <circle r={0.62} fill="transparent" />
               </g>
             ))}
