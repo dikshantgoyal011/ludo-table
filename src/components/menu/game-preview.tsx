@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { BoardPreview, TokenArt, useBoardStyle } from "@/components/game/board";
-import { COLORS, FINISH, NAMES, SLOTS_FOR } from "@/lib/game/constants";
+import { DiceView, newSpin, type DiceRoll } from "@/components/game/dice-3d";
+import { COLORS, DICE_ROLL_MS, FINISH, NAMES, SLOTS_FOR } from "@/lib/game/constants";
 import { rollDie } from "@/lib/game/dice";
 import { basePoint } from "@/lib/game/geometry";
 import { applyMove, applyRoll, chooseMove, clone, freshState } from "@/lib/game/rules";
@@ -135,7 +136,18 @@ function LudoDemo({ twoDice = false }: { twoDice?: boolean }) {
   const game = useRef<GameState | null>(null);
   const [shown, setShown] = useState<Shown | null>(null);
   const [walking, setWalking] = useState<string | null>(null);
-  const [die, setDie] = useState({ v: [3, 5], rolling: false, c: "red" as Color });
+  // The same 3D dice as the game, each with its own orientation.
+  const spinA = useRef(newSpin()).current;
+  const spinB = useRef(newSpin()).current;
+  const [dice, setDice] = useState<{ c: Color; rolling: boolean; a: DiceRoll | null; b: DiceRoll | null; faceA: number; faceB: number; note: string }>({
+    c: "red",
+    rolling: false,
+    a: null,
+    b: null,
+    faceA: 3,
+    faceB: 5,
+    note: "",
+  });
   const wait = useTimers();
 
   useEffect(() => {
@@ -145,7 +157,46 @@ function LudoDemo({ twoDice = false }: { twoDice?: boolean }) {
     const pos: Shown = clone(s0.tokens);
     setShown(clone(pos));
     if (reducedMotion()) return;
+
+    /** Apply a roll of v for c and walk the token exactly that far (or out of the yard on a 6). */
+    const play = async (s: GameState, c: Color, v: number) => {
+      const before = clone(s.tokens);
+      applyRoll(s, c, v);
+      if (s.roll) applyMove(s, c, chooseMove(s, c, s.roll), s.roll);
+      const moved = before[c].some((a, i) => s.tokens[c][i] > a);
+      setDice((d) => ({ ...d, note: moved ? "" : "no move" }));
+      for (let i = 0; i < 4 && alive; i++) {
+        const a = before[c][i];
+        const b = s.tokens[c][i];
+        if (b <= a) continue;
+        if (a === -1) {
+          pos[c][i] = 0;
+          setShown(clone(pos));
+          await wait(420);
+          continue;
+        }
+        setWalking(c + i);
+        for (let p = a + 1; p <= b && alive; p++) {
+          pos[c][i] = p;
+          setShown(clone(pos));
+          await wait(170);
+        }
+        setWalking(null);
+      }
+      // Tokens it cut fly back to their yard.
+      for (const col of COLORS)
+        for (let i = 0; i < 4; i++)
+          if (s.tokens[col][i] === -1 && pos[col][i] !== -1) {
+            pos[col][i] = -1;
+            setShown(clone(pos));
+            await wait(400);
+          }
+      Object.assign(pos, clone(s.tokens));
+      setShown(clone(pos));
+    };
+
     (async () => {
+      let id = 0;
       while (alive) {
         let s = game.current!;
         if (s.phase !== "playing") {
@@ -155,44 +206,26 @@ function LudoDemo({ twoDice = false }: { twoDice?: boolean }) {
           setShown(clone(pos));
         }
         const c = s.turn!;
-        setDie((d) => ({ ...d, rolling: true, c }));
-        await wait(700);
+        // The number is decided as the dice is thrown; the dice lands on it, then the token moves it.
+        const v1 = rollDie();
+        const v2 = twoDice ? rollDie() : 0;
+        const at = Date.now();
+        id++;
+        setDice((d) => ({ ...d, c, rolling: true, note: "", a: { id, value: v1, at }, b: twoDice ? { id, value: v2, at } : null }));
+        await wait(DICE_ROLL_MS + 150);
         if (!alive) return;
-        const v = rollDie();
-        const before = clone(s.tokens);
-        applyRoll(s, c, v);
-        if (s.roll) applyMove(s, c, chooseMove(s, c, s.roll), s.roll);
-        setDie({ v: [v, twoDice ? rollDie() : v], rolling: false, c });
-        await wait(250);
-        // Walk the moved token square by square, then send cut tokens home.
-        for (const col of COLORS)
-          for (let i = 0; i < 4; i++) {
-            const a = before[col][i];
-            const b = s.tokens[col][i];
-            if (b <= a) continue;
-            if (a === -1) {
-              pos[col][i] = 0;
-              setShown(clone(pos));
-              await wait(420);
-              continue;
-            }
-            setWalking(col + i);
-            for (let p = a + 1; p <= b && alive; p++) {
-              pos[col][i] = p;
-              setShown(clone(pos));
-              await wait(170);
-            }
-            setWalking(null);
+        setDice((d) => ({ ...d, rolling: false, faceA: v1, faceB: v2 || d.faceB }));
+        await wait(200);
+        await play(s, c, v1);
+        // Two dice: the same player moves the second number too.
+        if (twoDice && alive && s.phase === "playing") {
+          if (s.turn !== c || s.roll) {
+            s.turn = c;
+            s.roll = null;
           }
-        for (const col of COLORS)
-          for (let i = 0; i < 4; i++)
-            if (s.tokens[col][i] === -1 && pos[col][i] !== -1) {
-              pos[col][i] = -1;
-              setShown(clone(pos));
-              await wait(400);
-            }
-        Object.assign(pos, clone(s.tokens));
-        setShown(clone(pos));
+          await wait(250);
+          await play(s, c, v2);
+        }
         await wait(650);
       }
     })();
@@ -201,7 +234,6 @@ function LudoDemo({ twoDice = false }: { twoDice?: boolean }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
   // Tokens sharing a square sit side by side (same idea as the real board).
   const tokens: { key: string; c: Color; x: number; y: number; scale: number; home: boolean }[] = [];
   if (shown) {
@@ -232,13 +264,13 @@ function LudoDemo({ twoDice = false }: { twoDice?: boolean }) {
           </g>
         ))}
       </BoardPreview>
-      <div className="flex items-center gap-3 text-sm font-bold">
+      <div className="flex min-h-12 items-center gap-3 text-sm font-bold">
         <span className="flex items-center gap-1.5">
-          <span className="h-3 w-3 rounded-full ring-2 ring-white/30" style={{ background: th.pieces[die.c] }} />
-          {NAMES[die.c]} {die.rolling ? "rolls…" : "rolled"}
+          <span className="h-3 w-3 rounded-full ring-2 ring-white/30" style={{ background: th.pieces[dice.c] }} />
+          {NAMES[dice.c]} {dice.rolling ? "rolls…" : `rolled${dice.note ? " · " + dice.note : ""}`}
         </span>
-        <MiniDie v={die.v[0]} rolling={die.rolling} />
-        {twoDice && <MiniDie v={die.v[1]} rolling={die.rolling} />}
+        <DiceView spin={spinA} face={dice.faceA} roll={dice.a} rolling={dice.rolling} size={40} label="Dice" />
+        {twoDice && <DiceView spin={spinB} face={dice.faceB} roll={dice.b} rolling={dice.rolling} size={40} label="Second dice" />}
       </div>
     </div>
   );

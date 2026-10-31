@@ -33,20 +33,22 @@ const LIGHT = (() => {
   return l.map((c) => c / m);
 })();
 
-// The cube's orientation survives the dice moving from one name tag to another.
-const angles = { x: 0, y: 0, z: 0 };
-// Resting tilt: none. At rest the dice faces you flat, like in Ludo King / Ludo Club;
-// it only shows its 3D sides while it tumbles.
-const TILT_X = 0;
-const TILT_Y = 0;
-let handledRoll = 0;
+/** A dice's orientation and the last roll it played (kept outside React so it survives remounts). */
+export interface DiceSpin {
+  angles: { x: number; y: number; z: number };
+  handled: number;
+}
+export const newSpin = (): DiceSpin => ({ angles: { x: 0, y: 0, z: 0 }, handled: 0 });
 
-const cubeTransform = () => `rotateZ(${angles.z}deg) rotateX(${angles.x}deg) rotateY(${angles.y}deg)`;
+// The game's dice: its orientation survives the dice moving from one name tag to another.
+const gameSpin = newSpin();
+
+const cubeTransform = (a: DiceSpin["angles"]) => `rotateZ(${a.z}deg) rotateX(${a.x}deg) rotateY(${a.y}deg)`;
 
 /** Darkens each face by how far it turns away from the light, so the cube reads as solid. */
-function shadeFaces(cube: HTMLElement, ms: number) {
+function shadeFaces(cube: HTMLElement, a: DiceSpin["angles"], ms: number) {
   const r = (d: number) => (d * Math.PI) / 180;
-  const [cx, sx, cy, sy, cz, sz] = [Math.cos(r(angles.x)), Math.sin(r(angles.x)), Math.cos(r(angles.y)), Math.sin(r(angles.y)), Math.cos(r(angles.z)), Math.sin(r(angles.z))];
+  const [cx, sx, cy, sy, cz, sz] = [Math.cos(r(a.x)), Math.sin(r(a.x)), Math.cos(r(a.y)), Math.sin(r(a.y)), Math.cos(r(a.z)), Math.sin(r(a.z))];
   cube.querySelectorAll<HTMLElement>(".dice-face").forEach((face) => {
     const [x0, y0, z0] = NORMALS[Number(face.dataset.v)];
     // Same order as cubeTransform: rotateY first, then rotateX, then rotateZ.
@@ -60,21 +62,18 @@ function shadeFaces(cube: HTMLElement, ms: number) {
     light.style.opacity = Math.min(0.5, Math.max(0, (0.82 - lit) * 0.75)).toFixed(3);
   });
 }
-/** Lands on `v` after a few full tumbles, always spinning forward. */
-function aimAt(v: number, spins: boolean) {
+/** Lands on `v` after a few full tumbles, always spinning forward. At rest the dice faces you flat. */
+function aimAt(a: DiceSpin["angles"], v: number, spins: boolean) {
   const t = SHOW[v] || SHOW[1];
-  // A small tilt keeps it looking 3D while still showing the top face clearly.
-  const tiltX = TILT_X;
-  const tiltY = t.x === 0 ? TILT_Y : 0;
   const next = (cur: number, base: number, turns: number) => {
     let n = base + Math.ceil((cur - base) / 360) * 360;
     if (spins) n += turns * 360;
     return n;
   };
-  angles.x = next(angles.x, t.x + tiltX, spins ? 2 + Math.floor(Math.random() * 2) : 0);
-  angles.y = next(angles.y, t.y + tiltY, spins ? 1 + Math.floor(Math.random() * 2) : 0);
+  a.x = next(a.x, t.x, spins ? 2 + Math.floor(Math.random() * 2) : 0);
+  a.y = next(a.y, t.y, spins ? 1 + Math.floor(Math.random() * 2) : 0);
   // Land square-on: a full spin while rolling, always ending at 0.
-  angles.z = next(angles.z, 0, spins ? 1 : 0);
+  a.z = next(a.z, 0, spins ? 1 : 0);
 }
 
 function Face({ v, place }: { v: number; place: string }) {
@@ -86,21 +85,47 @@ function Face({ v, place }: { v: number; place: string }) {
   );
 }
 
-export function Dice3D() {
-  const game = useGame();
+export interface DiceRoll {
+  id: number;
+  value: number;
+  at: number;
+}
+
+/**
+ * A 3D dice. Tumbles and lands on `roll.value` whenever a new roll comes in;
+ * otherwise shows `face`. Used by the game and by the home page's demo.
+ */
+export function DiceView({
+  spin,
+  face,
+  roll,
+  rolling,
+  ready = false,
+  onClick,
+  label,
+  size,
+}: {
+  spin: DiceSpin;
+  face: number;
+  roll: DiceRoll | null;
+  rolling: boolean;
+  ready?: boolean;
+  onClick?: () => void;
+  label?: string;
+  /** Edge length in px (default: the CSS --die, which grows with the screen) */
+  size?: number;
+}) {
   const cubeRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLButtonElement>(null);
-  const canRoll = game.canRollNow();
-  const roll = game.diceRoll;
 
   // Show the current face without animating when the dice first appears.
   useLayoutEffect(() => {
     const cube = cubeRef.current;
     if (!cube) return;
-    if (!game.rolling) aimAt(game.dieFace, false);
+    if (!rolling) aimAt(spin.angles, face, false);
     cube.style.transition = "none";
-    cube.style.transform = cubeTransform();
-    shadeFaces(cube, 0);
+    cube.style.transform = cubeTransform(spin.angles);
+    shadeFaces(cube, spin.angles, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -108,36 +133,35 @@ export function Dice3D() {
   useEffect(() => {
     const cube = cubeRef.current;
     const root = rootRef.current;
-    if (!cube || !root || !roll || roll.id === handledRoll) return;
-    handledRoll = roll.id;
+    if (!cube || !root || !roll || roll.id === spin.handled) return;
+    spin.handled = roll.id;
     const left = Math.max(0, DICE_ROLL_MS - (Date.now() - roll.at));
-    aimAt(roll.value, left > 200);
+    aimAt(spin.angles, roll.value, left > 200);
     root.style.setProperty("--roll-ms", `${left}ms`);
     root.classList.remove("rolling");
     void root.offsetWidth;
     if (left > 0) root.classList.add("rolling");
     cube.style.transition = left > 0 ? `transform ${left}ms cubic-bezier(.15,.65,.25,1)` : "none";
     requestAnimationFrame(() => {
-      cube.style.transform = cubeTransform();
-      shadeFaces(cube, left);
+      cube.style.transform = cubeTransform(spin.angles);
+      shadeFaces(cube, spin.angles, left);
     });
     const t = setTimeout(() => root.classList.remove("rolling"), left);
     return () => clearTimeout(t);
-  }, [roll]);
+  }, [roll, spin]);
 
   // Keep the face in sync when no roll animation is running (e.g. after a reload).
   useEffect(() => {
     const cube = cubeRef.current;
-    if (!cube || game.rolling) return;
-    const t = SHOW[game.dieFace];
+    if (!cube || rolling) return;
+    const t = SHOW[face];
     const norm = (a: number) => ((Math.round(a) % 360) + 360) % 360;
-    const wantX = norm(t.x + TILT_X);
-    const wantY = norm(t.y + (t.x === 0 ? TILT_Y : 0));
-    if (norm(angles.x) !== wantX || norm(angles.y) !== wantY || norm(angles.z) !== 0) {
-      aimAt(game.dieFace, false);
+    const a = spin.angles;
+    if (norm(a.x) !== norm(t.x) || norm(a.y) !== norm(t.y) || norm(a.z) !== 0) {
+      aimAt(a, face, false);
       cube.style.transition = "transform 300ms ease-out";
-      cube.style.transform = cubeTransform();
-      shadeFaces(cube, 300);
+      cube.style.transform = cubeTransform(a);
+      shadeFaces(cube, a, 300);
     }
   });
 
@@ -145,10 +169,11 @@ export function Dice3D() {
     <button
       ref={rootRef}
       type="button"
-      className={cn("dice shrink-0 rounded-xl outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:cursor-default", canRoll && "ready")}
-      disabled={!canRoll}
-      aria-label={canRoll ? "Roll the dice" : `Dice showing ${game.dieFace}`}
-      onClick={() => game.roll()}
+      className={cn("dice shrink-0 rounded-xl outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:cursor-default", ready && "ready")}
+      style={size ? ({ "--die": `${size}px` } as React.CSSProperties) : undefined}
+      disabled={!ready}
+      aria-label={label ?? (ready ? "Roll the dice" : `Dice showing ${face}`)}
+      onClick={onClick}
     >
       <span className="dice-shadow" aria-hidden="true" />
       <div className="dice-hop" aria-hidden="true">
@@ -162,5 +187,22 @@ export function Dice3D() {
         </div>
       </div>
     </button>
+  );
+}
+
+/** The game's dice, for whoever's turn it is. */
+export function Dice3D() {
+  const game = useGame();
+  const canRoll = game.canRollNow();
+  return (
+    <DiceView
+      spin={gameSpin}
+      face={game.dieFace}
+      roll={game.diceRoll}
+      rolling={game.rolling}
+      ready={canRoll}
+      onClick={() => game.roll()}
+      label={canRoll ? "Roll the dice" : `Dice showing ${game.dieFace}`}
+    />
   );
 }
