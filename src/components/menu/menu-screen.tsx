@@ -144,8 +144,8 @@ function PlayModes() {
 }
 
 /** What crowns the preview's frame: follows the theme's own board design. */
-type Crown = "dome" | "spire" | "none";
-const CROWN: Record<BoardStyleId, Crown> = { royal: "dome", sandstone: "spire", carved: "none", modern: "none" };
+type Crown = "dome" | "crown" | "none";
+const CROWN: Record<BoardStyleId, Crown> = { royal: "dome", sandstone: "crown", carved: "none", modern: "none" };
 
 const crownGold = (
   <defs>
@@ -157,7 +157,7 @@ const crownGold = (
   </defs>
 );
 
-/** Gold dome (Royal Darbar, as in the logo) or a palace spire with a saffron flag (Maharaja) on top of the arch. */
+/** Gold dome (Royal Darbar) or a jewelled crown (Maharaja, as in the logo) on top of the arch. */
 function ArchCrown({ kind }: { kind: Crown }) {
   if (kind === "none") return null;
   if (kind === "dome")
@@ -172,24 +172,23 @@ function ArchCrown({ kind }: { kind: Crown }) {
         </g>
       </svg>
     );
-  // Palace spire: curved tower, ribbed cap, finial and a saffron flag.
+  // A jewelled royal crown, as in the app logo.
   return (
-    <svg viewBox="-60 -190 120 200" className="absolute -top-12 left-1/2 h-[4.6rem] w-[4.6rem] -translate-x-1/2 drop-shadow-[0_4px_6px_rgba(0,0,0,.45)]" aria-hidden="true">
+    <svg viewBox="-75 -90 150 140" className="absolute -top-9 left-1/2 h-[4.2rem] w-[4.2rem] -translate-x-1/2 drop-shadow-[0_4px_6px_rgba(0,0,0,.45)]" aria-hidden="true">
       {crownGold}
       <g stroke="#4e140a" strokeWidth="4" strokeLinejoin="round">
-        <path d="M0 -158 V-186" strokeWidth="3.5" strokeLinecap="round" />
-        <path d="M2 -186 L34 -176 L2 -165 Z" fill="#f28c28" strokeWidth="3" />
-        <rect x="-48" y="-12" width="96" height="20" rx="4" fill="url(#arch-crown)" />
-        <path d="M-38 -12 C-38 -62 -24 -98 -13 -118 L13 -118 C24 -98 38 -62 38 -12 Z" fill="url(#arch-crown)" />
-        <path d="M-34 -42 H34 M-28 -72 H28 M-20 -98 H20" strokeWidth="2.5" opacity=".7" fill="none" />
-        <ellipse cx="0" cy="-125" rx="20" ry="8" fill="url(#arch-crown)" />
-        <path d="M-12 -125 V-121 M-4 -127 V-119 M4 -127 V-119 M12 -125 V-121" strokeWidth="2" opacity=".7" />
-        <path d="M-8 -133 C-12 -144 -6 -152 0 -152 C6 -152 12 -144 8 -133 Z" fill="url(#arch-crown)" />
-        <circle cx="0" cy="-156" r="4" fill="url(#arch-crown)" />
+        <path d="M-54 14 L-62 -46 L-30 -16 L0 -66 L30 -16 L62 -46 L54 14 Z" fill="url(#arch-crown)" />
+        <circle cx="-62" cy="-50" r="8" fill="url(#arch-crown)" />
+        <circle cx="0" cy="-72" r="9" fill="url(#arch-crown)" />
+        <circle cx="62" cy="-50" r="8" fill="url(#arch-crown)" />
+        <rect x="-56" y="8" width="112" height="28" rx="7" fill="url(#arch-crown)" />
+        <ellipse cx="0" cy="22" rx="10" ry="9" fill="#d42a2a" strokeWidth="3" />
+        <ellipse cx="-32" cy="22" rx="7" ry="7" fill="#1f8a4c" strokeWidth="3" />
+        <ellipse cx="32" cy="22" rx="7" ry="7" fill="#2458c8" strokeWidth="3" />
+        <ellipse cx="0" cy="-28" rx="7" ry="9" fill="#d42a2a" strokeWidth="3" />
       </g>
     </svg>
-  );
-}
+  );}
 
 /** The selected game: its live preview in a palace arch, what it is, and how to play it. */
 function Showcase({ v, onPick }: { v: Variant; onPick: (id: string) => void }) {
@@ -201,7 +200,7 @@ function Showcase({ v, onPick }: { v: Variant; onPick: (id: string) => void }) {
       aria-label={v.name}
       className={cn(
         "darbar-jaali showcase-fade grid grid-cols-1 gap-5 rounded-[28px] border border-primary/35 bg-card/60 px-4 pb-5",
-        crown === "spire" ? "pt-14" : crown === "dome" ? "pt-9" : "pt-5",
+        crown === "crown" ? "pt-11" : crown === "dome" ? "pt-9" : "pt-5",
         " shadow-[0_18px_50px_rgba(0,0,0,.35)] sm:px-6 sm:pb-6 md:grid-cols-[minmax(0,400px)_minmax(0,1fr)] md:items-center md:gap-8",
       )}
     >

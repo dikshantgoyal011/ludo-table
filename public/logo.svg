@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
 <defs>
   <radialGradient id="em" cx="50%" cy="30%" r="80%">
-    <stop offset="0" stop-color="#17704f"/>
-    <stop offset=".55" stop-color="#0b4430"/>
-    <stop offset="1" stop-color="#05261a"/>
+    <stop offset="0" stop-color="#a8283c"/>
+    <stop offset=".55" stop-color="#6a1222"/>
+    <stop offset="1" stop-color="#3c0814"/>
   </radialGradient>
   <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
     <stop offset="0" stop-color="#fff0b0"/>
@@ -58,18 +58,17 @@
 <rect x="292.8" y="243.73333333333335" width="122.66666666666667" height="24.533333333333335" fill="#e9a912"/>
 <rect x="243.73333333333335" y="292.8" width="24.533333333333335" height="122.66666666666667" fill="#1f5fcc"/>
 <path d="M72 219.20000000000002 H219.20000000000002 M292.8 219.20000000000002 H440 M219.20000000000002 72 V219.20000000000002 M219.20000000000002 292.8 V440 M72 243.73333333333335 H219.20000000000002 M292.8 243.73333333333335 H440 M243.73333333333335 72 V219.20000000000002 M243.73333333333335 292.8 V440 M72 268.26666666666665 H219.20000000000002 M292.8 268.26666666666665 H440 M268.26666666666665 72 V219.20000000000002 M268.26666666666665 292.8 V440 M72 292.8 H219.20000000000002 M292.8 292.8 H440 M292.8 72 V219.20000000000002 M292.8 292.8 V440 M96.53333333333333 219.20000000000002 V292.8 M317.33333333333337 219.20000000000002 V292.8 M219.20000000000002 96.53333333333333 H292.8 M219.20000000000002 317.33333333333337 H292.8 M121.06666666666666 219.20000000000002 V292.8 M341.8666666666667 219.20000000000002 V292.8 M219.20000000000002 121.06666666666666 H292.8 M219.20000000000002 341.8666666666667 H292.8 M145.60000000000002 219.20000000000002 V292.8 M366.40000000000003 219.20000000000002 V292.8 M219.20000000000002 145.60000000000002 H292.8 M219.20000000000002 366.40000000000003 H292.8 M170.13333333333333 219.20000000000002 V292.8 M390.93333333333334 219.20000000000002 V292.8 M219.20000000000002 170.13333333333333 H292.8 M219.20000000000002 390.93333333333334 H292.8 M194.66666666666669 219.20000000000002 V292.8 M415.4666666666667 219.20000000000002 V292.8 M219.20000000000002 194.66666666666669 H292.8 M219.20000000000002 415.4666666666667 H292.8" stroke="#8a6a2a" stroke-width="1.6" opacity=".55" fill="none"/>
-<rect x="219.20000000000002" y="219.20000000000002" width="73.60000000000001" height="73.60000000000001" fill="#0b4430" stroke="#5a3a08" stroke-width="2"/>
+<rect x="219.20000000000002" y="219.20000000000002" width="73.60000000000001" height="73.60000000000001" fill="#6a1222" stroke="#5a3a08" stroke-width="2"/>
 <g transform="translate(256 280) scale(1.3)">
-  <g filter="url(#sh)" stroke="#4a2e06" stroke-width="3.5" stroke-linejoin="round">
-    <rect x="-50" y="30" width="100" height="16" rx="4" fill="url(#gold)"/>
-    <rect x="-40" y="-2" width="80" height="34" rx="3" fill="url(#dome)"/>
-    
-    <path d="M-30 30 V14 a8 8 0 0 1 16 0 V30 Z M-8 30 V12 a8 8 0 0 1 16 0 V30 Z M14 30 V14 a8 8 0 0 1 16 0 V30 Z" fill="#3a1f05" stroke="none"/>
-    <rect x="-46" y="-10" width="92" height="10" rx="3" fill="url(#gold)"/>
-    <path d="M-36 -10 C-52 -38 -18 -54 0 -76 C18 -54 52 -38 36 -10 Z" fill="url(#dome)"/>
-    <path d="M0 -76 C-6 -54 -10 -30 -10 -10 M0 -76 C6 -54 10 -30 10 -10" fill="none" stroke="#4a2e06" stroke-width="2" opacity=".55"/>
-    <path d="M0 -76 V-98" stroke-width="5" stroke-linecap="round"/>
-    <circle cx="0" cy="-88" r="5.5" fill="url(#gold)"/>
-    <path d="M0 -112 L5 -100 L0 -97 L-5 -100 Z" fill="url(#gold)"/>
+  <g filter="url(#sh)" transform="translate(0 10)" stroke="#4e140a" stroke-width="4" stroke-linejoin="round">
+    <path d="M-54 14 L-62 -46 L-30 -16 L0 -66 L30 -16 L62 -46 L54 14 Z" fill="url(#dome)"/>
+    <circle cx="-62" cy="-50" r="8" fill="url(#gold)"/>
+    <circle cx="0" cy="-72" r="9" fill="url(#gold)"/>
+    <circle cx="62" cy="-50" r="8" fill="url(#gold)"/>
+    <rect x="-56" y="8" width="112" height="28" rx="7" fill="url(#gold)"/>
+    <ellipse cx="0" cy="22" rx="10" ry="9" fill="#d42a2a" stroke-width="3"/>
+    <ellipse cx="-32" cy="22" rx="7" ry="7" fill="#1f8a4c" stroke-width="3"/>
+    <ellipse cx="32" cy="22" rx="7" ry="7" fill="#2458c8" stroke-width="3"/>
+    <ellipse cx="0" cy="-28" rx="7" ry="9" fill="#d42a2a" stroke-width="3"/>
   </g></g></g>
 </svg>
