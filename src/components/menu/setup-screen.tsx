@@ -24,7 +24,7 @@ import {
 import type { Color, Mode } from "@/lib/game/types";
 import type { Profile } from "@/lib/services/types";
 import { cn } from "@/lib/utils";
-import { GamePicker } from "./game-picker";
+import { GameStrip } from "./game-picker";
 import { rememberGame } from "./menu-screen";
 
 /** Name input that saves to the profile as you type. */
@@ -71,22 +71,30 @@ export function SetupScreen({ mode }: { mode: Mode }) {
     getController().exitToMenu();
   }, []);
 
-  if (!mounted) return <Card className="mx-auto w-full max-w-xl" />;
-
   const go = (path: string) => router.push(path);
+  // The same game strip, in the same place, as on the home page: switch game in one tap.
+  const strip = (
+    <GameStrip
+      selected="ludo"
+      onSelect={(id) => {
+        rememberGame(id);
+        if (id !== "ludo") go(`/?game=${id}`);
+      }}
+    />
+  );
+
+  if (!mounted)
+    return (
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 py-1">
+        {strip}
+        <Card className="mx-auto min-h-[420px] w-full max-w-xl" />
+      </div>
+    );
 
   return (
-    <div className="mx-auto flex w-full max-w-xl flex-col gap-3">
-      {/* Switch game right here: another game opens on the home page, picked. */}
-      <GamePicker
-        compact
-        selected="ludo"
-        onSelect={(id) => {
-          rememberGame(id);
-          if (id !== "ludo") go(`/?game=${id}`);
-        }}
-      />
-      <Card className="w-full">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 py-1">
+      {strip}
+      <Card className="mx-auto w-full max-w-xl">
         <nav
           aria-label="How to play"
           className="grid grid-cols-4 gap-1 rounded-xl bg-background/50 p-1"
@@ -156,8 +164,8 @@ export function SetupScreen({ mode }: { mode: Mode }) {
               Find a {profile.onlineCount}-player game
             </Button>
             <p className="text-xs text-muted-foreground">
-              The game starts as soon as the table is full. If a player
-              doesn&apos;t move within 30 seconds, the game moves for them.
+              The game starts as soon as the table is full. You have 15 seconds a turn; miss 5 turns and you&apos;re out.
+              If someone goes offline, the computer plays for them until they&apos;re back.
             </p>
           </>
         )}

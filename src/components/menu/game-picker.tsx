@@ -6,6 +6,22 @@ import { cn } from "@/lib/utils";
 import { MiniBoard } from "./mini-board";
 
 /**
+ * The game strip at the top of the home and setup screens: the same heading,
+ * cards and position on both, so moving between them doesn't jump or resize.
+ */
+export function GameStrip({ selected, onSelect }: { selected: string; onSelect: (id: string) => void }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-end justify-between gap-3">
+        <h2 className="text-sm font-bold tracking-[0.2em] text-primary uppercase">Every Ludo ever played</h2>
+        <span className="hidden text-xs text-muted-foreground sm:inline lg:hidden">Swipe to see them all</span>
+      </div>
+      <GamePicker selected={selected} onSelect={onSelect} />
+    </div>
+  );
+}
+
+/**
  * Every game in a row you can swipe through. `compact`: small chips (setup
  * screens), otherwise cards (home page). Games not built yet are faded and
  * marked "Soon", but can still be picked to preview them.
@@ -46,7 +62,13 @@ export function GamePicker({ selected, onSelect, compact = false }: { selected: 
           >
             <span
               className={cn("block shrink-0 rounded-xl p-1 shadow-inner", compact ? "h-8 w-8" : "h-11 w-full p-1 sm:h-14 sm:p-1.5", !v.ready && "opacity-55 grayscale-[45%]")}
-              style={{ background: `radial-gradient(circle at 50% 30%, ${v.tint[0]}cc, ${v.tint[0]})` }}
+              // Ludo, the game everyone knows, sits in the theme's own colours; the others in their era's.
+              style={{
+                background:
+                  v.id === "ludo"
+                    ? "radial-gradient(circle at 50% 30%, rgb(var(--c-panel)), rgb(var(--c-felt)))"
+                    : `radial-gradient(circle at 50% 30%, ${v.tint[0]}cc, ${v.tint[0]})`,
+              }}
             >
               <span className={cn("mx-auto block h-full", !compact && "w-11 sm:w-14")}>
                 <MiniBoard kind={v.board} accent={v.tint[1]} />

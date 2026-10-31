@@ -5,7 +5,7 @@ import { Confetti } from "@/components/game/confetti";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
 import { ThemeApplier } from "@/components/providers/theme-applier";
 import { themeBootScript } from "@/lib/theme/boot-script";
-import { THEMES } from "@/lib/theme/themes";
+import { brandVars, THEMES } from "@/lib/theme/themes";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -20,7 +20,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   viewportFit: "cover",
-  themeColor: "#072a1e",
+  themeColor: "#3c0814",
 };
 
 // Fonts are downloaded at build time and served with the app. Loading them from
@@ -30,7 +30,7 @@ const plexMono = IBM_Plex_Mono({ subsets: ["latin"], weight: "500", variable: "-
 const rozha = Rozha_One({ subsets: ["latin"], weight: "400", variable: "--font-rozha", display: "swap" });
 
 const bootThemes =Object.fromEntries(
-  Object.entries(THEMES).map(([id, t]) => [id, { vars: t.vars, pip: t.pip, bg: t.bg, scheme: t.scheme, meta: t.meta }]),
+  Object.entries(THEMES).map(([id, t]) => [id, { vars: t.vars, brand: brandVars(t.brand), pip: t.pip, bg: t.bg, scheme: t.scheme, meta: t.meta }]),
 );
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

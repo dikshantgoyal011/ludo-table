@@ -94,7 +94,7 @@ export function SettingsDialog() {
 
           <section className="flex flex-col gap-2">
             <SectionTitle>Board</SectionTitle>
-            <div className="grid grid-cols-2 gap-2 min-[420px]:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 min-[420px]:grid-cols-3">
               {(["auto", ...BOARD_STYLE_IDS] as const).map((key) => {
                 const on = settings.board === key;
                 const th = themeOf(settings.theme);

@@ -3,20 +3,25 @@
 
 /*
  * Colours come from the active theme (see src/lib/theme/themes.ts), which
- * writes the --c-* triplets onto <html>. The defaults below are "Royal Darbar".
+ * writes the --c-* triplets onto <html>. The defaults below are "Maharaja".
  * shadcn/ui tokens (--background, --primary, ...) are mapped onto them so every
  * shadcn component follows the theme.
  */
 :root {
-  --c-felt: 7 42 30;
-  --c-felt2: 12 61 44;
-  --c-panel: 15 72 52;
-  --c-line: 120 98 46;
-  --c-ink: 250 242 218;
-  --c-muted: 200 190 152;
-  --c-paper: 250 243 222;
-  --c-gold: 232 184 74;
-  --pip: #2a1d0c;
+  --c-felt: 60 8 20;
+  --c-felt2: 86 15 32;
+  --c-panel: 102 22 40;
+  --c-line: 160 104 46;
+  --c-ink: 255 243 224;
+  --c-muted: 236 200 166;
+  --c-paper: 255 246 230;
+  --c-gold: 246 172 58;
+  --pip: #2a1206;
+  /* Title lettering (per theme: themes.ts brand) */
+  --brand-font: var(--font-brand);
+  --brand-weight: 400;
+  --brand-fill: linear-gradient(180deg, #fff3c4 0%, #ffc85a 42%, #e8862a 72%, #ffd98f 100%);
+  --brand-shadow: drop-shadow(0 1px 0 rgba(70, 12, 4, 0.95)) drop-shadow(0 3px 6px rgba(0, 0, 0, 0.4));
 
   --background: rgb(var(--c-felt));
   --foreground: rgb(var(--c-ink));
@@ -94,7 +99,7 @@
   }
   html {
     /* Behind everything (and what shows when a phone over-scrolls). */
-    background-color: var(--page-base, #072a1e);
+    background-color: var(--page-base, #3c0814);
   }
   body {
     min-height: 100%;
@@ -115,8 +120,8 @@
     pointer-events: none;
     background: var(
       --page-bg,
-      radial-gradient(900px 620px at 50% 0%, #135c41, transparent 70%),
-      linear-gradient(170deg, #0b3d2c 0%, #072a1e 60%, #041a12 100%)
+      radial-gradient(900px 620px at 50% 0%, #8e1d2c, transparent 70%),
+      linear-gradient(170deg, #64101e 0%, #3c0814 60%, #23040b 100%)
     );
   }
   body {
@@ -139,35 +144,60 @@
 }
 
 /* ---------------------------------------------------------------- brand */
-/* Gold-leaf lettering for the Ludo Darbar wordmark. */
+/* The Ludo Darbar wordmark: font, fill and shadow come from the theme (--brand-*). */
 .brand-gold {
-  background: linear-gradient(180deg, #fff1b8 0%, #f0c55a 45%, #c38a22 70%, #f4d27a 100%);
+  background: var(--brand-fill);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  filter: drop-shadow(0 1px 0 rgba(60, 36, 4, 0.9)) drop-shadow(0 3px 6px rgba(0, 0, 0, 0.35));
+  filter: var(--brand-shadow);
+}
+.brand-title {
+  font-family: var(--brand-font);
+  font-weight: var(--brand-weight);
+  letter-spacing: 0.005em;
 }
 
 /* ---------------------------------------------------------------- home: Darbar showcase */
-/* A palace-window (jharokha) frame: rounded arch on top, gold rims. */
+/*
+ * The frame around the home page's live preview, in the theme's own colours:
+ * a palace-window arch with gold rims (royal themes, wood), or a clean rounded
+ * frame (.showcase-plain, the modern themes).
+ */
 .darbar-arch {
   position: relative;
   padding: 18% 7% 6%;
   border-radius: 50% 50% 26px 26px / 22% 22% 26px 26px;
   background:
-    radial-gradient(120% 60% at 50% 0%, rgb(232 184 74 / 0.22), transparent 60%),
-    linear-gradient(180deg, #0f5139 0%, #082e21 60%, #05211a 100%);
+    radial-gradient(120% 60% at 50% 0%, rgb(var(--c-gold) / 0.22), transparent 60%),
+    linear-gradient(180deg, rgb(var(--c-felt2)) 0%, rgb(var(--c-felt)) 100%);
   box-shadow:
-    inset 0 0 0 2px #f0cf72,
-    inset 0 0 0 6px #3b2a0a,
-    inset 0 0 0 7.5px #c8962e,
-    0 24px 48px rgb(0 0 0 / 0.45);
+    inset 0 0 0 2px rgb(var(--c-gold) / 0.95),
+    inset 0 0 0 6px rgb(0 0 0 / 0.35),
+    inset 0 0 0 7.5px rgb(var(--c-gold) / 0.65),
+    0 24px 48px rgb(0 0 0 / 0.35);
+}
+.darbar-arch.showcase-plain {
+  padding: 7%;
+  border-radius: 28px;
+  box-shadow:
+    inset 0 0 0 2px rgb(var(--c-gold) / 0.8),
+    0 18px 40px rgb(0 0 0 / 0.25);
+}
+/* The main play button on the home page: the theme's accent colour, light to deep. */
+.mode-primary {
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, rgb(var(--c-gold)) 55%, white) 0%,
+    rgb(var(--c-gold)) 55%,
+    color-mix(in srgb, rgb(var(--c-gold)) 72%, black) 100%
+  );
 }
 /* Faint lattice (jaali) behind the showcase. */
 .darbar-jaali {
   background-image:
-    linear-gradient(45deg, rgb(232 184 74 / 0.06) 1px, transparent 1px),
-    linear-gradient(-45deg, rgb(232 184 74 / 0.06) 1px, transparent 1px);
+    linear-gradient(45deg, rgb(var(--c-gold) / 0.07) 1px, transparent 1px),
+    linear-gradient(-45deg, rgb(var(--c-gold) / 0.07) 1px, transparent 1px);
   background-size: 22px 22px;
 }
 .demo-tumble {

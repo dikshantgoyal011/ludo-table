@@ -270,10 +270,139 @@ const CarvedSurface = memo(function CarvedSurface({ th, colorKey, uid }: Surface
   );
 });
 
-const SURFACES: Record<BoardStyleId, typeof ModernSurface> = { modern: ModernSurface, royal: RoyalSurface, carved: CarvedSurface };
+/** A lotus: `n` pointed petals around (cx, cy), reaching out to radius r. */
+function Lotus({ cx, cy, r, n = 8, turn = 0, fill, stroke, sw, opacity = 1 }: { cx: number; cy: number; r: number; n?: number; turn?: number; fill: string; stroke: string; sw: number; opacity?: number }) {
+  const w = r * 0.42;
+  const d = `M${cx} ${cy}Q${cx + w} ${cy - r * 0.55} ${cx} ${cy - r}Q${cx - w} ${cy - r * 0.55} ${cx} ${cy}Z`;
+  return (
+    <g opacity={opacity}>
+      {Array.from({ length: n }, (_, k) => (
+        <path key={k} d={d} fill={fill} stroke={stroke} strokeWidth={sw} strokeLinejoin="round" transform={`rotate(${turn + (k * 360) / n} ${cx} ${cy})`} />
+      ))}
+    </g>
+  );
+}
+
+/** The sun: marks the safe squares on the sandstone board. */
+function Sun({ cx, cy, fill, ray }: { cx: number; cy: number; fill: string; ray: string }) {
+  return (
+    <g>
+      {Array.from({ length: 8 }, (_, k) => {
+        const a = (k * Math.PI) / 4;
+        return <line key={k} x1={cx + Math.cos(a) * 0.22} y1={cy + Math.sin(a) * 0.22} x2={cx + Math.cos(a) * 0.37} y2={cy + Math.sin(a) * 0.37} stroke={ray} strokeWidth={0.06} strokeLinecap="round" />;
+      })}
+      <circle cx={cx} cy={cy} r={0.17} fill={fill} stroke={ray} strokeWidth={0.035} />
+    </g>
+  );
+}
+
+/**
+ * A royal Indian court: an ivory board in red sandstone, a lotus
+ * mandala in each yard, the sun on the safe squares and a gold lotus at the centre.
+ */
+const SandstoneSurface = memo(function SandstoneSurface({ th, colorKey, uid }: SurfaceProps) {
+  const { hex, light } = useSlotColors(th, colorKey);
+  const id = (n: string) => `${uid}-${n}`;
+  const url = (n: string) => `url(#${id(n)})`;
+  const LINE = "#c9a160";
+  const DARK = "#7a3a12";
+  return (
+    <g>
+      <defs>
+        <linearGradient id={id("ivory")} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#fff8e8" />
+          <stop offset="1" stopColor="#f3dfb6" />
+        </linearGradient>
+        <linearGradient id={id("gold")} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#fff2b8" />
+          <stop offset=".4" stopColor="#f2b443" />
+          <stop offset=".75" stopColor="#b8701c" />
+          <stop offset="1" stopColor="#f6cf72" />
+        </linearGradient>
+        <radialGradient id={id("sheen")} cx="35%" cy="28%" r="80%">
+          <stop offset="0" stopColor="#fff" stopOpacity=".45" />
+          <stop offset=".55" stopColor="#fff" stopOpacity="0" />
+          <stop offset="1" stopColor="#000" stopOpacity=".22" />
+        </radialGradient>
+        <linearGradient id={id("cell")} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#fff" stopOpacity=".28" />
+          <stop offset=".5" stopColor="#fff" stopOpacity="0" />
+          <stop offset="1" stopColor="#000" stopOpacity=".14" />
+        </linearGradient>
+      </defs>
+      <rect x={0} y={0} width={15} height={15} fill={url("ivory")} />
+      {COLORS.map((c) => {
+        const [r0, c0] = YARD[c];
+        return (
+          <g key={c}>
+            <rect x={c0} y={r0} width={6} height={6} fill={hex(c)} />
+            <rect x={c0} y={r0} width={6} height={6} fill={url("sheen")} />
+            <rect x={c0 + 0.2} y={r0 + 0.2} width={5.6} height={5.6} rx={0.3} fill="none" stroke={url("gold")} strokeWidth={0.08} />
+            <rect x={c0 + 0.75} y={r0 + 0.75} width={4.5} height={4.5} rx={0.6} fill={url("ivory")} stroke={DARK} strokeWidth={0.16} />
+            <rect x={c0 + 0.75} y={r0 + 0.75} width={4.5} height={4.5} rx={0.6} fill="none" stroke={url("gold")} strokeWidth={0.08} />
+            <Lotus cx={c0 + 3} cy={r0 + 3} r={2.05} fill={light(c)} stroke={hex(c)} sw={0.04} opacity={0.75} />
+            <Lotus cx={c0 + 3} cy={r0 + 3} r={1.2} turn={22.5} fill={light(c)} stroke={hex(c)} sw={0.04} />
+            <circle cx={c0 + 3} cy={r0 + 3} r={0.26} fill={url("gold")} stroke={DARK} strokeWidth={0.03} />
+            {[
+              [0.75, 0.75],
+              [5.25, 0.75],
+              [0.75, 5.25],
+              [5.25, 5.25],
+            ].map(([dx, dy]) => (
+              <circle key={`${dx}${dy}`} cx={c0 + dx} cy={r0 + dy} r={0.16} fill={url("gold")} stroke={DARK} strokeWidth={0.03} />
+            ))}
+            {YARD_SPOTS.map(([dy, dx]) => (
+              <g key={`${dy}${dx}`}>
+                <circle cx={c0 + dx} cy={r0 + dy} r={0.58} fill="#fffaf0" stroke={url("gold")} strokeWidth={0.09} />
+                <circle cx={c0 + dx} cy={r0 + dy} r={0.44} fill="none" stroke={hex(c)} strokeWidth={0.05} strokeOpacity={0.7} />
+              </g>
+            ))}
+          </g>
+        );
+      })}
+      {TRACK.map(([r, c], idx) => {
+        const startOf = COLORS.find((col) => START[col] === idx);
+        return (
+          <g key={idx}>
+            <rect x={c} y={r} width={1} height={1} strokeWidth={0.035} stroke={LINE} fill={startOf ? hex(startOf) : "#fffaf0"} />
+            {startOf && <rect x={c} y={r} width={1} height={1} fill={url("cell")} />}
+            {SAFE.has(idx) && <Sun cx={c + 0.5} cy={r + 0.5} fill={startOf ? "#fffaf0" : url("gold")} ray={startOf ? "#fffaf0" : DARK} />}
+          </g>
+        );
+      })}
+      {COLORS.map((c) =>
+        HOMECOL[c].map(([r, cc]) => (
+          <g key={`${c}${r}${cc}`}>
+            <rect x={cc} y={r} width={1} height={1} fill={hex(c)} />
+            <rect x={cc} y={r} width={1} height={1} fill={url("cell")} strokeWidth={0.035} stroke={LINE} />
+          </g>
+        )),
+      )}
+      <polygon points="6,6 6,9 7.5,7.5" fill={hex("red")} />
+      <polygon points="6,6 9,6 7.5,7.5" fill={hex("green")} />
+      <polygon points="9,6 9,9 7.5,7.5" fill={hex("yellow")} />
+      <polygon points="6,9 9,9 7.5,7.5" fill={hex("blue")} />
+      <rect x={6} y={6} width={3} height={3} fill={url("sheen")} />
+      <path d="M6 6L9 9M9 6L6 9" stroke={url("gold")} strokeWidth={0.06} />
+      <Lotus cx={7.5} cy={7.5} r={0.66} fill="#fff3d6" stroke={DARK} sw={0.03} />
+      <circle cx={7.5} cy={7.5} r={0.2} fill={url("gold")} stroke={DARK} strokeWidth={0.03} />
+      <rect x={6} y={6} width={3} height={3} fill="none" strokeWidth={0.1} stroke={url("gold")} />
+      <rect x={0.06} y={0.06} width={14.88} height={14.88} fill="none" strokeWidth={0.12} stroke={url("gold")} />
+      <rect x={0} y={0} width={15} height={15} fill="none" strokeWidth={0.05} stroke={DARK} />
+    </g>
+  );
+});
+
+const SURFACES: Record<BoardStyleId, typeof ModernSurface> = { modern: ModernSurface, sandstone: SandstoneSurface, royal: RoyalSurface, carved: CarvedSurface };
 
 /** The frame around the board, per design. */
 function frameStyle(style: BoardStyleId, th: Theme): React.CSSProperties {
+  if (style === "sandstone")
+    return {
+      // Red sandstone, gold inlay.
+      background: "linear-gradient(145deg, #c75a3c 0%, #93321f 40%, #b44a30 70%, #6e2316 100%)",
+      boxShadow: "0 14px 30px rgba(0,0,0,.45), inset 0 0 0 1.5px #ffd98a, inset 0 0 0 4px #4e140a, inset 0 0 0 5.5px #e8a940",
+    };
   if (style === "royal")
     return {
       background: "linear-gradient(145deg, #f6d985 0%, #c8962e 30%, #8a5d14 55%, #d9ab45 78%, #f3d27a 100%)",
@@ -287,14 +416,23 @@ function frameStyle(style: BoardStyleId, th: Theme): React.CSSProperties {
   return { background: th.frame, boxShadow: `0 14px 30px rgba(0,0,0,.4), inset 0 0 0 2px ${th.frameEdge}` };
 }
 
-/** Gold rosettes on the corners of the royal frame. */
-function FrameCorners() {
+/** Ornaments on the corners of the frame: gold rosettes (royal) or saffron lotus buds (sandstone). */
+function FrameCorners({ kind }: { kind: "rosette" | "lotus" }) {
   return (
     <>
       {["left-0 top-0", "right-0 top-0", "left-0 bottom-0", "right-0 bottom-0"].map((pos) => (
         <svg key={pos} viewBox="-1 -1 2 2" className={cn("pointer-events-none absolute z-10 h-3.5 w-3.5 sm:h-5 sm:w-5", pos)} aria-hidden="true">
-          <polygon points={star8(0, 0, 0.95)} fill="#f3d27a" stroke="#6b4a16" strokeWidth={0.1} />
-          <circle r={0.32} fill="#c8262b" stroke="#6b4a16" strokeWidth={0.08} />
+          {kind === "rosette" ? (
+            <>
+              <polygon points={star8(0, 0, 0.95)} fill="#f3d27a" stroke="#6b4a16" strokeWidth={0.1} />
+              <circle r={0.32} fill="#c8262b" stroke="#6b4a16" strokeWidth={0.08} />
+            </>
+          ) : (
+            <>
+              <Lotus cx={0} cy={0} r={0.95} fill="#f6a23a" stroke="#4e140a" sw={0.08} />
+              <circle r={0.3} fill="#ffe08a" stroke="#4e140a" strokeWidth={0.08} />
+            </>
+          )}
         </svg>
       ))}
     </>
@@ -303,7 +441,7 @@ function FrameCorners() {
 
 /** One token, drawn to suit the board. */
 export function TokenArt({ style, fill }: { style: BoardStyleId; fill: string }) {
-  if (style === "royal")
+  if (style === "royal" || style === "sandstone")
     return (
       <>
         <ellipse cx={0.03} cy={0.11} rx={0.36} ry={0.31} fill="rgba(0,0,0,.32)" />
@@ -392,7 +530,8 @@ export function Board() {
 
   return (
     <div className={cn("relative aspect-square w-full rounded-xl", style === "modern" ? "p-1.5 sm:p-2.5" : "p-2 sm:p-3")} style={frameStyle(style, th)}>
-      {style === "royal" && <FrameCorners />}
+      {style === "royal" && <FrameCorners kind="rosette" />}
+      {style === "sandstone" && <FrameCorners kind="lotus" />}
       {/*
         Two layers: the printed board is drawn once and kept by the GPU; only the
         light token layer above it repaints while tokens move. (Repainting the

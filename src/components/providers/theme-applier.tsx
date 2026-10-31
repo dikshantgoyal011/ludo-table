@@ -2,13 +2,15 @@
 
 import { useEffect } from "react";
 import { useSettings } from "@/hooks/use-game";
-import { unlockAudioOnFirstTouch } from "@/lib/audio/sfx";import { themeOf } from "@/lib/theme/themes";
+import { unlockAudioOnFirstTouch } from "@/lib/audio/sfx";
+import { brandVars, themeOf } from "@/lib/theme/themes";
 
-/** Writes the chosen theme's colours onto the page. */
+/** Writes the chosen theme's colours (and title lettering) onto the page. */
 export function applyThemeToDocument(themeId: string) {
   const th = themeOf(themeId);
   const root = document.documentElement;
   for (const [k, v] of Object.entries(th.vars)) root.style.setProperty("--c-" + k, v);
+  for (const [k, v] of Object.entries(brandVars(th.brand))) root.style.setProperty(k, v);
   root.style.setProperty("--pip", th.pip);
   root.style.colorScheme = th.scheme;
   // Drawn by a fixed layer behind the page (globals.css, body::before).

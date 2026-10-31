@@ -5,13 +5,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Bot, Globe, Smartphone, Sparkles, Users, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getController } from "@/hooks/use-game";
+import { getController, useSettings } from "@/hooks/use-game";
 import { isRoomCode, MODE_ORDER, MODES } from "@/lib/game/constants";
 import type { Mode } from "@/lib/game/types";
 import { variantById, type Variant } from "@/lib/game/variants";
 import type { ActiveRoom } from "@/lib/services/types";
+import type { BoardStyleId } from "@/lib/theme/boards";
+import { themeOf } from "@/lib/theme/themes";
 import { cn } from "@/lib/utils";
-import { GamePicker } from "./game-picker";
+import { GameStrip } from "./game-picker";
 import { GamePreview } from "./game-preview";
 
 const MODE_ICONS: Record<Mode, LucideIcon> = { online: Globe, computer: Bot, local: Smartphone, friends: Users };
@@ -123,7 +125,7 @@ function PlayModes() {
             className={cn(
               "group flex min-h-[92px] flex-col justify-between gap-2 rounded-2xl border p-3 text-left transition outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[.97]",
               primary
-                ? "border-[#f6d985] bg-[linear-gradient(150deg,#f6d985,#d9a73e_55%,#b07a1c)] text-[#2a1d06] shadow-[0_10px_24px_rgba(0,0,0,.35)]"
+                ? "mode-primary border-transparent text-[#2a1206] shadow-[0_10px_24px_rgba(0,0,0,.3)]"
                 : "border-primary/45 bg-background/40 hover:border-primary hover:bg-background/60",
             )}
           >
@@ -141,22 +143,49 @@ function PlayModes() {
   );
 }
 
-/** Gold dome on top of the arch, as in the logo. */
-function ArchDome() {
+/** What crowns the preview's frame: follows the theme's own board design. */
+type Crown = "dome" | "spire" | "none";
+const CROWN: Record<BoardStyleId, Crown> = { royal: "dome", sandstone: "spire", carved: "none", modern: "none" };
+
+const crownGold = (
+  <defs>
+    <linearGradient id="arch-crown" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stopColor="#a8721a" />
+      <stop offset=".4" stopColor="#ffe9a0" />
+      <stop offset="1" stopColor="#8a5a10" />
+    </linearGradient>
+  </defs>
+);
+
+/** Gold dome (Royal Darbar, as in the logo) or a palace spire with a saffron flag (Maharaja) on top of the arch. */
+function ArchCrown({ kind }: { kind: Crown }) {
+  if (kind === "none") return null;
+  if (kind === "dome")
+    return (
+      <svg viewBox="-60 -120 120 130" className="absolute -top-7 left-1/2 h-14 w-14 -translate-x-1/2 drop-shadow-[0_4px_6px_rgba(0,0,0,.45)]" aria-hidden="true">
+        {crownGold}
+        <g stroke="#4a2e06" strokeWidth="4" strokeLinejoin="round">
+          <rect x="-40" y="-14" width="80" height="22" rx="4" fill="url(#arch-crown)" />
+          <path d="M-36 -14 C-52 -42 -18 -58 0 -80 C18 -58 52 -42 36 -14 Z" fill="url(#arch-crown)" />
+          <path d="M0 -80 V-102" strokeWidth="5" strokeLinecap="round" />
+          <circle cx="0" cy="-92" r="6" fill="url(#arch-crown)" />
+        </g>
+      </svg>
+    );
+  // Palace spire: curved tower, ribbed cap, finial and a saffron flag.
   return (
-    <svg viewBox="-60 -120 120 130" className="absolute -top-7 left-1/2 h-14 w-14 -translate-x-1/2 drop-shadow-[0_4px_6px_rgba(0,0,0,.45)]" aria-hidden="true">
-      <defs>
-        <linearGradient id="arch-dome" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stopColor="#a8721a" />
-          <stop offset=".4" stopColor="#ffe9a0" />
-          <stop offset="1" stopColor="#8a5a10" />
-        </linearGradient>
-      </defs>
-      <g stroke="#4a2e06" strokeWidth="4" strokeLinejoin="round">
-        <rect x="-40" y="-14" width="80" height="22" rx="4" fill="url(#arch-dome)" />
-        <path d="M-36 -14 C-52 -42 -18 -58 0 -80 C18 -58 52 -42 36 -14 Z" fill="url(#arch-dome)" />
-        <path d="M0 -80 V-102" strokeWidth="5" strokeLinecap="round" />
-        <circle cx="0" cy="-92" r="6" fill="url(#arch-dome)" />
+    <svg viewBox="-60 -190 120 200" className="absolute -top-12 left-1/2 h-[4.6rem] w-[4.6rem] -translate-x-1/2 drop-shadow-[0_4px_6px_rgba(0,0,0,.45)]" aria-hidden="true">
+      {crownGold}
+      <g stroke="#4e140a" strokeWidth="4" strokeLinejoin="round">
+        <path d="M0 -158 V-186" strokeWidth="3.5" strokeLinecap="round" />
+        <path d="M2 -186 L34 -176 L2 -165 Z" fill="#f28c28" strokeWidth="3" />
+        <rect x="-48" y="-12" width="96" height="20" rx="4" fill="url(#arch-crown)" />
+        <path d="M-38 -12 C-38 -62 -24 -98 -13 -118 L13 -118 C24 -98 38 -62 38 -12 Z" fill="url(#arch-crown)" />
+        <path d="M-34 -42 H34 M-28 -72 H28 M-20 -98 H20" strokeWidth="2.5" opacity=".7" fill="none" />
+        <ellipse cx="0" cy="-125" rx="20" ry="8" fill="url(#arch-crown)" />
+        <path d="M-12 -125 V-121 M-4 -127 V-119 M4 -127 V-119 M12 -125 V-121" strokeWidth="2" opacity=".7" />
+        <path d="M-8 -133 C-12 -144 -6 -152 0 -152 C6 -152 12 -144 8 -133 Z" fill="url(#arch-crown)" />
+        <circle cx="0" cy="-156" r="4" fill="url(#arch-crown)" />
       </g>
     </svg>
   );
@@ -164,28 +193,34 @@ function ArchDome() {
 
 /** The selected game: its live preview in a palace arch, what it is, and how to play it. */
 function Showcase({ v, onPick }: { v: Variant; onPick: (id: string) => void }) {
+  const [settings] = useSettings();
+  const crown = CROWN[themeOf(settings.theme).boardStyle];
   return (
     <section
       key={v.id}
       aria-label={v.name}
-      className="darbar-jaali showcase-fade grid grid-cols-1 gap-5 rounded-[28px] border border-primary/35 bg-card/60 px-4 pt-9 pb-5 shadow-[0_18px_50px_rgba(0,0,0,.35)] sm:px-6 sm:pb-6 md:grid-cols-[minmax(0,400px)_minmax(0,1fr)] md:items-center md:gap-8"
+      className={cn(
+        "darbar-jaali showcase-fade grid grid-cols-1 gap-5 rounded-[28px] border border-primary/35 bg-card/60 px-4 pb-5",
+        crown === "spire" ? "pt-14" : crown === "dome" ? "pt-9" : "pt-5",
+        " shadow-[0_18px_50px_rgba(0,0,0,.35)] sm:px-6 sm:pb-6 md:grid-cols-[minmax(0,400px)_minmax(0,1fr)] md:items-center md:gap-8",
+      )}
     >
-      <div className="darbar-arch mx-auto w-full max-w-[300px] sm:max-w-[400px]">
-        <ArchDome />
+      <div className={cn("darbar-arch mx-auto w-full max-w-[300px] sm:max-w-[400px]", themeOf(settings.theme).boardStyle === "modern" && "showcase-plain")}>
+        <ArchCrown kind={crown} />
         <GamePreview variant={v} />
       </div>
 
       <div className="flex min-w-0 flex-col gap-4">
         <div className="flex flex-col gap-1.5">
           <span className="text-xs font-bold tracking-[0.2em] text-primary uppercase">{v.origin}</span>
-          <h2 className="brand-gold font-[family-name:var(--font-brand)] text-[2.6rem] leading-[1.05] font-normal sm:text-5xl">{v.name}</h2>
+          <h2 className="brand-gold brand-title text-[2.6rem] leading-[1.05] sm:text-5xl">{v.name}</h2>
           <p className="text-sm leading-relaxed text-muted-foreground sm:text-[15px]">{v.hint}</p>
         </div>
         <ul className="flex flex-col gap-1.5">
           {v.points.map((p) => (
             <li key={p} className="flex items-start gap-2 text-sm font-semibold">
               <svg viewBox="-1 -1 2 2" className="mt-[3px] h-3.5 w-3.5 shrink-0" aria-hidden="true">
-                <polygon points="0,-1 .22,-.22 1,0 .22,.22 0,1 -.22,.22 -1,0 -.22,-.22" fill="#e8b84a" />
+                <polygon points="0,-1 .22,-.22 1,0 .22,.22 0,1 -.22,.22 -1,0 -.22,-.22" fill="rgb(var(--c-gold))" />
               </svg>
               {p}
             </li>
@@ -234,14 +269,9 @@ export function GameHub({ initial }: { initial?: string }) {
   const v = variantById(selected);
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 py-1">
+      {/* The strip comes first on every menu screen, so it never moves between them. */}
+      <GameStrip selected={selected} onSelect={pick} />
       <ResumeButtons />
-      <div className="flex flex-col gap-1">
-        <div className="flex items-end justify-between gap-3">
-          <h2 className="text-sm font-bold tracking-[0.2em] text-primary uppercase">Every Ludo ever played</h2>
-          <span className="hidden text-xs text-muted-foreground sm:inline lg:hidden">Swipe to see them all</span>
-        </div>
-        <GamePicker selected={selected} onSelect={pick} />
-      </div>
       <Showcase v={v} onPick={pick} />
     </div>
   );
