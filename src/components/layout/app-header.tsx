@@ -18,11 +18,15 @@ export function AppHeader() {
 
   const onMenu = pathname === "/" || pathname === "/ludo";
   const inGame = pathname === "/game" || pathname.startsWith("/r/");
-  const friends = inGame && game.mode === "friends";
+  // Room code and Invite are for gathering players: hidden once the game is on, so the header stays one line.
+  const friends = inGame && game.mode === "friends" && game.state.phase !== "playing";
 
-  // Back to the home screen (from a game: only after "Leave game?" when others are playing).
+  // Back to the home screen (from a game in progress: only after "Leave this game?").
   const goMenu = () => {
-    if (inGame && !game.requestMenu()) return;
+    if (inGame && game.leaveNeedsConfirm()) {
+      uiStore.set({ leaveOpen: true });
+      return;
+    }
     game.exitToMenu();
     router.push("/");
   };
@@ -70,12 +74,7 @@ export function AppHeader() {
                 window.scrollTo({ top: 0, behavior: "smooth" });
                 return;
               }
-              if (inGame && !game.requestMenu()) {
-                game.setBanner("Tap Ludo Darbar again to leave this game.");
-                return;
-              }
-              game.exitToMenu();
-              router.push("/");
+              goMenu();
             }}
             className="flex items-center gap-2 rounded-xl whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[.98] sm:gap-2.5"
           >
@@ -112,7 +111,7 @@ export function AppHeader() {
           </Button>
           {!onMenu && (
             <Button variant="outline" size="sm" onClick={goMenu}>
-              {game.confirmMenu ? "Leave game?" : "Menu"}
+              Menu
             </Button>
           )}
         </div>

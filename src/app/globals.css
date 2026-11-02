@@ -258,6 +258,84 @@
   }
 }
 
+/* ---------------------------------------------------------------- game screen */
+/*
+ * While a game is on (GameScreen adds .in-game to <html>) the app is exactly one
+ * screen tall and nothing scrolls, so a swipe on the board can't move the page.
+ * The board takes whatever room the name tags leave: as wide as it can be, but
+ * never taller than the space it has.
+ */
+html.in-game,
+html.in-game body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+html.in-game .app-frame {
+  height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+}
+.board-size {
+  width: 100%;
+}
+/* Square while there's room (the tags hug the board); on a short screen it gives up
+   height and the board inside shrinks to fit. */
+html.in-game .board-fit {
+  container-type: size;
+  flex: 0 1 auto;
+  width: 100%;
+  aspect-ratio: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+html.in-game .board-fit > .board-size {
+  width: min(100cqw, 100cqh);
+}
+/* Name tags: a bar of the player's colour (--spot) on the outer edge. On their turn
+   their colour washes in from it and a soft glow slowly breathes, calm, not flashing. */
+.tag-edge,
+.tag-spotlight {
+  --edge: 4px;
+  box-shadow: inset var(--edge) 0 0 var(--spot);
+}
+.tag-right {
+  --edge: -4px;
+}
+.tag-spotlight {
+  box-shadow:
+    inset var(--edge) 0 0 var(--spot),
+    0 0 18px color-mix(in srgb, var(--spot) 30%, transparent);
+  animation: tag-breathe 4s ease-in-out infinite;
+}
+@keyframes tag-breathe {
+  50% {
+    box-shadow:
+      inset var(--edge) 0 0 var(--spot),
+      0 0 22px 2px color-mix(in srgb, var(--spot) 42%, transparent);
+  }
+}
+
+/* Country name popping up over a flag (name tags). */
+.badge-pop {
+  animation: badge-pop 0.18s ease-out;
+}
+@keyframes badge-pop {
+  from {
+    opacity: 0;
+    scale: 0.85;
+  }
+}
+.toast-in {
+  animation: toast-in 0.25s ease-out;
+}
+@keyframes toast-in {
+  from {
+    transform: translateY(-8px);
+    opacity: 0;
+  }
+}
+
 /* ---------------------------------------------------------------- board */
 /* Board picture and token layer each get their own GPU layer (see board.tsx). */
 .board-layer {
@@ -310,6 +388,9 @@
 .token-ripple {
   opacity: 0;
   animation: token-ripple 1.6s ease-out infinite;
+}
+.token-ripple.late {
+  animation-delay: 0.8s;
 }
 @keyframes token-ripple {
   from {
@@ -570,6 +651,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .tag-spotlight,
   .typing-dots span,
   .demo-tumble,
   .demo-bob,

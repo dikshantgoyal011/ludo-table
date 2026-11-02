@@ -2,9 +2,12 @@
 // the settings sheet is open).
 import { useSyncExternalStore } from "react";
 
-type UiState = { settingsOpen: boolean };
+import type { Color } from "@/lib/game/types";
 
-let ui: UiState = { settingsOpen: false };
+/** profileOf: whose player profile is open (the colour of their seat). */
+type UiState = { settingsOpen: boolean; leaveOpen: boolean; profileOf: Color | null };
+
+let ui: UiState = { settingsOpen: false, leaveOpen: false, profileOf: null };
 const listeners = new Set<() => void>();
 
 export const uiStore = {
@@ -21,7 +24,7 @@ export const uiStore = {
   },
 };
 
-const SERVER: UiState = { settingsOpen: false };
+const SERVER: UiState = { settingsOpen: false, leaveOpen: false, profileOf: null };
 export function useUi() {
   return useSyncExternalStore(uiStore.subscribe, uiStore.get, () => SERVER);
 }

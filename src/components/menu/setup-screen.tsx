@@ -20,6 +20,7 @@ import {
   MODE_ORDER,
   MODES,
   newRoomCode,
+  NICK_MAX,
 } from "@/lib/game/constants";
 import type { Color, Mode } from "@/lib/game/types";
 import type { Profile } from "@/lib/services/types";
@@ -37,7 +38,7 @@ function NameInput({
 }) {
   return (
     <Input
-      maxLength={16}
+      maxLength={NICK_MAX}
       placeholder="Your name"
       autoComplete="nickname"
       aria-label="Your name"
@@ -302,7 +303,7 @@ function LocalSetup({
                 Player {k + 1}
               </div>
               <Input
-                maxLength={16}
+                maxLength={NICK_MAX}
                 placeholder={`Player ${k + 1}`}
                 aria-label={`Player ${k + 1} name`}
                 value={row.name}

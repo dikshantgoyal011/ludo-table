@@ -23,6 +23,8 @@ export function useGame(): GameController {
 
 const SERVER_PROFILE: Profile = {
   nick: "",
+  country: "",
+  avatar: -1,
   color: "red",
   onlineCount: 2,
   cpuCount: 2,

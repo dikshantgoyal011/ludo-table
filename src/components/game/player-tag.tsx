@@ -1,12 +1,16 @@
 "use client";
 
-import { useState } from "react";
-import { Bot, MessageCircle, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
-import { useGame, useSettings } from "@/hooks/use-game";
+import { useEffect, useState } from "react";
+import { Bot, MessageCircle, Mic, MicOff, UserRound, Volume2, VolumeX } from "lucide-react";
+import { useGame } from "@/hooks/use-game";
+import { defaultAvatar } from "@/lib/avatars";
+import { countryName, flagUrl } from "@/lib/country";
 import { COLORS, FINISH, MAX_MISSES } from "@/lib/game/constants";
-import type { Color } from "@/lib/game/types";
-import { themeOf } from "@/lib/theme/themes";
+import type { Color, Seat } from "@/lib/game/types";
+import { uiStore } from "@/lib/ui-store";
 import { cn } from "@/lib/utils";
+import { Avatar } from "./avatar";
+import { useBoardStyle } from "./board";
 import { Dice3D } from "./dice-3d";
 
 /** Three bouncing dots for "typing…". */
@@ -42,14 +46,67 @@ function TurnRing({ limit, startedAt }: { limit: number; startedAt: number }) {
   );
 }
 
+/** The player's country flag; a tap shows the country's name for a moment. */
+function Flag({ cc, below }: { cc: string; below: boolean }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const t = setTimeout(() => setOpen(false), 2500);
+    return () => clearTimeout(t);
+  }, [open]);
+  const name = countryName(cc);
+  return (
+    <span className="relative flex shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-label={name}
+        title={name}
+        className="flex h-6 items-center rounded outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={flagUrl(cc)} alt="" width={21} height={14} className="h-3.5 w-[21px] rounded-[3px] shadow-[0_0_0_1px_rgba(0,0,0,.25),0_1px_2px_rgba(0,0,0,.3)]" />
+      </button>
+      {open && (
+        <span
+          role="status"
+          className={cn(
+            "badge-pop pointer-events-none absolute left-1/2 z-30 -translate-x-1/2 rounded-full bg-paper px-2.5 py-1 text-xs font-bold whitespace-nowrap text-[#23302c] shadow-lg",
+            below ? "top-full mt-1" : "bottom-full mb-1",
+          )}
+        >
+          {name}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** Online the host fills `misses` in; 5 and you're out. */
+function statusNote(game: ReturnType<typeof useGame>, seat: Seat, place: number): { text: string; tone: "red" | "amber" | "grey" } | null {
+  const s = game.state;
+  if (seat.out) return seat.left ? { text: "Left the game", tone: "grey" } : { text: `Out · missed ${MAX_MISSES} turns`, tone: "red" };
+  if (s.phase !== "playing" || place >= 0) return null;
+  if (game.awayInfo(seat).away) return { text: seat.bot ? "Offline" : `Offline · bot in ${Math.ceil(game.offlineLeft(seat) / 1000)}s`, tone: "red" };
+  if (game.mode === "online" && (seat.misses || 0) > 0) return { text: `Missed ${seat.misses}/${MAX_MISSES} turns`, tone: "amber" };
+  return null;
+}
+
 /**
  * Name tag at one corner of the board. Corners: 0 top-left, 1 top-right,
- * 2 bottom-right, 3 bottom-left. Shows the dice for whoever's turn it is.
+ * 2 bottom-right, 3 bottom-left. The player's picture turns into the dice on
+ * their turn, and the tag lights up in their colour from its outer edge.
  */
 export function PlayerTag({ corner }: { corner: number }) {
   const game = useGame();
-  const [settings] = useSettings();
-  const th = themeOf(settings.theme);
+  // Tapping the name offers "View profile" for a few seconds.
+  const [menu, setMenu] = useState(false);
+  useEffect(() => {
+    if (!menu) return;
+    const t = setTimeout(() => setMenu(false), 4000);
+    return () => clearTimeout(t);
+  }, [menu]);
+  const [, th] = useBoardStyle();
   const c = COLORS.find((col) => game.cornerOf(col) === corner) as Color;
   const s = game.state;
   const seat = s.seats[c];
@@ -62,53 +119,36 @@ export function PlayerTag({ corner }: { corner: number }) {
 
   const home = s.tokens[c].filter((p) => p === FINISH).length;
   const place = s.winners.indexOf(c);
-  let meta = !seat
-    ? s.phase === "lobby"
-      ? "Waiting for a player"
-      : "No player"
-    : place >= 0
-      ? `Finished #${place + 1}`
-      : s.phase === "lobby"
-        ? "Ready"
-        : isTurn
-          ? seat.bot
-            ? seat.takeover
-              ? "Bot playing…"
-              : "Thinking…"
-            : game.mine(s, c)
-              ? s.roll
-                ? "Pick a token"
-                : "Your roll"
-              : s.roll
-                ? "Moving…"
-                : "Rolling…"
-          : `${home}/4 home` + (seat.bot && !seat.takeover ? " · Computer" : "");
   const timer = game.turnTimerOn(c);
-  if (timer) meta += ` · ${game.turnSecsLeft(c)}s`;
-  // Offline: show how long until the computer takes over.
-  const away = seat && s.phase === "playing" && place < 0 ? game.awayInfo(seat).away : false;
-  if (away && seat) meta = seat.bot ? "Offline" : `Offline · bot in ${Math.ceil(game.offlineLeft(seat) / 1000)}s`;
-  if (seat?.out) meta = seat.left ? "Left the game" : "Out · missed 5 turns";
+  const note = seat ? statusNote(game, seat, place) : null;
+  const away = !!note && note.text.startsWith("Offline");
 
   const showChat = you && game.isNet() && game.online;
+  const showHear = !!seat && !you && !seat.bot && game.voice.on && game.inVoice(seat.id);
   const bubble = seat ? game.bubbles[seat.id] : undefined;
   const showBubble = !!bubble && Date.now() < bubble.until;
   const showTyping = !showBubble && !!seat && game.isTyping(seat.id);
   const takeover = !!seat?.takeover && s.phase === "playing";
-  // Online: 5 dots, one turns red for every missed turn.
-  const showMisses = game.mode === "online" && s.phase !== "lobby" && !!seat;
-  const misses = seat?.misses || 0;
+  // My own flag always comes from my settings (also in a game started before I picked one).
+  const cc = seat ? (you ? game.myLooks().cc : seat.cc) : undefined;
+
+  // Nobody in this corner: nothing to show (the space stays, so the others keep their corners).
+  if (!seat) return <div aria-hidden="true" />;
 
   return (
     <div
       className={cn(
-        "relative flex min-w-0 items-center gap-2 rounded-xl border-2 p-2 transition-colors",
-        right && "flex-row-reverse text-right",
-        isTurn && !timer ? "border-primary" : "border-transparent",
+        "relative flex min-w-0 items-center gap-2 rounded-xl py-1.5 transition-[background] duration-300",
+        right ? "flex-row-reverse pr-3 pl-1.5 text-right" : "pr-1.5 pl-3",
+        isTurn ? "tag-spotlight" : "tag-edge",
+        right && "tag-right",
       )}
       style={{
-        background: seat ? `color-mix(in srgb, ${hex} ${isTurn ? 34 : 18}%, transparent)` : "rgba(255,255,255,.03)",
-        opacity: !seat || seat.out ? 0.5 : away ? 0.7 : 1,
+        // Waiting: just a bar of the player's colour on the outer edge. Their turn: the bar
+        // glows softly and their colour washes in from it (see .tag-spotlight).
+        ["--spot" as string]: hex,
+        background: isTurn ? `linear-gradient(${right ? 270 : 90}deg, color-mix(in srgb, ${hex} 48%, transparent), color-mix(in srgb, ${hex} 8%, transparent))` : "transparent",
+        opacity: seat.out ? 0.5 : away ? 0.75 : 1,
       }}
     >
       {timer && <TurnRing key={game.turnId()} limit={game.turnLimit(c)} startedAt={game.turnSeenAt} />}
@@ -155,12 +195,68 @@ export function PlayerTag({ corner }: { corner: number }) {
           <TypingDots />
         </div>
       )}
-      <div className={cn("flex min-w-0 flex-1 flex-col gap-0.5", right && "items-end")}>
-        <div className={cn("flex max-w-full min-w-0 items-center gap-1.5 leading-tight font-bold", right && "flex-row-reverse")}>
-          <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: seat ? hex : "rgb(var(--c-line))" }} />
-          <span className="truncate text-sm sm:text-base">{seat ? seat.nick + (you ? " (you)" : "") : "Empty"}</span>
-          {takeover &&
-            (you ? (
+
+      {/* The player's picture; on their turn it turns into the dice (same spot, so nothing moves). */}
+      <div className="flex size-[38px] shrink-0 items-center justify-center min-[400px]:size-[42px] sm:size-[46px]">
+        {dieColor === c ? (
+          <Dice3D />
+        ) : seat ? (
+          <span className="flex size-[34px] items-center justify-center min-[400px]:size-[38px] sm:size-[42px]">
+            <Avatar av={seat.bot && !seat.takeover ? "bot" : you ? (game.myLooks().av ?? 0) : (seat.av ?? defaultAvatar(seat.id))} className="size-full" ring={hex} />
+          </span>
+        ) : (
+          <span className="size-[34px] rounded-full border border-dashed border-foreground/25 min-[400px]:size-[38px]" />
+        )}
+      </div>
+
+      <div className={cn("flex min-w-0 flex-1 flex-col gap-1", right && "items-end")}>
+        {/* Name and flag; the name gets the rest of the tag's width and is cut short only if it doesn't fit there */}
+        <div className={cn("relative flex max-w-full min-w-0 items-center gap-1.5 leading-tight font-bold", right && "flex-row-reverse")}>
+          <button
+            type="button"
+            onClick={() => setMenu((m) => !m)}
+            aria-expanded={menu}
+            className="min-w-0 truncate rounded text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring sm:text-base"
+          >
+            {seat.nick}
+          </button>
+          {cc ? (
+            <Flag cc={cc} below={top} />
+          ) : (
+            you && (
+              // My country isn't known: a quiet button to pick it
+              <button
+                type="button"
+                onClick={() => uiStore.set({ settingsOpen: true })}
+                aria-label="Choose your country"
+                title="Choose your country"
+                className="flex h-3.5 w-[21px] shrink-0 items-center justify-center rounded-[3px] border border-dashed border-foreground/40 text-[10px] leading-none font-bold text-muted-foreground"
+              >
+                +
+              </button>
+            )
+          )}
+          {menu && (
+            <button
+              type="button"
+              onClick={() => {
+                setMenu(false);
+                uiStore.set({ profileOf: c });
+              }}
+              className={cn(
+                "badge-pop absolute z-30 flex items-center gap-1.5 rounded-full bg-paper px-3 py-1.5 text-xs font-bold whitespace-nowrap text-[#23302c] shadow-lg outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95",
+                top ? "top-full mt-1.5" : "bottom-full mb-1.5",
+                right ? "right-0" : "left-0",
+              )}
+            >
+              <UserRound className="size-3.5" strokeWidth={2.4} />
+              View profile
+            </button>
+          )}
+        </div>
+        {seat && (
+          <div className={cn("flex h-6 max-w-full min-w-0 items-center gap-1.5 min-[380px]:h-7", right && "flex-row-reverse")}>
+            {takeover && you ? (
               <button
                 type="button"
                 role="switch"
@@ -168,100 +264,106 @@ export function PlayerTag({ corner }: { corner: number }) {
                 aria-label="Bot is playing for you. Turn it off to play yourself."
                 title="Turn the bot off and play yourself"
                 onClick={game.takeBack}
-                className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-primary px-2 text-xs font-bold text-primary-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95"
+                className="flex h-6 shrink-0 items-center gap-1 rounded-full bg-primary px-2 text-xs font-bold text-primary-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95"
               >
                 <Bot className="size-4" strokeWidth={2.2} />
                 Bot on
-                <span className="ml-0.5 flex h-4 w-7 items-center justify-end rounded-full bg-primary-foreground/30 p-0.5">
-                  <span className="h-3 w-3 rounded-full bg-primary-foreground" />
-                </span>
               </button>
-            ) : (
-              <span className="flex h-6 shrink-0 items-center gap-1 rounded-full bg-background/70 px-2 text-xs font-bold">
-                <Bot className="size-3.5" strokeWidth={2.2} />
-                Bot on
-              </span>
-            ))}
-          {/* Voice chat: my mic, or a speaker to mute this player for me */}
-          {seat && showChat && (
-            <button
-              type="button"
-              onClick={() => void game.toggleMic()}
-              aria-label={!game.voice.on ? "Join voice chat" : game.voice.micMuted ? "Unmute my microphone" : "Mute my microphone"}
-              aria-pressed={game.voice.on && !game.voice.micMuted}
-              title={!game.voice.on ? "Join voice chat" : game.voice.micMuted ? "Unmute my mic" : "Mute my mic"}
-              className={cn(
-                "relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95",
-                !game.voice.on
-                  ? "bg-background/70 text-muted-foreground"
-                  : game.voice.micMuted
-                    ? "bg-[#ef4444] text-white"
-                    : "bg-[#16a34a] text-white",
-                game.voice.on && !game.voice.micMuted && game.isSpeaking(seat.id) && "ring-2 ring-[#4ade80] ring-offset-1 ring-offset-transparent",
-              )}
-            >
-              {game.voice.on && !game.voice.micMuted ? <Mic className="size-4" strokeWidth={2.2} /> : <MicOff className="size-4" strokeWidth={2.2} />}
-            </button>
-          )}
-          {seat && !you && game.inVoice(seat.id) &&
-            (game.voice.on ? (
-              <button
-                type="button"
-                onClick={() => game.mutePeer(seat.id, !game.voice.isPeerMuted(seat.id))}
-                aria-label={game.voice.isPeerMuted(seat.id) ? `Unmute ${seat.nick}` : `Mute ${seat.nick} for me`}
-                aria-pressed={game.voice.isPeerMuted(seat.id)}
-                title={game.voice.isPeerMuted(seat.id) ? `Unmute ${seat.nick}` : `Mute ${seat.nick} (only for you)`}
+            ) : note ? (
+              <span
                 className={cn(
-                  "relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95",
-                  game.voice.isPeerMuted(seat.id) ? "bg-[#ef4444] text-white" : "bg-background/70 text-foreground",
-                  game.isSpeaking(seat.id) && "ring-2 ring-[#4ade80]",
+                  "min-w-0 truncate rounded-full px-2 py-0.5 text-[11px] font-bold",
+                  note.tone === "red" ? "bg-[#dc2626]/35 text-[#fecaca]" : note.tone === "amber" ? "bg-[#d97706]/35 text-[#fde68a]" : "bg-foreground/12 text-foreground/80",
                 )}
               >
-                {game.voice.isPeerMuted(seat.id) ? <VolumeX className="size-4" strokeWidth={2.2} /> : <Volume2 className="size-4" strokeWidth={2.2} />}
-                {game.micMutedBy(seat.id) && (
-                  <MicOff className="absolute -right-1 -bottom-1 size-3.5 rounded-full bg-background p-0.5 text-[#f87171]" strokeWidth={2.6} />
-                )}
-              </button>
-            ) : (
-              <span title={`${seat.nick} is in voice chat`} className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-background/50 text-muted-foreground">
-                <Mic className="size-3.5" strokeWidth={2.2} />
+                {note.text}
               </span>
-            ))}
-          {showChat && (
-            <button
-              type="button"
-              aria-label="Open chat"
-              onClick={() => game.openChat()}
-              className="relative mx-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-background/70 text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95"
-            >
-              <MessageCircle className="size-4" strokeWidth={2.2} />
-              {game.unread > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] rounded-full bg-[#e5484d] px-1 text-center text-[11px] leading-[18px] font-bold text-white">
-                  {game.unread > 9 ? "9+" : game.unread}
-                </span>
-              )}
-            </button>
-          )}
-        </div>
-        <div className={cn("flex max-w-full min-w-0 items-center gap-1.5", right && "flex-row-reverse")}>
-          {showMisses && (
-            <span className="flex shrink-0 gap-[3px]" role="img" aria-label={`${misses} of ${MAX_MISSES} turns missed`}>
-              {Array.from({ length: MAX_MISSES }, (_, k) => (
-                <span
-                  key={k}
-                  className={cn("h-[7px] w-[7px] rounded-full", k < misses ? "bg-[#ef4444]" : "bg-foreground/25")}
-                  style={k < misses ? { boxShadow: "0 0 4px rgba(239,68,68,.8)" } : undefined}
-                />
-              ))}
-            </span>
-          )}
-          <span className={cn("truncate text-xs tabular-nums", away || seat?.out ? "font-semibold text-[#f87171]" : "text-muted-foreground")}>{meta}</span>
-        </div>
-      </div>
-      {/* Fixed-size slot so the layout doesn't jump when the dice moves */}
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center min-[400px]:h-11 min-[400px]:w-11 sm:h-[52px] sm:w-[52px]">
-        {dieColor === c && <Dice3D />}
+            ) : showChat ? (
+              <>
+                <VoiceButton
+                  on={game.voice.micOn}
+                  onClick={() => void game.toggleMic()}
+                  label={game.voice.micOn ? "Turn my microphone off" : "Turn my microphone on"}
+                  ring={game.voice.micOn && game.isSpeaking(seat.id)}
+                >
+                  {game.voice.micOn ? <Mic className="size-4" strokeWidth={2.2} /> : <MicOff className="size-4" strokeWidth={2.2} />}
+                </VoiceButton>
+                <VoiceButton
+                  on={game.speakerOn()}
+                  onClick={() => game.toggleSpeaker()}
+                  label={game.speakerOn() ? "Turn my speaker off (stop hearing everyone)" : "Turn my speaker on (hear everyone)"}
+                >
+                  {game.speakerOn() ? <Volume2 className="size-4" strokeWidth={2.2} /> : <VolumeX className="size-4" strokeWidth={2.2} />}
+                </VoiceButton>
+                <button
+                  type="button"
+                  aria-label="Open chat"
+                  onClick={() => game.openChat()}
+                  className="relative flex size-6 shrink-0 items-center justify-center rounded-lg bg-background/70 text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95 min-[380px]:size-7"
+                >
+                  <MessageCircle className="size-4" strokeWidth={2.2} />
+                  {game.unread > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 min-w-[18px] rounded-full bg-[#e5484d] px-1 text-center text-[11px] leading-[18px] font-bold text-white">
+                      {game.unread > 9 ? "9+" : game.unread}
+                    </span>
+                  )}
+                </button>
+              </>
+            ) : (
+              s.phase !== "lobby" && <HomeDots home={home} color={hex} />
+            )}
+            {/* Another player: hear them or not (for me only); a small mic-off mark when they aren't talking */}
+            {showHear && !note && (
+              <VoiceButton
+                on={game.hears(seat.id)}
+                onClick={() => game.toggleHear(seat.id)}
+                label={game.hears(seat.id) ? `Stop hearing ${seat.nick}` : `Hear ${seat.nick}`}
+                ring={game.hears(seat.id) && game.isSpeaking(seat.id)}
+              >
+                {game.hears(seat.id) ? <Volume2 className="size-4" strokeWidth={2.2} /> : <VolumeX className="size-4" strokeWidth={2.2} />}
+                {game.micOffFor(seat.id) && (
+                  <MicOff className="absolute -right-1 -bottom-1 size-3.5 rounded-full bg-background p-0.5 text-muted-foreground" strokeWidth={2.6} />
+                )}
+              </VoiceButton>
+            )}
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+/** Tokens home: four dots, filled in the player's colour. */
+function HomeDots({ home, color }: { home: number; color: string }) {
+  return (
+    <span className="flex shrink-0 gap-[3px]" role="img" aria-label={`${home} of 4 tokens home`}>
+      {[0, 1, 2, 3].map((k) => (
+        <span
+          key={k}
+          className="h-[7px] w-[7px] rounded-full"
+          style={k < home ? { background: color, boxShadow: "0 0 0 1px rgba(255,255,255,.55)" } : { background: "rgb(var(--c-ink) / .22)" }}
+        />
+      ))}
+    </span>
+  );
+}
+
+/** A round voice chat switch: green when on, muted grey when off. */
+function VoiceButton({ on, onClick, label, ring, children }: { on: boolean; onClick: () => void; label: string; ring?: boolean; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      aria-pressed={on}
+      title={label}
+      className={cn(
+        "relative flex size-6 shrink-0 items-center justify-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95 min-[380px]:size-7",
+        on ? "bg-[#16a34a] text-white" : "bg-background/70 text-muted-foreground",
+        ring && "ring-2 ring-[#4ade80] ring-offset-1 ring-offset-transparent",
+      )}
+    >
+      {children}
+    </button>
   );
 }

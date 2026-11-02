@@ -4,6 +4,8 @@
 // src/hooks/use-game.ts) and call its methods.
 
 import { playSound } from "@/lib/audio/sfx";
+import { defaultAvatar, isAvatar } from "@/lib/avatars";
+import { detectCountry, isCountry } from "@/lib/country";
 import { createPeerTransport } from "@/lib/net/peer-transport";
 import type { NetMessage, PeerLink, RoomTransport, TransportFactory, VoiceMember } from "@/lib/net/transport";
 import { VoiceChat } from "@/lib/net/voice";
@@ -19,6 +21,7 @@ import {
   HOST_SILENT_MS,
   MAX_MISSES,
   MISS_PENALTY,
+  NICK_MAX,
   OFFLINE_ALLOWANCE,
   ONLINE_FULL_START_DELAY,
   ONLINE_TURN_LIMIT,
@@ -47,7 +50,7 @@ import {
   seatsFor,
   validState,
 } from "./rules";
-import type { ChatMessage, Color, GameState, Mode, Seat } from "./types";
+import type { ChatMessage, Color, GameState, Looks, Mode, Seat } from "./types";
 
 export type NetKind = "" | "ok" | "bad";
 
@@ -83,6 +86,8 @@ const newGameId = () => Date.now().toString(36) + Math.random().toString(36).sli
 
 /** "Continue your pass-and-play game" is offered for this long after the last move. */
 const LOCAL_RESUME_MS = 60 * 60_000;
+/** Where the computer players "come from" (flags on their name tags). */
+const BOT_COUNTRIES = ["IN", "BD", "PK", "NP", "LK", "AE", "SA", "ID", "MY", "PH", "NG", "GB", "US", "CA", "AU", "BR"];
 /** Rejoining a game whose table nobody is at: wait this long for the others before calling it over. */
 const REJOIN_WAIT_MS = 12_000;
 /** Presence checks run every second; a longer gap means this device wasn't watching (asleep, in the background). */
@@ -130,7 +135,6 @@ export class GameController {
   banner = "";
   net: { kind: NetKind; text: string } = { kind: "", text: "Connecting…" };
   confirmReset = false;
-  confirmMenu = false;
   // chat
   chat: ChatMessage[] = [];
   unread = 0;
@@ -159,7 +163,6 @@ export class GameController {
   private gen = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private botTimer: ReturnType<typeof setTimeout> | null = null;
-  private menuTimer: ReturnType<typeof setTimeout> | null = null;
   private seenSeq: number | null = null;
   private autoJoin = false;
   private turnKey = "";
@@ -282,6 +285,12 @@ export class GameController {
   }
   myNick() {
     return this.services.profile.get().nick.trim() || "Player";
+  }
+  /** My country and picture, as the others see them. */
+  myLooks(): Looks {
+    const p = this.services.profile.get();
+    const cc = p.country || detectCountry();
+    return { ...(cc ? { cc } : {}), av: p.avatar >= 0 ? p.avatar : defaultAvatar(this.myId) };
   }
   private get settings() {
     return this.services.settings.get();
@@ -584,17 +593,19 @@ export class GameController {
   }
 
   // ============================================================ lobby
-  private hostJoin(id: string, nick: string) {
+  private hostJoin(id: string, nick: string, looks: Looks = {}) {
+    const cc = isCountry(looks.cc) ? looks.cc : undefined;
+    const av = isAvatar(looks.av) ? looks.av : undefined;
     this.commit((s) => {
       if (s.phase !== "lobby") return false;
       const cap = this.mode === "online" ? s.capacity || this.wantCount : 4;
       const ex = s.players.find((p) => p.id === id);
       if (ex) {
-        if (ex.nick === nick) return false;
-        ex.nick = nick;
+        if (ex.nick === nick && ex.cc === cc && ex.av === av) return false;
+        Object.assign(ex, { nick, cc, av });
       } else {
         if (s.players.length >= cap) return false;
-        s.players.push({ id, nick });
+        s.players.push({ id, nick, cc, av });
         s.log = [{ c: "" as const, t: `${nick} joined.` }, ...s.log].slice(0, 20);
       }
       s.seats = seatsFor(s.players);
@@ -627,8 +638,8 @@ export class GameController {
 
   // ============================================================ player actions
   join = () => {
-    if (this.isHost || !this.online) this.hostJoin(this.myId, this.myNick());
-    else this.transport?.sendToHost({ type: "join", id: this.myId, nick: this.myNick() });
+    if (this.isHost || !this.online) this.hostJoin(this.myId, this.myNick(), this.myLooks());
+    else this.transport?.sendToHost({ type: "join", id: this.myId, nick: this.myNick(), ...this.myLooks() });
   };
   leave = () => {
     if (this.isHost || !this.online) this.hostLeave(this.myId);
@@ -693,24 +704,13 @@ export class GameController {
       addLog(s, c, `${seat.nick} is back in control.`);
     });
   }
-  /**
-   * Menu button. During an online/friends game the first tap only asks
-   * "Leave game?"; returns true when it's fine to leave now.
-   */
-  requestMenu(): boolean {
-    const risky = this.isNet() && this.state.phase === "playing" && !!this.mySlot();
-    if (risky && !this.confirmMenu) {
-      this.confirmMenu = true;
-      this.emit();
-      if (this.menuTimer) clearTimeout(this.menuTimer);
-      this.menuTimer = setTimeout(() => {
-        this.confirmMenu = false;
-        this.emit();
-      }, 3000);
-      return false;
-    }
-    this.confirmMenu = false;
-    return true;
+  /** Am I in a game that leaving now would walk out of? (Then Menu / Back ask first.) */
+  leaveNeedsConfirm(): boolean {
+    const s = this.state;
+    if (!this.loaded || s.phase !== "playing") return false;
+    if (this.mode === "local") return true;
+    const c = this.mySlot();
+    return !!c && !s.winners.includes(c) && !s.seats[c]?.out;
   }
 
   // ============================================================ starting modes
@@ -743,7 +743,6 @@ export class GameController {
     this.online = false;
     this.seenSeq = s.last ? s.last.seq : 0;
     this.confirmReset = false;
-    this.confirmMenu = false;
     this.banner = "";
     if (animateRotation) {
       this.rot = { angle: 0, target: 0, ready: true };
@@ -769,9 +768,11 @@ export class GameController {
     const offsets = ({ 2: [0, 2], 3: [0, 1, 2], 4: [0, 1, 2, 3] } as Record<number, number[]>)[count] || [0, 2];
     const s = freshState();
     let bot = 0;
+    // Computer players come from around the Ludo-playing world: a different flag each.
+    const lands = BOT_COUNTRIES.filter((cc) => cc !== this.myLooks().cc).sort(() => Math.random() - 0.5);
     offsets.forEach((o) => {
       const slot = COLORS[(hi + o) % 4];
-      s.seats[slot] = o === 0 ? { id: "me", nick: this.myNick() } : { id: "bot" + ++bot, nick: `Computer ${bot}`, bot: true };
+      s.seats[slot] = o === 0 ? { id: "me", nick: this.myNick(), ...this.myLooks() } : { id: "bot" + ++bot, nick: `Computer ${bot}`, bot: true, cc: lands[bot - 1] };
     });
     s.players = seated(s).map((c) => ({ id: s.seats[c]!.id, nick: s.seats[c]!.nick }));
     s.phase = "playing";
@@ -785,8 +786,10 @@ export class GameController {
   startLocal(rows: { name: string; color: Color }[]) {
     this.leaveCurrent();
     const s = freshState();
+    // Everyone is at this phone: they share its country.
+    const cc = this.myLooks().cc;
     rows.forEach((r, k) => {
-      s.seats[r.color] = { id: "L" + (k + 1), nick: r.name.trim() || `Player ${k + 1}` };
+      s.seats[r.color] = { id: "L" + (k + 1), nick: r.name.trim() || `Player ${k + 1}`, ...(cc ? { cc } : {}) };
     });
     s.players = seated(s).map((c) => ({ id: s.seats[c]!.id, nick: s.seats[c]!.nick }));
     s.phase = "playing";
@@ -939,7 +942,6 @@ export class GameController {
     this.applyRot();
     this.state = freshState();
     this.banner = "";
-    this.confirmMenu = false;
     this.confirmReset = false;
     this.resetChat();
     this.voice.stop();
@@ -1236,7 +1238,7 @@ export class GameController {
     const msg: ChatMessage = {
       mid: m.mid.slice(0, 64),
       id: String(m.id || "").slice(0, 40),
-      nick: String(m.nick || "Player").slice(0, 16),
+      nick: String(m.nick || "Player").slice(0, NICK_MAX),
       text: m.text.trim().slice(0, 200),
       ts: Number(m.ts) || Date.now(),
     };
@@ -1317,40 +1319,56 @@ export class GameController {
   }
 
   // ============================================================ voice chat
-  /** My mic button: join voice chat (mic on), or once in it, mute / unmute my mic. */
-  async toggleMic() {
-    if (!this.isNet() || !this.online) return;
-    if (!this.voice.on) {
-      try {
-        await this.voice.start();
-      } catch {
-        this.setBanner("Microphone blocked. Allow microphone access for this site to use voice chat.");
-        return;
-      }
-    } else this.voice.setMicMuted(!this.voice.micMuted);
+  // Everyone at an online / friends table is in voice chat from the start:
+  // speaker on (you hear the others), mic off. The mic asks for permission the
+  // first time it's turned on.
+
+  /** Join voice chat for this table (listening only; no microphone needed). */
+  private joinVoice() {
+    this.voice.start();
     this.announceVoice();
   }
-  /** Leave voice chat completely (stop hearing everyone too). */
-  leaveVoice() {
-    this.voice.stop();
+  /** My mic button. */
+  async toggleMic() {
+    if (!this.isNet() || !this.online) return;
+    if (!this.voice.on) this.voice.start();
+    try {
+      await this.voice.setMic(!this.voice.micOn);
+    } catch {
+      this.setBanner("Microphone blocked. Allow microphone access to talk in voice chat.");
+      return;
+    }
     this.announceVoice();
+  }
+  /** My speaker button: stop hearing everyone, or hear everyone again. */
+  toggleSpeaker() {
+    if (!this.voice.on) this.voice.start();
+    this.voice.setSpeaker(!this.speakerOn());
+  }
+  /** Do I hear anyone? (What my speaker button shows.) */
+  speakerOn() {
+    const others = this.voiceRoster.filter((m) => m.id !== this.myId).map((m) => m.id);
+    return this.voice.hearsAny(others);
+  }
+  /** Hear / stop hearing one player, for me only (the speaker button on their name tag). */
+  toggleHear(pid: string) {
+    this.voice.setHear(pid, !this.voice.hears(pid));
+  }
+  hears(pid: string) {
+    return this.voice.hears(pid);
   }
   inVoice(pid: string) {
     return this.voiceRoster.some((m) => m.id === pid);
   }
-  /** Has this player muted their own microphone? */
-  micMutedBy(pid: string) {
-    return pid === this.myId ? this.voice.micMuted : !!this.voiceRoster.find((m) => m.id === pid)?.muted;
+  /** Is this player's microphone off? */
+  micOffFor(pid: string) {
+    return pid === this.myId ? !this.voice.micOn : !!this.voiceRoster.find((m) => m.id === pid)?.muted;
   }
   isSpeaking(pid: string) {
     return this.voice.speaking.has(pid === this.myId ? "me" : pid);
   }
-  /** Stop / start hearing one player, for me only. */
-  mutePeer(pid: string, muted: boolean) {
-    this.voice.setPeerMuted(pid, muted);
-  }
   private announceVoice() {
-    const m = { type: "voice" as const, id: this.myId, peerId: this.transport?.peerId() || "", on: this.voice.on, muted: this.voice.micMuted };
+    const m = { type: "voice" as const, id: this.myId, peerId: this.transport?.peerId() || "", on: this.voice.on, muted: !this.voice.micOn };
     if (this.isHost) this.hostVoice(m);
     else this.transport?.sendToHost(m);
   }
@@ -1711,8 +1729,7 @@ export class GameController {
           this.onRemoteState();
           // A new host starts a fresh voice chat list; guests re-announce themselves.
           this.voiceMembers.clear();
-          if (this.voice.on) this.announceVoice();
-          else this.shareVoice();
+          this.joinVoice();
         },
         peerOpened: (link) => {
           link.send({ type: "state", state: this.state });
@@ -1735,7 +1752,7 @@ export class GameController {
           this.hostHeardAt = Date.now();
           t.sendToHost({ type: "hello", id: this.myId });
           if (carry) t.sendToHost({ type: "state", state: carry });
-          if (this.voice.on) this.announceVoice();
+          this.joinVoice();
           this.netSummary();
           this.emit();
         },
@@ -1778,7 +1795,7 @@ export class GameController {
     }
     else if (m.type === "join" && typeof m.id === "string") {
       link.pid = m.id;
-      this.hostJoin(m.id, String(m.nick || "Player").slice(0, 16));
+      this.hostJoin(m.id, String(m.nick || "Player").slice(0, NICK_MAX), { cc: m.cc, av: m.av });
     } else if (m.type === "leave" && typeof m.id === "string") this.hostLeave(m.id);
     else if (m.type === "start") this.startGame();
     else if (m.type === "chat") {

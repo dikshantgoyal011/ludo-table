@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useGame, useProfile, useSettings } from "@/hooks/use-game";
-import { COLORS, NAMES } from "@/lib/game/constants";
+import { COLORS, NAMES, NICK_MAX } from "@/lib/game/constants";
 import { progress } from "@/lib/game/luck";
 import { seated } from "@/lib/game/rules";
 import type { Color } from "@/lib/game/types";
@@ -153,7 +153,7 @@ export function PlayersPanel() {
 
       {net && s.phase === "lobby" && game.loaded && (
         <Input
-          maxLength={16}
+          maxLength={NICK_MAX}
           placeholder="Your name"
           autoComplete="nickname"
           aria-label="Your name"

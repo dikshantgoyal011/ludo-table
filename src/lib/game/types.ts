@@ -11,7 +11,13 @@ export type Phase = "lobby" | "playing" | "done";
 /** -1 = in the yard, 0-50 = on the track, 51-55 = home column, 56 = finished */
 export type TokenPos = number;
 
-export interface Seat {
+/** How a player shows up to others: country code (e.g. "IN") and picture number (avatar.tsx). Both optional. */
+export interface Looks {
+  cc?: string;
+  av?: number;
+}
+
+export interface Seat extends Looks {
   id: string;
   nick: string;
   bot?: boolean;
@@ -29,7 +35,7 @@ export interface Seat {
   left?: boolean;
 }
 
-export interface Player {
+export interface Player extends Looks {
   id: string;
   nick: string;
 }

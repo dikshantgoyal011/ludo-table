@@ -1,9 +1,12 @@
-// Voice chat: every player in voice chat has a direct audio call with every
+// Voice chat: every player at the table has a direct audio call with every
 // other one (at most 3 calls each at a 4-player table). The host shares who is
 // in voice chat; between any two players the one with the smaller player id
 // places the call, so a pair never ends up with two calls.
 //
-// Browser APIs are only touched once voice chat is switched on.
+// Everyone joins listening: until their mic is turned on, a player's calls
+// carry silence (no microphone permission needed). Turning the mic on swaps
+// the real microphone into the running calls, and turning it off swaps the
+// silence back and closes the microphone.
 
 import type { RoomTransport, VoiceCall, VoiceMember } from "./transport";
 
@@ -22,81 +25,106 @@ const CONNECT_TIMEOUT = 12_000;
 const SPEAKING_LEVEL = 0.035;
 
 export class VoiceChat {
-  /** I'm in voice chat (my microphone is open, I hear the others). */
+  /** In voice chat at this table (calls placed / taken). */
   on = false;
-  /** My microphone is muted (I still hear the others). */
-  micMuted = false;
+  /** My microphone is on. Off whenever I join a table. */
+  micOn = false;
   /** Player ids talking right now ("me" included as my own id). */
   speaking = new Set<string>();
 
-  private stream: MediaStream | null = null;
+  /** The microphone, while it's on. */
+  private mic: MediaStream | null = null;
+  /** What my calls send while the mic is off. */
+  private silence: MediaStreamTrack | null = null;
   private lines = new Map<string, Line>();
-  /** Players I don't want to hear. */
-  private mutedPids = new Set<string>();
+  /** Who I hear: everyone unless the speaker button turned them all off, then per-player choices. */
+  private hearAll = true;
+  private hearOne = new Map<string, boolean>();
   private ctx: AudioContext | null = null;
   private myMeter: AnalyserNode | null = null;
   private meterTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private readonly changed: () => void) {}
 
-  /** Opens the microphone. Throws if the browser or the player refuses it. */
-  async start() {
+  /** Join listening: speaker on, mic off. */
+  start() {
     if (this.on) return;
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      video: false,
-    });
-    this.stream = stream;
-    this.on = true;
-    this.micMuted = false;
     try {
       const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       this.ctx = new Ctx();
-      this.myMeter = this.meter(stream);
+      this.silence = this.ctx.createMediaStreamDestination().stream.getAudioTracks()[0] || null;
     } catch {
-      this.ctx = null; // no speaking indicator, voice still works
+      this.ctx = null; // can still talk (and hear) once the mic is on
     }
+    this.on = true;
+    this.micOn = false;
+    this.hearAll = true;
+    this.hearOne.clear();
     this.meterTimer = setInterval(() => this.measure(), 200);
+    // Phones only play sound after a tap: start anything that was held back on the next one.
+    document.addEventListener("pointerdown", this.unlock, { passive: true });
     this.changed();
   }
 
-  /** Leave voice chat: hang up and close the microphone. */
+  /** Leave voice chat: hang up, close the microphone. */
   stop() {
     for (const pid of [...this.lines.keys()]) this.hangUp(pid);
-    this.stream?.getTracks().forEach((t) => t.stop());
-    this.stream = null;
+    this.closeMic();
+    this.silence?.stop();
+    this.silence = null;
     if (this.meterTimer) clearInterval(this.meterTimer);
     this.meterTimer = null;
+    document.removeEventListener("pointerdown", this.unlock);
     void this.ctx?.close().catch(() => {});
     this.ctx = null;
-    this.myMeter = null;
     this.speaking.clear();
     const was = this.on;
     this.on = false;
-    this.micMuted = false;
+    this.micOn = false;
     if (was) this.changed();
   }
 
-  setMicMuted(muted: boolean) {
-    this.micMuted = muted;
-    this.stream?.getAudioTracks().forEach((t) => (t.enabled = !muted));
+  /** Turn my microphone on (asks for it the first time; throws if refused) or off. */
+  async setMic(on: boolean) {
+    if (on === this.micOn) return;
+    if (on) {
+      const mic = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        video: false,
+      });
+      if (!this.on) {
+        mic.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      this.mic = mic;
+      this.micOn = true;
+      this.myMeter = this.meter(mic);
+    } else {
+      this.closeMic();
+      this.micOn = false;
+    }
+    const track = this.outTrack();
+    for (const [pid, line] of this.lines) if (!track || !line.call.sendTrack(track)) this.hangUp(pid); // called again with the new sound
     this.changed();
   }
 
-  /** Mute / unmute another player, for me only. */
-  setPeerMuted(pid: string, muted: boolean) {
-    if (muted) this.mutedPids.add(pid);
-    else this.mutedPids.delete(pid);
-    const audio = this.lines.get(pid)?.audio;
-    if (audio) audio.muted = muted;
-    this.changed();
+  /** The speaker button: hear everyone, or no one. */
+  setSpeaker(on: boolean) {
+    this.hearAll = on;
+    this.hearOne.clear();
+    this.applyHearing();
   }
-  isPeerMuted(pid: string) {
-    return this.mutedPids.has(pid);
+  /** Hear / stop hearing one player (for me only). */
+  setHear(pid: string, on: boolean) {
+    this.hearOne.set(pid, on);
+    this.applyHearing();
   }
-  /** Do I have a working audio line with this player? */
-  connectedTo(pid: string) {
-    return !!this.lines.get(pid)?.audio;
+  hears(pid: string) {
+    return this.hearOne.get(pid) ?? this.hearAll;
+  }
+  /** Do I hear any of these players? (With nobody else here: is my speaker on?) */
+  hearsAny(pids: string[]) {
+    return pids.length ? pids.some((p) => this.hears(p)) : this.hearAll;
   }
 
   /**
@@ -104,7 +132,8 @@ export class VoiceChat {
    * hang up on people who left, retry calls that never connected.
    */
   sync(members: VoiceMember[], myId: string, transport: RoomTransport | null) {
-    if (!this.on || !this.stream) return;
+    const out = this.outStream();
+    if (!this.on || !out) return;
     const now = Date.now();
     const others = new Map(members.filter((m) => m.id !== myId && m.peerId).map((m) => [m.id, m]));
     for (const [pid, line] of this.lines) {
@@ -115,22 +144,49 @@ export class VoiceChat {
     if (!transport) return;
     for (const m of others.values()) {
       if (this.lines.has(m.id) || !(myId < m.id)) continue;
-      const call = transport.call(m.peerId, myId, this.stream);
+      const call = transport.call(m.peerId, myId, out);
       if (call) this.attach(m.id, m.peerId, call);
     }
   }
 
   /** Someone is calling me. */
   incoming(call: VoiceCall) {
-    if (!this.on || !this.stream || !call.pid) {
+    const out = this.outStream();
+    if (!this.on || !out || !call.pid) {
       call.close();
       return;
     }
     // A fresh call from them replaces any old one (e.g. they reconnected).
     if (this.lines.has(call.pid)) this.hangUp(call.pid);
-    call.answer(this.stream);
+    call.answer(out);
     this.attach(call.pid, call.peerId, call);
   }
+
+  /** What my calls send: the microphone when it's on, silence otherwise. */
+  private outTrack(): MediaStreamTrack | null {
+    return (this.micOn && this.mic?.getAudioTracks()[0]) || this.silence;
+  }
+  private outStream(): MediaStream | null {
+    const t = this.outTrack();
+    return t ? new MediaStream([t]) : null;
+  }
+
+  private closeMic() {
+    this.mic?.getTracks().forEach((t) => t.stop());
+    this.mic = null;
+    this.myMeter = null;
+    this.speaking.delete("me");
+  }
+
+  private applyHearing() {
+    for (const [pid, line] of this.lines) if (line.audio) line.audio.muted = !this.hears(pid);
+    this.changed();
+  }
+
+  private unlock = () => {
+    if (this.ctx?.state === "suspended") void this.ctx.resume().catch(() => {});
+    for (const line of this.lines.values()) if (line.audio?.paused) void line.audio.play().catch(() => {});
+  };
 
   private attach(pid: string, peerId: string, call: VoiceCall) {
     const line: Line = { call, peerId, startedAt: Date.now() };
@@ -141,7 +197,7 @@ export class VoiceChat {
       audio.autoplay = true;
       audio.setAttribute("playsinline", "");
       audio.srcObject = remote;
-      audio.muted = this.mutedPids.has(pid);
+      audio.muted = !this.hears(pid);
       void audio.play().catch(() => {});
       line.audio = audio;
       line.meter = this.meter(remote) || undefined;
@@ -197,8 +253,8 @@ export class VoiceChat {
       return Math.sqrt(sum / buf.length) > SPEAKING_LEVEL;
     };
     const next = new Set<string>();
-    if (!this.micMuted && loud(this.myMeter)) next.add("me");
-    for (const [pid, line] of this.lines) if (!this.mutedPids.has(pid) && loud(line.meter)) next.add(pid);
+    if (this.micOn && loud(this.myMeter)) next.add("me");
+    for (const [pid, line] of this.lines) if (this.hears(pid) && loud(line.meter)) next.add(pid);
     const same = next.size === this.speaking.size && [...next].every((p) => this.speaking.has(p));
     if (same) return;
     this.speaking = next;

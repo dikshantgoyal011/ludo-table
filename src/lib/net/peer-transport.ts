@@ -46,6 +46,16 @@ class PeerVoiceCall implements VoiceCall {
   answer(stream: MediaStream) {
     this.mc.answer(stream);
   }
+  sendTrack(track: MediaStreamTrack) {
+    try {
+      const sender = this.mc.peerConnection?.getSenders().find((s) => !s.track || s.track.kind === "audio");
+      if (!sender) return false;
+      void sender.replaceTrack(track).catch(() => {});
+      return true;
+    } catch {
+      return false;
+    }
+  }
   onStream(cb: (stream: MediaStream) => void) {
     this.mc.on("stream", cb);
   }

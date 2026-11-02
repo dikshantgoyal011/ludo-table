@@ -36,7 +36,7 @@ export interface Theme {
 }
 
 /** ("king" is kept as the id of Sapphire so saved settings carry over.) */
-export type ThemeId = "maharaja" | "darbar" | "classic" | "king" | "midnight" | "wood" | "candy";
+export type ThemeId = "maharaja" | "darbar" | "classic" | "king" | "midnight" | "dark" | "wood" | "candy";
 
 export const THEMES: Record<ThemeId, Theme> = {
   // A royal Indian court: crimson, saffron and gold.
@@ -151,6 +151,29 @@ export const THEMES: Record<ThemeId, Theme> = {
     pip: "#1e2742",
     pieces: { red: "#f0454f", green: "#22c55e", yellow: "#eab308", blue: "#3b82f6" },
     light: { red: "#fbd0d3", green: "#c4f0d4", yellow: "#f7e8b0", blue: "#cddffd" },
+  },
+  // Everything dark, the board too: charcoal squares, glowing pieces. Easy on the eyes at night.
+  dark: {
+    name: "Dark",
+    boardStyle: "modern",
+    bg: "radial-gradient(900px 600px at 50% 0%, #23272f, transparent 70%), #0c0d10",
+    meta: "#0c0d10",
+    scheme: "dark",
+    brand: {
+      font: "round",
+      fill: "linear-gradient(180deg, #ffffff 0%, #e4e7ec 50%, #a3abb8 100%)",
+      shadow: "drop-shadow(0 2px 0 rgba(0, 0, 0, 0.6)) drop-shadow(0 3px 8px rgba(0, 0, 0, 0.5))",
+    },
+    vars: { felt: "12 13 16", felt2: "22 24 29", panel: "28 31 37", line: "52 57 67", ink: "236 238 242", muted: "150 157 170", paper: "240 242 246", gold: "245 192 66" },
+    frame: "#16181d",
+    frameEdge: "#2e333d",
+    board: "#1b1e24",
+    track: "#262a32",
+    stroke: "#3a404c",
+    star: "#5d6575",
+    pip: "#15171b",
+    pieces: { red: "#ef4444", green: "#22c55e", yellow: "#facc15", blue: "#3b82f6" },
+    light: { red: "#4a1d22", green: "#143a25", yellow: "#4a3d10", blue: "#182a4f" },
   },
   wood: {
     name: "Wooden",

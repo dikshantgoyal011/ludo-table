@@ -40,7 +40,8 @@ export const addLog = (s: GameState, c: Color | "", t: string) => {
 export function seatsFor(players: Player[]): Partial<Record<Color, Seat>> {
   const out: Partial<Record<Color, Seat>> = {};
   (SLOTS_FOR[players.length] || []).forEach((slot, i) => {
-    out[slot] = { id: players[i].id, nick: players[i].nick };
+    const { id, nick, cc, av } = players[i];
+    out[slot] = { id, nick, ...(cc ? { cc } : {}), ...(av !== undefined ? { av } : {}) };
   });
   return out;
 }

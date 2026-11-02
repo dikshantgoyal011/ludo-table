@@ -40,6 +40,10 @@ export interface LocalSetupRow {
 
 export interface Profile {
   nick: string;
+  /** Country code shown with my name ("" = guess from the phone). */
+  country: string;
+  /** My picture (avatar.tsx); -1 = the default one for my player id. */
+  avatar: number;
   /** The colour this player likes to see as their own corner. */
   color: Color;
   /** Online: preferred table size. */

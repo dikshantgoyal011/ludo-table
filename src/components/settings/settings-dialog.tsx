@@ -1,11 +1,15 @@
 "use client";
 
+import { useState } from "react";
 import { Check } from "lucide-react";
+import { Avatar } from "@/components/game/avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
-import { useSettings } from "@/hooks/use-game";
+import { getController, useProfile, useSettings } from "@/hooks/use-game";
 import { playSound } from "@/lib/audio/sfx";
+import { AVATAR_COUNT, defaultAvatar } from "@/lib/avatars";
+import { countriesByName, detectCountry, flagUrl } from "@/lib/country";
 import { COLORS } from "@/lib/game/constants";
 import { BoardPreview } from "@/components/game/board";
 import { BOARD_STYLE_IDS, BOARD_STYLES } from "@/lib/theme/boards";
@@ -49,6 +53,66 @@ function Choice({ on, onClick, className, style, children }: { on: boolean; onCl
   );
 }
 
+/** My picture and country, as the other players see them. */
+function YouSection() {
+  const [profile, saveProfile] = useProfile();
+  const game = getController();
+  const mine = profile.avatar >= 0 ? profile.avatar : defaultAvatar(game.myId);
+  const country = profile.country || detectCountry();
+  const [list] = useState(countriesByName);
+  // Already waiting at a table: show the others the change straight away.
+  const changed = () => setTimeout(() => game.renameInLobby(), 0);
+  return (
+    <section className="flex flex-col gap-2">
+      <SectionTitle>You</SectionTitle>
+      <div className="grid grid-cols-6 gap-1.5">
+        {Array.from({ length: AVATAR_COUNT }, (_, k) => (
+          <button
+            key={k}
+            type="button"
+            aria-pressed={mine === k}
+            aria-label={`Picture ${k + 1}`}
+            onClick={() => {
+              saveProfile({ avatar: k });
+              changed();
+            }}
+            className={cn(
+              "aspect-square rounded-full p-0.5 outline-none transition-transform focus-visible:ring-2 focus-visible:ring-ring active:scale-95",
+              mine === k ? "bg-primary" : "bg-transparent",
+            )}
+          >
+            <Avatar av={k} className="size-full" />
+          </button>
+        ))}
+      </div>
+      <label className="mt-1 flex items-center gap-2.5 text-sm font-semibold">
+        {country ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={flagUrl(country)} alt="" width={27} height={18} className="h-[18px] w-[27px] shrink-0 rounded-[3px] shadow-[0_0_0_1px_rgba(0,0,0,.25)]" />
+        ) : (
+          <span className="h-[18px] w-[27px] shrink-0 rounded-[3px] border border-dashed border-foreground/30" />
+        )}
+        <span className="sr-only">Country</span>
+        <select
+          value={country}
+          onChange={(e) => {
+            saveProfile({ country: e.target.value });
+            changed();
+          }}
+          className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-secondary px-2 text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <option value="">No country</option>
+          {list.map((c) => (
+            <option key={c.cc} value={c.cc}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      </label>
+    </section>
+  );
+}
+
 export function SettingsDialog() {
   const { settingsOpen } = useUi();
   const [settings, save] = useSettings();
@@ -66,6 +130,8 @@ export function SettingsDialog() {
           </DialogClose>
         </div>
         <div className="flex flex-col gap-5 overflow-y-auto overscroll-contain px-4 py-4">
+          <YouSection />
+
           <section className="flex flex-col gap-2">
             <SectionTitle>Theme</SectionTitle>
             <div className="grid grid-cols-2 gap-2">

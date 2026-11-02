@@ -485,6 +485,15 @@ export function useBoardStyle(): [BoardStyleId, Theme] {
   return [settings.board === "auto" ? th.boardStyle : settings.board, th];
 }
 
+/** Ripples around tokens you can move. */
+const RIPPLE_ON_LIGHT = { ring: "#24170f", edge: "rgba(255,255,255,.8)" };
+const RIPPLE_ON_DARK = { ring: "#ffffff", edge: "rgba(0,0,0,.55)" };
+/** Is this "#rrggbb" colour light (perceived brightness over half)? */
+function isLight(hex: string) {
+  const n = parseInt(hex.slice(1, 7), 16);
+  return 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) > 128;
+}
+
 const svgId = (raw: string) => "b" + raw.replace(/[^a-zA-Z0-9]/g, "");
 
 /**
@@ -534,6 +543,8 @@ export function Board() {
   const movableViews = views.filter((t) => t.movable && !t.hidden);
   const hex = (slot: Color) => th.pieces[game.displayColor(slot)];
   const Surface = SURFACES[style];
+  // The royal, sandstone and wooden boards are always light; the modern one takes the theme's squares.
+  const ripple = style !== "modern" || isLight(th.track) ? RIPPLE_ON_LIGHT : RIPPLE_ON_DARK;
 
   return (
     <div className={cn("relative aspect-square w-full rounded-xl", style === "modern" ? "p-1.5 sm:p-2.5" : "p-2 sm:p-3")} style={frameStyle(style, th)}>
@@ -586,11 +597,14 @@ export function Board() {
                   }
                 }}
               >
-                {/* White on a dark edge, so it shows on every token colour and board square */}
-                <g className="token-ripple">
-                  <circle r={0.42} fill="none" stroke="rgba(0,0,0,.5)" strokeWidth={0.12} />
-                  <circle r={0.42} fill="none" stroke="#ffffff" strokeWidth={0.07} />
-                </g>
+                {/* Dark on a light board, light on a dark one, each with a thin edge of the other so it also shows on coloured squares */}
+                {/* Two ripples half a beat apart, so there's always one spreading out */}
+                {["", " late"].map((k) => (
+                  <g key={k} className={"token-ripple" + k}>
+                    <circle r={0.42} fill="none" stroke={ripple.edge} strokeWidth={0.15} />
+                    <circle r={0.42} fill="none" stroke={ripple.ring} strokeWidth={0.09} />
+                  </g>
+                ))}
                 <circle r={0.62} fill="transparent" />
               </g>
             ))}

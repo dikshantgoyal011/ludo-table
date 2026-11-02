@@ -13,13 +13,13 @@ export interface VoiceMember {
   id: string;
   /** Where to call them (their transport address). */
   peerId: string;
-  /** Their own microphone is muted. */
+  /** Their microphone is off (they only listen). */
   muted: boolean;
 }
 
 export type NetMessage =
   | { type: "hello"; id: string }
-  | { type: "join"; id: string; nick: string }
+  | { type: "join"; id: string; nick: string; cc?: string; av?: number }
   | { type: "leave"; id: string }
   | { type: "start" }
   | { type: "state"; state: GameState }
@@ -55,6 +55,8 @@ export interface VoiceCall {
   /** Their transport address. */
   readonly peerId: string;
   answer(stream: MediaStream): void;
+  /** Send this sound instead (mic on / off) without redialing. False if the call can't. */
+  sendTrack(track: MediaStreamTrack): boolean;
   onStream(cb: (stream: MediaStream) => void): void;
   onClose(cb: () => void): void;
   close(): void;
