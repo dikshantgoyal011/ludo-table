@@ -78,6 +78,8 @@ export interface GameState {
   turnAt: number;
   /** Online tables only: how many players this table is for (2, 3 or 4). */
   capacity?: number;
+  /** Friends rooms: player id of whoever created the room; only they start and restart games. */
+  owner?: string;
   log: LogLine[];
   /**
    * Which game this is (new for every game started). A saved copy of one game

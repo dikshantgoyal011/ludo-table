@@ -58,9 +58,10 @@ export function TurnCard() {
         hint = "Tap Invite and send the link. Each friend joins on their own phone.";
       } else {
         title = `${n} players ready`;
-        hint = "Anyone at the table can press Start.";
+        hint = game.canRunTable() ? "Tap Start game when everyone's here." : `Waiting for ${game.roomOwnerName()} to start the game.`;
       }
-      if (game.joined())
+      // Only the room's creator starts the game.
+      if (game.joined() && game.canRunTable())
         action = (
           <Button disabled={n < 2} onClick={game.start}>
             Start game
@@ -76,7 +77,8 @@ export function TurnCard() {
     hint = [...s.winners, ...rest]
       .map((c, k) => `${k + 1}. ${s.seats[c]?.nick || NAMES[c]}${s.seats[c]?.out ? (s.seats[c]?.left ? " (left)" : " (out)") : ""}`)
       .join("   ");
-    action = (
+    if (!game.canRunTable()) hint += `\nWaiting for ${game.roomOwnerName()} to start a new game.`;
+    else action = (
       <Button
         onClick={() => {
           game.playAgain();
@@ -98,7 +100,7 @@ export function TurnCard() {
           <span className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">{label}</span>
         </div>
         <div className="text-lg leading-tight font-bold sm:text-xl">{title}</div>
-        <div className="min-h-[2.5rem] text-sm leading-snug text-muted-foreground">{hint}</div>
+        <div className="min-h-[2.5rem] text-sm leading-snug whitespace-pre-line text-muted-foreground">{hint}</div>
         {action && <div className="mt-1 flex flex-wrap gap-2">{action}</div>}
       </div>
     </section>
@@ -128,7 +130,7 @@ export function PlayersPanel() {
     <section className="flex flex-col gap-2.5 rounded-2xl border border-border bg-card p-3 sm:p-4">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">Players</h2>
-        {game.loaded && game.mode !== "online" && (
+        {game.loaded && game.mode !== "online" && game.canRunTable() && (
           <div className="flex flex-wrap items-center justify-end gap-2 text-sm">
             {!game.confirmReset ? (
               (playing || (game.mode === "friends" && s.players.length > 0)) && (

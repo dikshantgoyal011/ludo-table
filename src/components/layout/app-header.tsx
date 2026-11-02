@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Settings as SettingsIcon } from "lucide-react";
+import { Menu as MenuIcon, Settings as SettingsIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useGame } from "@/hooks/use-game";
@@ -24,7 +24,7 @@ export function AppHeader() {
   // Back to the home screen (from a game in progress: only after "Leave this game?").
   const goMenu = () => {
     if (inGame && game.leaveNeedsConfirm()) {
-      uiStore.set({ leaveOpen: true });
+      uiStore.set({ leaveOpen: "menu" });
       return;
     }
     game.exitToMenu();
@@ -111,6 +111,8 @@ export function AppHeader() {
           </Button>
           {!onMenu && (
             <Button variant="outline" size="sm" onClick={goMenu}>
+              {/* In a game it opens the game menu (restart, leave) */}
+              {inGame && game.leaveNeedsConfirm() && <MenuIcon className="size-4" />}
               Menu
             </Button>
           )}

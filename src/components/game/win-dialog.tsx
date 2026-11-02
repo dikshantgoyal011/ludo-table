@@ -67,9 +67,16 @@ export function WinDialog() {
         </ol>
         <div className="mt-2 flex w-full flex-col gap-2">
           {final ? (
-            <Button size="lg" onClick={() => game.playAgain()}>
-              {game.mode === "online" ? "Find another game" : "Play again"}
-            </Button>
+            game.canRunTable() ? (
+              <Button size="lg" onClick={() => game.playAgain()}>
+                {game.mode === "online" ? "Find another game" : "Play again"}
+              </Button>
+            ) : (
+              // Friends room: only its creator starts the next game
+              <Button size="lg" onClick={() => game.closeWinner()}>
+                OK · {game.roomOwnerName()} starts the next game
+              </Button>
+            )
           ) : (
             <Button size="lg" onClick={() => game.closeWinner()}>
               Watch the rest

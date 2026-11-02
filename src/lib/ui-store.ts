@@ -4,8 +4,11 @@ import { useSyncExternalStore } from "react";
 
 import type { Color } from "@/lib/game/types";
 
-/** profileOf: whose player profile is open (the colour of their seat). */
-type UiState = { settingsOpen: boolean; leaveOpen: boolean; profileOf: Color | null };
+/**
+ * leaveOpen: the game menu is open, from the Menu button or the phone's Back button.
+ * profileOf: whose player profile is open (the colour of their seat).
+ */
+type UiState = { settingsOpen: boolean; leaveOpen: false | "menu" | "back"; profileOf: Color | null };
 
 let ui: UiState = { settingsOpen: false, leaveOpen: false, profileOf: null };
 const listeners = new Set<() => void>();

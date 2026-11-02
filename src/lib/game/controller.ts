@@ -86,6 +86,8 @@ const newGameId = () => Date.now().toString(36) + Math.random().toString(36).sli
 
 /** "Continue your pass-and-play game" is offered for this long after the last move. */
 const LOCAL_RESUME_MS = 60 * 60_000;
+/** Friends room: its creator offline this long hands starting / restarting to the next player. */
+const OWNER_AWAY_MS = 30_000;
 /** Where the computer players "come from" (flags on their name tags). */
 const BOT_COUNTRIES = ["IN", "BD", "PK", "NP", "LK", "AE", "SA", "ID", "MY", "PH", "NG", "GB", "US", "CA", "AU", "BR"];
 /** Rejoining a game whose table nobody is at: wait this long for the others before calling it over. */
@@ -646,6 +648,7 @@ export class GameController {
     else this.transport?.sendToHost({ type: "leave", id: this.myId });
   };
   start = () => {
+    if (!this.canRunTable()) return;
     if (this.isHost || !this.isNet()) this.startGame();
     else this.transport?.sendToHost({ type: "start" });
   };
@@ -658,10 +661,14 @@ export class GameController {
   };
   reset = () => {
     this.confirmReset = false;
+    if (!this.canRunTable()) return;
+    // Friends: whoever runs the room now keeps it (the creator may have gone).
+    const owner = this.mode === "friends" ? this.roomOwnerId() : undefined;
     this.commit((s) => {
       const { players, seats, capacity } = s;
       Object.assign(s, freshState(), { players, seats, gid: newGameId() });
       if (capacity) s.capacity = capacity;
+      if (owner) s.owner = owner;
       if (this.isNet()) s.seats = seatsFor(players);
       else {
         s.phase = "playing";
@@ -672,8 +679,10 @@ export class GameController {
   };
   clearSeats = () => {
     this.confirmReset = false;
+    if (!this.canRunTable()) return;
+    const owner = this.roomOwnerId();
     this.commit((s) => {
-      Object.assign(s, freshState());
+      Object.assign(s, freshState(), owner ? { owner } : {});
     });
   };
   setConfirmReset(v: boolean) {
@@ -703,6 +712,29 @@ export class GameController {
       seat.takeover = false;
       addLog(s, c, `${seat.nick} is back in control.`);
     });
+  }
+  /** Friends room: who starts and restarts its games. The one who created it; if they've left, whoever joined first. */
+  roomOwnerId(): string {
+    const s = this.state;
+    // Gone: left the room, or offline for a while (a quick drop and back keeps the room theirs).
+    const gone = (id: string) =>
+      COLORS.some((c) => {
+        const seat = s.seats[c];
+        if (seat?.id !== id) return false;
+        const a = this.awayInfo(seat);
+        return !!seat.left || (a.away && a.since > 0 && Date.now() - a.since > OWNER_AWAY_MS);
+      });
+    const here = (id: string) => s.players.some((p) => p.id === id) && !gone(id);
+    if (s.owner && here(s.owner)) return s.owner;
+    return s.players.find((p) => here(p.id))?.id || s.owner || "";
+  }
+  roomOwnerName() {
+    const id = this.roomOwnerId();
+    return this.state.players.find((p) => p.id === id)?.nick || "the room's creator";
+  }
+  /** May I start / restart the game at this table? (In a friends room only its creator may.) */
+  canRunTable() {
+    return this.mode !== "friends" || this.roomOwnerId() === this.myId;
   }
   /** Am I in a game that leaving now would walk out of? (Then Menu / Back ask first.) */
   leaveNeedsConfirm(): boolean {
@@ -1189,7 +1221,7 @@ export class GameController {
   playAgain() {
     this.winOpen = false;
     if (this.mode === "online") this.startOnline(this.wantCount);
-    else this.reset();
+    else if (this.canRunTable()) this.reset();
   }
 
   // ============================================================ board rotation
@@ -1716,6 +1748,8 @@ export class GameController {
           if (this.rejoinGid !== null && this.mode === "online") this.rejoinUntil = Date.now() + REJOIN_WAIT_MS;
           if (prevHost && prevHost !== this.myId && prevHostHeard) this.lastSeen[prevHost] = prevHostHeard;
           let s = carry || (this.mode === "friends" && this.services.saves.loadRoom(code)) || freshState();
+          // A new friends room belongs to whoever opened it first.
+          if (this.mode === "friends" && !s.owner) s = { ...s, owner: this.myId };
           if (this.mode === "online" && !s.capacity) s = { ...s, capacity: this.wantCount };
           this.state = s;
           const first = !this.loaded;
@@ -1797,7 +1831,7 @@ export class GameController {
       link.pid = m.id;
       this.hostJoin(m.id, String(m.nick || "Player").slice(0, NICK_MAX), { cc: m.cc, av: m.av });
     } else if (m.type === "leave" && typeof m.id === "string") this.hostLeave(m.id);
-    else if (m.type === "start") this.startGame();
+    else if (m.type === "start" && (this.mode !== "friends" || link.pid === this.roomOwnerId())) this.startGame();
     else if (m.type === "chat") {
       if (this.addChat(m)) this.transport?.broadcast(m, link);
     } else if (m.type === "typing") {
