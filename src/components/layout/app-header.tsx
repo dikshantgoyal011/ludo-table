@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Menu as MenuIcon, Settings as SettingsIcon } from "lucide-react";
+import { InviteDialog } from "@/components/game/invite-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useGame } from "@/hooks/use-game";
@@ -42,23 +43,9 @@ export function AppHeader() {
     router.push(`/r/${v}`);
   };
 
-  const invite = async () => {
-    const link = game.inviteLink();
-    if (!link) return;
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: "Ludo Darbar", text: `Join my Ludo room ${game.room}`, url: link });
-        return;
-      } catch (e) {
-        if (e instanceof Error && e.name === "AbortError") return;
-      }
-    }
-    try {
-      await navigator.clipboard.writeText(link);
-      game.setBanner(`Invite link copied: ${link}`);
-    } catch {
-      game.setBanner(`Send this link to your friends: ${link}`);
-    }
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const invite = () => {
+    if (game.inviteLink()) setInviteOpen(true);
   };
 
   return (
@@ -150,6 +137,7 @@ export function AppHeader() {
           </Button>
         </div>
       )}
+      <InviteDialog open={inviteOpen} onClose={() => setInviteOpen(false)} />
     </>
   );
 }

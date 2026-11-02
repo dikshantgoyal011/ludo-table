@@ -55,7 +55,7 @@ export function TurnCard() {
         hint = "Type your name, pick your color and tap Join game.";
       } else if (n < 2) {
         title = "Waiting for friends";
-        hint = "Tap Invite and send the link. Each friend joins on their own phone.";
+        hint = "Tap Invite to send the link or the room code. Each friend joins on their own phone.";
       } else {
         title = `${n} players ready`;
         hint = game.canRunTable() ? "Tap Start game when everyone's here." : `Waiting for ${game.roomOwnerName()} to start the game.`;

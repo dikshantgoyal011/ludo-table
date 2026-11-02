@@ -21,7 +21,7 @@ export function RoomScreen({ code }: { code: string }) {
       return;
     }
     game.startFriends(room);
-    if (isNew) game.setBanner(`New room ${room} is ready. Tap Invite and send the link to your friends.`);
+    if (isNew) game.setBanner(`New room ${room} is ready. Tap Invite to send your friends the link or the code.`);
   }, [room, isNew, game, router]);
 
   if (!mounted || game.mode !== "friends") return null;
