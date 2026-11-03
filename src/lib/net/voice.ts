@@ -62,7 +62,7 @@ export class VoiceChat {
     this.hearOne.clear();
     this.meterTimer = setInterval(() => this.measure(), 200);
     // Phones only play sound after a tap: start anything that was held back on the next one.
-    document.addEventListener("pointerdown", this.unlock, { passive: true });
+    if (typeof document !== "undefined") document.addEventListener("pointerdown", this.unlock, { passive: true });
     this.changed();
   }
 
@@ -74,7 +74,7 @@ export class VoiceChat {
     this.silence = null;
     if (this.meterTimer) clearInterval(this.meterTimer);
     this.meterTimer = null;
-    document.removeEventListener("pointerdown", this.unlock);
+    if (typeof document !== "undefined") document.removeEventListener("pointerdown", this.unlock);
     void this.ctx?.close().catch(() => {});
     this.ctx = null;
     this.speaking.clear();

@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bot, Globe, Smartphone, Sparkles, Users, type LucideIcon } from "lucide-react";
+import { Bot, Globe, GraduationCap, Smartphone, Sparkles, Users, type LucideIcon } from "lucide-react";
+import { openTutorial } from "@/components/tutorial/tutorial";
 import { Button } from "@/components/ui/button";
 import { getController, useSettings } from "@/hooks/use-game";
 import { isRoomCode, MODE_ORDER, MODES } from "@/lib/game/constants";
-import type { Mode } from "@/lib/game/types";
+import type { GameId, Mode } from "@/lib/game/types";
 import { variantById, type Variant } from "@/lib/game/variants";
 import type { ActiveRoom } from "@/lib/services/types";
 import type { BoardStyleId } from "@/lib/theme/boards";
@@ -93,7 +94,7 @@ function ResumeButtons() {
             else setRejoin(null);
           }}
         >
-          Rejoin your {rejoin.mode === "online" ? "online" : "friends"} Ludo game
+          Rejoin your {rejoin.mode === "online" ? "online" : "friends"} game
         </Button>
       )}
       {resume && (
@@ -104,7 +105,7 @@ function ResumeButtons() {
             if (getController().resumeOffline()) router.push("/game");
           }}
         >
-          Continue your {MODES[resume].chip.toLowerCase()} Ludo game
+          Continue your {MODES[resume].chip.toLowerCase()} game
         </Button>
       )}
     </div>
@@ -112,7 +113,7 @@ function ResumeButtons() {
 }
 
 /** The four ways to play a game that's ready. */
-function PlayModes() {
+function PlayModes({ game }: { game: string }) {
   return (
     <div className="grid grid-cols-2 gap-2.5">
       {MODE_ORDER.map((key, k) => {
@@ -121,7 +122,7 @@ function PlayModes() {
         return (
           <Link
             key={key}
-            href={`/play/${key}`}
+            href={`/play/${key}${game === "ludo" ? "" : `?game=${game}`}`}
             className={cn(
               "group flex min-h-[92px] flex-col justify-between gap-2 rounded-2xl border p-3 text-left transition outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[.97]",
               primary
@@ -225,10 +226,17 @@ function Showcase({ v, onPick }: { v: Variant; onPick: (id: string) => void }) {
             </li>
           ))}
         </ul>
+        {v.ready && (v.id === "ludo" || v.id === "pachisi") && (
+          <Button variant="outline" className="self-start" onClick={() => openTutorial(v.id as GameId)}>
+            <GraduationCap className="size-4" /> How to play {v.name}
+          </Button>
+        )}
         {v.ready ? (
           <>
-            <PlayModes />
-            <p className="text-xs text-muted-foreground">Random dice that give you a little help when you&apos;re stuck.</p>
+            <PlayModes game={v.id} />
+            <p className="text-xs text-muted-foreground">
+              {v.thrown === "cowries" ? "Real cowrie odds, with a little help when you're stuck." : "Random dice that give you a little help when you're stuck."}
+            </p>
           </>
         ) : (
           <div className="flex flex-col gap-3 rounded-2xl border border-dashed border-primary/50 bg-background/40 p-4">

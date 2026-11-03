@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { RotateCcw } from "lucide-react";
+import { GraduationCap, RotateCcw } from "lucide-react";
+import { openTutorial } from "@/components/tutorial/tutorial";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -40,6 +41,7 @@ export function useBackGuard() {
       // Back closes an open sheet first, like it does in apps.
       const g = getController();
       if (g.chatOpen) g.closeChat();
+      else if (uiStore.get().tutorial) uiStore.set({ tutorial: null });
       else if (uiStore.get().profileOf) uiStore.set({ profileOf: null });
       else if (uiStore.get().settingsOpen) uiStore.set({ settingsOpen: false });
       else uiStore.set({ leaveOpen: "back" });
@@ -85,6 +87,16 @@ export function LeaveDialog() {
         <div className="mt-2 flex w-full flex-col gap-2">
           <Button size="lg" onClick={close}>
             Keep playing
+          </Button>
+          <Button
+            size="lg"
+            variant="outline"
+            onClick={() => {
+              close();
+              openTutorial(game.state.game || "ludo");
+            }}
+          >
+            <GraduationCap className="size-4" /> How to play
           </Button>
           {canRestart &&
             (!sure ? (

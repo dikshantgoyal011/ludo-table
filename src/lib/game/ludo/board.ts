@@ -1,6 +1,9 @@
-// Board geometry on a 15 x 15 grid. [row, col] pairs.
-import { COLORS, FINISH, START } from "./constants";
-import type { Color } from "./types";
+// Ludo board geometry on a 15 x 15 grid. [row, col] pairs.
+import type { Color, Point } from "../types";
+
+export const START: Record<Color, number> = { red: 0, green: 13, yellow: 26, blue: 39 };
+export const SAFE = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
+export const FINISH = 56;
 
 export const TRACK: [number, number][] = [];
 const push = (r: number, c: number) => TRACK.push([r, c]);
@@ -31,13 +34,6 @@ export const FINISH_PT: Record<Color, [number, number]> = { red: [6.55, 7.5], gr
 
 export const trackIdx = (c: Color, p: number) => (START[c] + p) % 52;
 
-export interface Point {
-  x: number;
-  y: number;
-  /** Tokens sharing a key sit on the same square. */
-  key: string;
-}
-
 /** Where token i of colour c sits when it is at position p. */
 export function basePoint(c: Color, i: number, p: number): Point {
   if (p === -1) {
@@ -56,5 +52,3 @@ export function basePoint(c: Color, i: number, p: number): Point {
   const [x, y] = FINISH_PT[c];
   return { x, y, key: "f" + c };
 }
-
-export const ALL_COLORS = COLORS;

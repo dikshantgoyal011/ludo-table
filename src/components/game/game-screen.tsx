@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
+import { openTutorial } from "@/components/tutorial/tutorial";
 import { useGame } from "@/hooks/use-game";
 import { cn } from "@/lib/utils";
 import { Board } from "./board";
@@ -17,6 +18,19 @@ export function GameScreen() {
   const net = game.isNet();
   const playing = game.loaded && game.state.phase === "playing";
   useBackGuard();
+
+  // First Pachisi game on this device: show How to play (most people only know Ludo).
+  const pachisi = game.state.game === "pachisi";
+  useEffect(() => {
+    if (!playing || !pachisi) return;
+    try {
+      if (localStorage.getItem("ludo.seenPachisiHelp")) return;
+      localStorage.setItem("ludo.seenPachisiHelp", "1");
+    } catch {
+      return;
+    }
+    openTutorial("pachisi");
+  }, [playing, pachisi]);
 
   // While a game is on, the screen is locked to one phone screen: nothing scrolls,
   // the board takes the room that's left (see .in-game in globals.css).

@@ -22,7 +22,8 @@ import {
   newRoomCode,
   NICK_MAX,
 } from "@/lib/game/constants";
-import type { Color, Mode } from "@/lib/game/types";
+import type { Color, GameId, Mode } from "@/lib/game/types";
+import { variantById } from "@/lib/game/variants";
 import type { Profile } from "@/lib/services/types";
 import { cn } from "@/lib/utils";
 import { GameStrip } from "./game-picker";
@@ -66,6 +67,13 @@ export function SetupScreen({ mode }: { mode: Mode }) {
   const [profile, save] = useProfile();
   const [error, setError] = useState("");
   const [code, setCode] = useState("");
+  // Which game: ?game= in the address (Ludo when absent).
+  const [game, setGame] = useState<GameId>("ludo");
+  useEffect(() => {
+    setGame(new URLSearchParams(window.location.search).get("game") === "pachisi" ? "pachisi" : "ludo");
+  }, []);
+  const v = variantById(game);
+  const gameQuery = game === "ludo" ? "" : `?game=${game}`;
 
   // Opening a setup screen leaves any table that was running.
   useEffect(() => {
@@ -76,10 +84,14 @@ export function SetupScreen({ mode }: { mode: Mode }) {
   // The same game strip, in the same place, as on the home page: switch game in one tap.
   const strip = (
     <GameStrip
-      selected="ludo"
+      selected={game}
       onSelect={(id) => {
         rememberGame(id);
-        if (id !== "ludo") go(`/?game=${id}`);
+        // Another playable game: stay on this screen with it; one that's coming: show it on the home page.
+        if (variantById(id).ready && (id === "ludo" || id === "pachisi")) {
+          setGame(id);
+          router.replace(`/play/${mode}${id === "ludo" ? "" : `?game=${id}`}`);
+        } else go(`/?game=${id}`);
       }}
     />
   );
@@ -103,7 +115,7 @@ export function SetupScreen({ mode }: { mode: Mode }) {
           {MODE_ORDER.map((m) => (
             <Link
               key={m}
-              href={`/play/${m}`}
+              href={`/play/${m}${gameQuery}`}
               replace
               aria-current={m === mode ? "page" : undefined}
               className={cn(
@@ -118,7 +130,7 @@ export function SetupScreen({ mode }: { mode: Mode }) {
           ))}
         </nav>
         <CardHeader>
-          <CardTitle>Ludo · {MODES[mode].title}</CardTitle>
+          <CardTitle>{v.name} · {MODES[mode].title}</CardTitle>
           <CardDescription>{MODES[mode].desc}</CardDescription>
         </CardHeader>
 
@@ -158,7 +170,7 @@ export function SetupScreen({ mode }: { mode: Mode }) {
               size="lg"
               className="w-full"
               onClick={() => {
-                getController().startOnline(profile.onlineCount);
+                getController().startOnline(profile.onlineCount, game);
                 go("/game");
               }}
             >
@@ -176,7 +188,7 @@ export function SetupScreen({ mode }: { mode: Mode }) {
             <Button
               size="lg"
               className="w-full"
-              onClick={() => go(`/r/${newRoomCode()}`)}
+              onClick={() => go(`/r/${newRoomCode()}${gameQuery}`)}
             >
               Create a room
             </Button>
@@ -233,7 +245,7 @@ export function SetupScreen({ mode }: { mode: Mode }) {
               size="lg"
               className="w-full"
               onClick={() => {
-                getController().startComputer(profile.cpuCount);
+                getController().startComputer(profile.cpuCount, game);
                 go("/game");
               }}
             >
@@ -246,6 +258,7 @@ export function SetupScreen({ mode }: { mode: Mode }) {
           <LocalSetup
             profile={profile}
             save={save}
+            game={game}
             onStart={() => go("/game")}
           />
         )}
@@ -265,10 +278,12 @@ export function SetupScreen({ mode }: { mode: Mode }) {
 function LocalSetup({
   profile,
   save,
+  game,
   onStart,
 }: {
   profile: Profile;
   save: (p: Partial<Profile>) => void;
+  game: GameId;
   onStart: () => void;
 }) {
   const setup = profile.localSetup;
@@ -324,7 +339,7 @@ function LocalSetup({
         onClick={() => {
           const fixed = fixLocalColors(setup);
           update(fixed);
-          getController().startLocal(fixed.rows.slice(0, fixed.count));
+          getController().startLocal(fixed.rows.slice(0, fixed.count), game);
           onStart();
         }}
       >

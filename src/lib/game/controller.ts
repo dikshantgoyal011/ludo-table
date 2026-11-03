@@ -17,7 +17,6 @@ import {
   CI,
   COLORS,
   DICE_ROLL_MS,
-  FINISH,
   HOST_SILENT_MS,
   MAX_MISSES,
   MISS_PENALTY,
@@ -30,27 +29,8 @@ import {
   STEP_MS,
   TYPING_TTL,
 } from "./constants";
-import { rollDie } from "./dice";
-import { basePoint } from "./geometry";
-import { diceOdds } from "./luck";
-import {
-  addLog,
-  applyMove,
-  applyRoll,
-  canMove,
-  chooseMove,
-  clone,
-  freshState,
-  freshTokens,
-  leaveGame,
-  missTurn,
-  movable,
-  seatName,
-  seated,
-  seatsFor,
-  validState,
-} from "./rules";
-import type { ChatMessage, Color, GameState, Looks, Mode, Seat } from "./types";
+import { addLog, clone, finishOf, freshState, freshTokens, leaveGame, missTurn, movable, rulesFor, seatName, seated, seatsFor, validState } from "./rules";
+import type { ChatMessage, Color, GameId, GameState, Looks, Mode, MoveOpt, Seat } from "./types";
 
 export type NetKind = "" | "ok" | "bad";
 
@@ -65,6 +45,8 @@ export interface TokenView {
   /** Cut: flying back to its yard (a longer glide, it can cross the board). */
   returning: boolean;
   hidden: boolean;
+  /** Pachisi: lying on its side (on its way back up, or home). */
+  lying?: boolean;
 }
 
 /** How long a cut token takes to fly home (matches .token.returning in globals.css). */
@@ -79,8 +61,8 @@ interface MoveAnim {
 
 type GameEvent = { type: "roll"; value: number; color: Color } | { type: "confetti" };
 
-/** A guest's own roll or move, shown before the host confirms it. `seq`: the roll it belongs to. */
-type Pending = { kind: "roll"; c: Color; v: number; seq: number; at: number } | { kind: "move"; c: Color; i: number; seq: number; at: number };
+/** A guest's own roll or move, shown before the host confirms it. `seq`: the roll it belongs to. A move of token -1 is a skip (Pachisi). */
+type Pending = { kind: "roll"; c: Color; v: number; seq: number; at: number } | { kind: "move"; c: Color; i: number; opt: MoveOpt; seq: number; at: number };
 
 const newGameId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
@@ -101,10 +83,21 @@ const RESEARCH_MS = 8_000;
 /** Unconfirmed actions older than this are dropped (the message must have been lost). */
 const PENDING_TIMEOUT = 4_000;
 
+/** A number someone could really have rolled / thrown in this game. */
+const validRoll = (s: GameState, v: number) => rulesFor(s).validRoll(v);
+
 function applyPending(s: GameState, a: Pending) {
-  if (a.kind === "roll") return applyRoll(s, a.c, a.v);
-  if (s.phase !== "playing" || s.turn !== a.c || !s.roll || (s.last?.seq || 0) !== a.seq || !canMove(s.tokens[a.c][a.i], s.roll)) return false;
-  applyMove(s, a.c, a.i, s.roll);
+  if (a.kind === "roll") return rulesFor(s).applyRoll(s, a.c, a.v);
+  if (s.phase !== "playing" || s.turn !== a.c || !s.roll || (s.last?.seq || 0) !== a.seq) return false;
+  return applyChoice(s, a.c, a.i, a.opt);
+}
+
+/** c moves token i with the roll in hand (i = -1: chooses not to move, where the game allows it). false if that isn't possible. */
+function applyChoice(s: GameState, c: Color, i: number, opt: MoveOpt) {
+  const r = rulesFor(s);
+  if (i === -1) return !!r.pass && r.pass(s, c);
+  if (!s.roll || !r.moveChoices(s, c, i, s.roll).length) return false;
+  r.applyMove(s, c, i, s.roll, opt);
   return true;
 }
 
@@ -134,6 +127,8 @@ export class GameController {
   searchN = 0;
   /** Online: the table size the player asked for. */
   wantCount = 2;
+  /** The game picked for the next table (online / friends rooms set up here). */
+  wantGame: GameId = "ludo";
   banner = "";
   net: { kind: NetKind; text: string } = { kind: "", text: "Connecting…" };
   confirmReset = false;
@@ -357,6 +352,16 @@ export class GameController {
     const s = this.state;
     return this.loaded && this.connected() && !this.rolling && s.phase === "playing" && !s.roll && this.mine(s, s.turn);
   }
+  /** I hold a roll and may choose not to move with it (games that allow it: Pachisi). */
+  canPass() {
+    const s = this.state;
+    return this.loaded && this.connected() && !this.rolling && !!rulesFor(s).pass && s.phase === "playing" && !!s.roll && this.mine(s, s.turn);
+  }
+  /** The ways my token i can move with the roll in hand (more than one: let me pick). */
+  choicesFor(c: Color, i: number) {
+    const s = this.state;
+    return s.phase === "playing" && s.roll && s.turn === c ? rulesFor(s).moveChoices(s, c, i, s.roll) : [];
+  }
   /** Online/friends: only act while connected, or this device's game would drift from everyone else's. */
   private connected() {
     return !this.isNet() || this.online;
@@ -452,8 +457,8 @@ export class GameController {
   private doRoll(c: Color) {
     const s0 = this.state;
     if (this.rolling || s0.phase !== "playing" || s0.turn !== c || s0.roll) return;
-    // Random, with odds that lean on the state of the game (luck.ts).
-    const v = rollDie(diceOdds(s0, c).p);
+    // Random, the game's own way (Ludo's dice odds, Pachisi's cowrie shells).
+    const v = rulesFor(s0).roll(s0, c);
     this.rolling = true;
     this.rollColor = c;
     // Everyone else's dice starts spinning now too, not after mine has landed.
@@ -468,7 +473,7 @@ export class GameController {
         if (this.predict({ kind: "roll", c, v, seq, at: Date.now() })) this.seenSeq = seq;
       } else
         this.commit((s) => {
-          if (!applyRoll(s, c, v)) return false;
+          if (!rulesFor(s).applyRoll(s, c, v)) return false;
           this.seenSeq = s.last?.seq ?? null;
         });
       this.emit();
@@ -482,9 +487,9 @@ export class GameController {
     const seat = s.seats[c];
     // Checked against the game only, never this screen's animations: a guest's
     // roll or move that arrives while its dice still spins here must not be lost.
-    if (!seat || seat.id !== link.pid || seat.bot || !(v >= 1 && v <= 6)) return;
+    if (!seat || seat.id !== link.pid || seat.bot || !validRoll(s, v)) return;
     if (s.phase !== "playing" || s.turn !== c || s.roll) return;
-    this.commit((n) => applyRoll(n, c, v), true);
+    this.commit((n) => rulesFor(n).applyRoll(n, c, v), true);
     this.onRemoteState();
   }
 
@@ -497,7 +502,7 @@ export class GameController {
   /** Someone else tapped their dice: spin it here now; the roll itself follows. */
   private showRemoteDice(c: Color, v: number, seq: number) {
     const s = this.state;
-    if (s.phase !== "playing" || s.turn !== c || s.roll || !(v >= 1 && v <= 6)) return false;
+    if (s.phase !== "playing" || s.turn !== c || s.roll || !validRoll(s, v)) return false;
     if (seq !== (s.last?.seq || 0) + 1 || this.preRolledSeq === seq) return false;
     this.preRolledSeq = seq;
     this.preRolledColor = c;
@@ -537,17 +542,16 @@ export class GameController {
     this.emit();
   }
 
-  private doMove(c: Color, i: number) {
+  private doMove(c: Color, i: number, opt: MoveOpt = {}) {
     if (this.guest) {
       const seq = this.state.last?.seq || 0;
-      this.transport?.sendToHost({ type: "move", id: this.myId, c, i });
-      this.predict({ kind: "move", c, i, seq, at: Date.now() });
+      this.transport?.sendToHost({ type: "move", id: this.myId, c, i, pair: !!opt.pair, extra: !!opt.extra });
+      this.predict({ kind: "move", c, i, opt, seq, at: Date.now() });
       return;
     }
     this.commit((s) => {
       if (s.phase !== "playing" || s.turn !== c || !s.roll) return false;
-      if (!canMove(s.tokens[c][i], s.roll)) return false;
-      applyMove(s, c, i, s.roll);
+      return applyChoice(s, c, i, opt);
     });
   }
 
@@ -558,8 +562,10 @@ export class GameController {
     const c = s.turn;
     if (!s.roll) this.doRoll(c);
     else {
-      const i = chooseMove(s, c, s.roll);
-      if (i >= 0) this.doMove(c, i);
+      const r = rulesFor(s);
+      const { i, opt } = r.chooseMove(s, c, s.roll);
+      if (i >= 0) this.doMove(c, i, opt);
+      else if (r.pass) this.doMove(c, -1);
     }
   }
 
@@ -655,9 +661,15 @@ export class GameController {
   roll = () => {
     if (this.canRollNow() && this.state.turn) this.doRoll(this.state.turn);
   };
-  move = (c: Color, i: number) => {
+  move = (c: Color, i: number, opt: MoveOpt = {}) => {
     const s = this.state;
-    if (s.phase === "playing" && s.turn === c && this.mine(s, c) && this.connected()) this.doMove(c, i);
+    if (s.phase === "playing" && s.turn === c && this.mine(s, c) && this.connected()) this.doMove(c, i, opt);
+  };
+  /** Don't move with this roll (games that allow it: Pachisi). */
+  pass = () => {
+    const s = this.state;
+    const c = s.turn;
+    if (c && rulesFor(s).pass && s.phase === "playing" && s.roll && this.mine(s, c) && this.connected()) this.doMove(c, -1);
   };
   reset = () => {
     this.confirmReset = false;
@@ -665,9 +677,10 @@ export class GameController {
     // Friends: whoever runs the room now keeps it (the creator may have gone).
     const owner = this.mode === "friends" ? this.roomOwnerId() : undefined;
     this.commit((s) => {
-      const { players, seats, capacity } = s;
+      const { players, seats, capacity, game } = s;
       Object.assign(s, freshState(), { players, seats, gid: newGameId() });
       if (capacity) s.capacity = capacity;
+      if (game) s.game = game;
       if (owner) s.owner = owner;
       if (this.isNet()) s.seats = seatsFor(players);
       else {
@@ -682,7 +695,8 @@ export class GameController {
     if (!this.canRunTable()) return;
     const owner = this.roomOwnerId();
     this.commit((s) => {
-      Object.assign(s, freshState(), owner ? { owner } : {});
+      const { game } = s;
+      Object.assign(s, freshState(), owner ? { owner } : {}, game ? { game } : {});
     });
   };
   setConfirmReset(v: boolean) {
@@ -793,12 +807,13 @@ export class GameController {
     return true;
   }
 
-  startComputer(count: number) {
+  startComputer(count: number, game: GameId = "ludo") {
     this.leaveCurrent();
     const human = this.pref;
     const hi = CI[human];
     const offsets = ({ 2: [0, 2], 3: [0, 1, 2], 4: [0, 1, 2, 3] } as Record<number, number[]>)[count] || [0, 2];
     const s = freshState();
+    if (game !== "ludo") s.game = game;
     let bot = 0;
     // Computer players come from around the Ludo-playing world: a different flag each.
     const lands = BOT_COUNTRIES.filter((cc) => cc !== this.myLooks().cc).sort(() => Math.random() - 0.5);
@@ -815,9 +830,10 @@ export class GameController {
     this.startOffline(s, true); // my corner animates to the bottom-left
   }
 
-  startLocal(rows: { name: string; color: Color }[]) {
+  startLocal(rows: { name: string; color: Color }[], game: GameId = "ludo") {
     this.leaveCurrent();
     const s = freshState();
+    if (game !== "ludo") s.game = game;
     // Everyone is at this phone: they share its country.
     const cc = this.myLooks().cc;
     rows.forEach((r, k) => {
@@ -833,10 +849,11 @@ export class GameController {
   }
 
   /** Public matchmaking: only tables for exactly `count` players. */
-  startOnline(count = this.wantCount) {
+  startOnline(count = this.wantCount, game: GameId = this.wantGame) {
     this.leaveCurrent();
     this.mode = "online";
     this.wantCount = count;
+    this.wantGame = game;
     this.autoJoin = true;
     this.searching = true;
     this.findGame(0);
@@ -852,13 +869,16 @@ export class GameController {
     this.searchN = n;
     this.searching = true;
     this.autoJoin = true;
-    void this.openRoom(`pub${this.wantCount}x${n}`);
+    // Each game has its own public tables (Pachisi players only meet Pachisi players).
+    void this.openRoom(`pub${this.wantGame === "pachisi" ? "p" : ""}${this.wantCount}x${n}`);
   }
 
-  startFriends(code: string) {
+  /** Friends room `code`; `game` is used if this device sets the room up (a new room). */
+  startFriends(code: string, game: GameId = "ludo") {
     if (this.mode === "friends" && this.room === code) return;
     this.leaveCurrent();
     this.mode = "friends";
+    this.wantGame = game;
     this.autoJoin = true;
     void this.openRoom(code);
   }
@@ -936,6 +956,8 @@ export class GameController {
     this.wantCount = a.count;
     // Show the last known board straight away; the table's live state replaces it once connected.
     const carry = this.services.saves.loadRoom(a.room);
+    // "Find another game" after this one looks for the same game.
+    this.wantGame = carry?.game || (a.room.startsWith("pubp") ? "pachisi" : "ludo");
     // Check, once connected, that it's still this game and I'm still in it.
     this.rejoinGid = carry?.gid ?? a.gid ?? "";
     if (carry) {
@@ -1000,12 +1022,13 @@ export class GameController {
   // ============================================================ token animation
   tokenViews(): TokenView[] {
     const s = this.state;
-    const groups: Record<string, { c: Color; i: number; x: number; y: number }[]> = {};
+    const rules = rulesFor(s);
+    const groups: Record<string, { c: Color; i: number; x: number; y: number; lying?: boolean }[]> = {};
     for (const c of COLORS)
       s.tokens[c].forEach((p0, i) => {
         const p = this.animPos[c + i] !== undefined ? this.animPos[c + i] : p0;
-        const b = basePoint(c, i, p);
-        (groups[b.key] = groups[b.key] || []).push({ c, i, x: b.x, y: b.y });
+        const b = rules.point(c, i, p);
+        (groups[b.key] = groups[b.key] || []).push({ c, i, x: b.x, y: b.y, lying: b.lying });
       });
     const turn = s.turn;
     const moveSet = new Set<string>(
@@ -1036,6 +1059,7 @@ export class GameController {
           stepping: this.settings.steps && this.animPos[t.c + t.i] !== undefined && !this.comingOut.has(t.c + t.i),
           returning: this.returning.has(t.c + t.i),
           hidden: !s.seats[t.c] || !!s.seats[t.c]?.out,
+          lying: t.lying,
         });
       });
     }
@@ -1048,6 +1072,8 @@ export class GameController {
   private animateMove(m: MoveAnim, caps: { c: Color; i: number; a: number }[], delay: number) {
     const key = m.c + m.i;
     const steps = this.settings.steps && !reduceMotion();
+    // The squares in between, by the game's own route.
+    const stepsOf = rulesFor(this.state).steps;
     // The same token can move again before its last move has finished (a 6, then
     // an automatic move). Queue behind it instead of cutting it short.
     const gen = (this.animGen[key] = (this.animGen[key] || 0) + 1);
@@ -1063,7 +1089,7 @@ export class GameController {
         setTimeout(() => {
           // A newer move of this token takes over from here.
           if (latest()) delete this.animPos[key];
-          if (m.b === FINISH) this.play("home");
+          if (m.b === finishOf(this.state)) this.play("home");
           if (caps.length) {
             caps.forEach((k) => delete this.animPos[k.c + k.i]);
             this.sendHome(caps.map((k) => k.c + k.i));
@@ -1091,25 +1117,25 @@ export class GameController {
         finish(360);
         return;
       }
-      let p = m.a;
-      this.animPos[key] = p;
+      const path = stepsOf(m.a, m.b);
+      let k = 0;
+      this.animPos[key] = m.a;
       const iv = setInterval(() => {
         if (this.animOwner[key] !== gen) {
           clearInterval(iv);
           return;
         }
-        p++;
-        this.animPos[key] = p;
+        this.animPos[key] = path[k++];
         this.play("move");
         this.emit();
-        if (p >= m.b) {
+        if (k >= path.length) {
           clearInterval(iv);
           finish(STEP_MS);
         }
       }, STEP_MS);
       this.animTimers.push(iv as unknown as ReturnType<typeof setTimeout>);
     };
-    const total = delay + (m.a === -1 ? 380 : steps ? (m.b - m.a + 1) * STEP_MS : 360);
+    const total = delay + (m.a === -1 ? 380 : steps ? (stepsOf(m.a, m.b).length + 1) * STEP_MS : 360);
     this.animBusyUntil = Math.max(this.animBusyUntil, Date.now() + total);
     this.tokenBusyUntil[key] = Date.now() + total;
     if (delay) this.animTimers.push(setTimeout(run, delay));
@@ -1149,7 +1175,8 @@ export class GameController {
           const b = next.tokens[c][i];
           if (a === b) continue;
           if (b === -1 && a >= 0) caps.push({ c, i, a });
-          else if (b > a) moves.push({ c, i, a, b });
+          // (Tokens only ever move forward; a Pachisi piece heading home from a later round goes to a smaller number.)
+          else if (b !== -1) moves.push({ c, i, a, b });
         }
       // A remote roll animates the dice first, so hold the token until it lands.
       const newRoll = !!next.last && (!prev.last || prev.last.seq !== next.last.seq);
@@ -1637,7 +1664,7 @@ export class GameController {
     if (this.searching) {
       const s = this.state;
       const cap = s.capacity || 0;
-      const fits = s.phase === "lobby" && cap === this.wantCount && (s.players.length < cap || this.joined(s));
+      const fits = s.phase === "lobby" && cap === this.wantCount && (s.game || "ludo") === this.wantGame && (s.players.length < cap || this.joined(s));
       if (!fits) {
         const n = this.searchN + 1;
         this.teardown();
@@ -1751,6 +1778,8 @@ export class GameController {
           // A new friends room belongs to whoever opened it first.
           if (this.mode === "friends" && !s.owner) s = { ...s, owner: this.myId };
           if (this.mode === "online" && !s.capacity) s = { ...s, capacity: this.wantCount };
+          // A brand-new table plays the game it was set up for.
+          if (!carry && s.phase === "lobby" && !s.players.length && !s.game && this.wantGame !== "ludo") s = { ...s, game: this.wantGame };
           this.state = s;
           const first = !this.loaded;
           this.loaded = true;
@@ -1847,7 +1876,7 @@ export class GameController {
     }
     else if (m.type === "move" && link.pid && m.id === link.pid) {
       const seat = this.state.seats[m.c];
-      if (seat?.id === link.pid && !seat.bot) this.doMove(m.c, Number(m.i));
+      if (seat?.id === link.pid && !seat.bot) this.doMove(m.c, Number(m.i), { pair: !!m.pair, extra: !!m.extra });
     } else if (m.type === "voice" && link.pid && m.id === link.pid)
       this.hostVoice({ id: link.pid, peerId: String(m.peerId || ""), on: !!m.on, muted: !!m.muted });
     else if (m.type === "state") {

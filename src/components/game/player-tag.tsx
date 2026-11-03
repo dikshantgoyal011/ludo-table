@@ -2,15 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { Bot, MessageCircle, Mic, MicOff, UserRound, Volume2, VolumeX } from "lucide-react";
-import { useGame } from "@/hooks/use-game";
+import { useGame, useSettings } from "@/hooks/use-game";
 import { defaultAvatar } from "@/lib/avatars";
 import { countryName, flagUrl } from "@/lib/country";
-import { COLORS, FINISH, MAX_MISSES } from "@/lib/game/constants";
+import { COLORS, MAX_MISSES } from "@/lib/game/constants";
+import { finishOf } from "@/lib/game/rules";
 import type { Color, Seat } from "@/lib/game/types";
+import { themeOf } from "@/lib/theme/themes";
 import { uiStore } from "@/lib/ui-store";
 import { cn } from "@/lib/utils";
 import { Avatar } from "./avatar";
-import { useBoardStyle } from "./board";
+import { CowrieRow } from "./cowries";
 import { Dice3D } from "./dice-3d";
 
 /** Three bouncing dots for "typing…". */
@@ -106,7 +108,7 @@ export function PlayerTag({ corner }: { corner: number }) {
     const t = setTimeout(() => setMenu(false), 4000);
     return () => clearTimeout(t);
   }, [menu]);
-  const [, th] = useBoardStyle();
+  const th = themeOf(useSettings()[0].theme);
   const c = COLORS.find((col) => game.cornerOf(col) === corner) as Color;
   const s = game.state;
   const seat = s.seats[c];
@@ -117,7 +119,7 @@ export function PlayerTag({ corner }: { corner: number }) {
   const hex = th.pieces[game.displayColor(c)];
   const you = game.isYou(c);
 
-  const home = s.tokens[c].filter((p) => p === FINISH).length;
+  const home = s.tokens[c].filter((p) => p === finishOf(s)).length;
   const place = s.winners.indexOf(c);
   const timer = game.turnTimerOn(c);
   const note = seat ? statusNote(game, seat, place) : null;
@@ -129,6 +131,7 @@ export function PlayerTag({ corner }: { corner: number }) {
   const showBubble = !!bubble && Date.now() < bubble.until;
   const showTyping = !showBubble && !!seat && game.isTyping(seat.id);
   const takeover = !!seat?.takeover && s.phase === "playing";
+  const pachisi = s.game === "pachisi";
   // My own flag always comes from my settings (also in a game started before I picked one).
   const cc = seat ? (you ? game.myLooks().cc : seat.cc) : undefined;
 
@@ -139,6 +142,8 @@ export function PlayerTag({ corner }: { corner: number }) {
     <div
       className={cn(
         "relative flex min-w-0 items-center gap-2 rounded-xl py-1.5 transition-[background] duration-300",
+        // Pachisi: the cowries get a full row of their own under the name (they need room to be read).
+        pachisi && "flex-wrap gap-y-1.5",
         right ? "flex-row-reverse pr-3 pl-1.5 text-right" : "pr-1.5 pl-3",
         isTurn ? "tag-spotlight" : "tag-edge",
         right && "tag-right",
@@ -196,9 +201,9 @@ export function PlayerTag({ corner }: { corner: number }) {
         </div>
       )}
 
-      {/* The player's picture; on their turn it turns into the dice (same spot, so nothing moves). */}
+      {/* The player's picture; on their turn it turns into the dice (same spot, so nothing moves). Pachisi: always the picture. */}
       <div className="flex size-[38px] shrink-0 items-center justify-center min-[400px]:size-[42px] sm:size-[46px]">
-        {dieColor === c ? (
+        {dieColor === c && !pachisi ? (
           <Dice3D />
         ) : seat ? (
           <span className="flex size-[34px] items-center justify-center min-[400px]:size-[38px] sm:size-[42px]">
@@ -329,6 +334,11 @@ export function PlayerTag({ corner }: { corner: number }) {
           </div>
         )}
       </div>
+      {/*
+        Pachisi: the cowries sit with the player whose turn it is, big enough to count at a glance.
+        Every tag keeps the row's space, so nothing jumps as the cowries go round the table.
+      */}
+      {pachisi && <CowrieRow c={c} isTurn={isTurn} right={right} />}
     </div>
   );
 }

@@ -6,10 +6,6 @@ export const COLORS: Color[] = ["red", "green", "yellow", "blue"];
 export const CI: Record<Color, number> = { red: 0, green: 1, yellow: 2, blue: 3 };
 export const NAMES: Record<Color, string> = { red: "Red", green: "Green", yellow: "Yellow", blue: "Blue" };
 
-export const START: Record<Color, number> = { red: 0, green: 13, yellow: 26, blue: 39 };
-export const SAFE = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
-export const FINISH = 56;
-
 /** Which slots are used for 1..4 players. Two players sit opposite each other. */
 export const SLOTS_FOR: Color[][] = [[], ["red"], ["red", "yellow"], ["red", "green", "yellow"], ["red", "green", "yellow", "blue"]];
 

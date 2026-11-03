@@ -1,4 +1,4 @@
-// Dice odds that keep the game engaging. Every roll is still random; the
+// Ludo: dice odds that keep the game engaging. Every roll is still random; the
 // chance of each number just leans a little with the state of the game:
 //
 //  1. Stuck at the start: every roll without a 6 while all your tokens wait in
@@ -16,9 +16,9 @@
 // Each number always stays between MIN_P and MAX_P (a fair dice is 1/6 = 16.7%).
 // Everything is computed from the game state alone, so every device gets the
 // same odds and the same bookkeeping. The same rules apply to every player.
-import { COLORS, FINISH, SAFE } from "./constants";
-import { trackIdx } from "./geometry";
-import type { Color, GameState, LuckStats } from "./types";
+import { COLORS } from "../constants";
+import type { Color, GameState, LuckStats } from "../types";
+import { FINISH, SAFE, trackIdx } from "./board";
 
 export const MIN_P = 0.1;
 export const MAX_P = 0.3;

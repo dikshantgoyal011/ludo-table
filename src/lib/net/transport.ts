@@ -35,7 +35,8 @@ export type NetMessage =
    * the game changes, so two devices can never change it at the same moment.
    */
   | { type: "roll"; id: string; c: Color; v: number }
-  | { type: "move"; id: string; c: Color; i: number }
+  // i = -1: Pachisi skip. pair: two pieces together; extra: round again (Pachisi).
+  | { type: "move"; id: string; c: Color; i: number; pair?: boolean; extra?: boolean }
   /**
    * "My dice is spinning and will show v" (roll number `seq`), sent the moment
    * the player taps it, so everyone's dice spins together instead of one

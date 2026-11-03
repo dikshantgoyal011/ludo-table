@@ -3,6 +3,7 @@ import { Baloo_2, IBM_Plex_Mono, Rozha_One } from "next/font/google";
 import { AppHeader } from "@/components/layout/app-header";
 import { Confetti } from "@/components/game/confetti";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
+import { TutorialDialog } from "@/components/tutorial/tutorial";
 import { ThemeApplier } from "@/components/providers/theme-applier";
 import { themeBootScript } from "@/lib/theme/boot-script";
 import { brandVars, THEMES } from "@/lib/theme/themes";
@@ -48,6 +49,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </div>
         </div>
         <SettingsDialog />
+        <TutorialDialog />
         <Confetti />
       </body>
     </html>

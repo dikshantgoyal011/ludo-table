@@ -1,14 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { BoardPreview, TokenArt, useBoardStyle } from "@/components/game/board";
+import { useEffect, useId, useRef, useState } from "react";
+import { BoardPreview, TokenArt, useBoardStyle } from "@/components/game/ludo-board";
+import { PachisiPawn, PachisiSurface, pachisiLook, usePachisiStyle } from "@/components/game/pachisi-board";
+import { CowrieView } from "@/components/game/cowries";
 import { DiceView, newSpin, type DiceRoll } from "@/components/game/dice-3d";
-import { COLORS, DICE_ROLL_MS, FINISH, NAMES, SLOTS_FOR } from "@/lib/game/constants";
-import { rollDie } from "@/lib/game/dice";
-import { basePoint } from "@/lib/game/geometry";
-import { applyMove, applyRoll, chooseMove, clone, freshState } from "@/lib/game/rules";
-import type { Color, GameState } from "@/lib/game/types";
+
+import { COLORS, DICE_ROLL_MS, NAMES, SLOTS_FOR } from "@/lib/game/constants";
+import { rollDie } from "@/lib/game/ludo/dice";
+import { P_SIZE } from "@/lib/game/pachisi/board";
+import { clone, freshState, rulesFor } from "@/lib/game/rules";
+import type { Color, GameId, GameState } from "@/lib/game/types";
 import type { Variant } from "@/lib/game/variants";
+import type { PachisiStyle } from "@/lib/theme/boards";
 import { cn } from "@/lib/utils";
 
 const COLS = ["#c8262b", "#16894a", "#e9a912", "#1f5fcc"];
@@ -117,21 +121,36 @@ function Thrown({ kind }: { kind: Variant["thrown"] }) {
 // ---------------------------------------------------------------- Ludo: a real game played by the computer
 type Shown = Record<Color, number[]>;
 
-function freshDemo(players: number): GameState {
+
+/** The computer's move with the roll in hand (or none: games that allow it let the roll go). */
+function botMove(s: GameState, c: Color) {
+  if (!s.roll) return;
+  const r = rulesFor(s);
+  const { i, opt } = r.chooseMove(s, c, s.roll);
+  if (i >= 0) r.applyMove(s, c, i, s.roll, opt);
+  else r.pass?.(s, c);
+}
+
+function freshDemo(players: number, game: GameId = "ludo"): GameState {
   const s = freshState();
+  if (game !== "ludo") s.game = game;
   s.phase = "playing";
   for (const c of SLOTS_FOR[players]) s.seats[c] = { id: c, nick: NAMES[c], bot: true };
   s.turn = SLOTS_FOR[players][0];
   // Play a little first, so tokens are already out on the board.
+  const rules = rulesFor(game);
   for (let k = 0; k < 70 && s.phase === "playing"; k++) {
     const c = s.turn!;
-    applyRoll(s, c, rollDie());
-    if (s.roll) applyMove(s, c, chooseMove(s, c, s.roll), s.roll);
+    rules.applyRoll(s, c, rules.roll(s, c));
+    botMove(s, c);
   }
-  return s.phase === "playing" ? s : freshDemo(players);
+  return s.phase === "playing" ? s : freshDemo(players, game);
 }
 
-function LudoDemo({ twoDice = false }: { twoDice?: boolean }) {
+/** A real game played by the computer: Ludo on the theme's board, or Pachisi on its cloth. */
+function LudoDemo({ twoDice = false, game: kind = "ludo" }: { twoDice?: boolean; game?: GameId }) {
+  const pachisi = kind === "pachisi";
+  const rules = rulesFor(kind);
   const [style, th] = useBoardStyle();
   const game = useRef<GameState | null>(null);
   const [shown, setShown] = useState<Shown | null>(null);
@@ -152,7 +171,7 @@ function LudoDemo({ twoDice = false }: { twoDice?: boolean }) {
 
   useEffect(() => {
     let alive = true;
-    const s0 = freshDemo(4);
+    const s0 = freshDemo(4, kind);
     game.current = s0;
     const pos: Shown = clone(s0.tokens);
     setShown(clone(pos));
@@ -161,8 +180,8 @@ function LudoDemo({ twoDice = false }: { twoDice?: boolean }) {
     /** Apply a roll of v for c and walk the token exactly that far (or out of the yard on a 6). */
     const play = async (s: GameState, c: Color, v: number) => {
       const before = clone(s.tokens);
-      applyRoll(s, c, v);
-      if (s.roll) applyMove(s, c, chooseMove(s, c, s.roll), s.roll);
+      rules.applyRoll(s, c, v);
+      botMove(s, c);
       const moved = before[c].some((a, i) => s.tokens[c][i] > a);
       setDice((d) => ({ ...d, note: moved ? "" : "no move" }));
       for (let i = 0; i < 4 && alive; i++) {
@@ -176,7 +195,8 @@ function LudoDemo({ twoDice = false }: { twoDice?: boolean }) {
           continue;
         }
         setWalking(c + i);
-        for (let p = a + 1; p <= b && alive; p++) {
+        for (const p of rules.steps(a, b)) {
+          if (!alive) break;
           pos[c][i] = p;
           setShown(clone(pos));
           await wait(170);
@@ -201,13 +221,13 @@ function LudoDemo({ twoDice = false }: { twoDice?: boolean }) {
         let s = game.current!;
         if (s.phase !== "playing") {
           await wait(1500);
-          s = game.current = freshDemo(4);
+          s = game.current = freshDemo(4, kind);
           Object.assign(pos, clone(s.tokens));
           setShown(clone(pos));
         }
         const c = s.turn!;
         // The number is decided as the dice is thrown; the dice lands on it, then the token moves it.
-        const v1 = rollDie();
+        const v1 = rules.roll(s, c);
         const v2 = twoDice ? rollDie() : 0;
         const at = Date.now();
         id++;
@@ -235,42 +255,69 @@ function LudoDemo({ twoDice = false }: { twoDice?: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // Tokens sharing a square sit side by side (same idea as the real board).
-  const tokens: { key: string; c: Color; x: number; y: number; scale: number; home: boolean }[] = [];
+  const tokens: { key: string; c: Color; x: number; y: number; scale: number; home: boolean; lying?: boolean }[] = [];
   if (shown) {
-    const groups: Record<string, { c: Color; i: number; x: number; y: number }[]> = {};
+    const groups: Record<string, { c: Color; i: number; x: number; y: number; lying?: boolean }[]> = {};
     for (const c of COLORS)
       shown[c].forEach((p, i) => {
-        if (p === FINISH && !game.current?.seats[c]) return;
-        const b = basePoint(c, i, p);
-        (groups[b.key] ||= []).push({ c, i, x: b.x, y: b.y });
+        if (p === rules.finish && !game.current?.seats[c]) return;
+        const b = rules.point(c, i, p);
+        (groups[b.key] ||= []).push({ c, i, x: b.x, y: b.y, lying: b.lying });
       });
     Object.values(groups).forEach((list) =>
       list.forEach((t, k) => {
         const n = list.length;
         const ang = (k / n) * Math.PI * 2 - Math.PI / 4;
-        tokens.push({ key: t.c + t.i, home: shown[t.c][t.i] === -1, c: t.c, x: t.x + (n > 1 ? Math.cos(ang) * 0.2 : 0), y: t.y + (n > 1 ? Math.sin(ang) * 0.2 : 0), scale: n > 2 ? 0.62 : n > 1 ? 0.75 : 1 });
+        tokens.push({ lying: t.lying, key: t.c + t.i, home: shown[t.c][t.i] === -1, c: t.c, x: t.x + (n > 1 ? Math.cos(ang) * 0.2 : 0), y: t.y + (n > 1 ? Math.sin(ang) * 0.2 : 0), scale: n > 2 ? 0.62 : n > 1 ? 0.75 : 1 });
       }),
     );
     // Fixed order, so moving tokens keep their slide (see tokenViews in the controller).
     tokens.sort((a, b) => (a.key < b.key ? -1 : 1));
   }
 
+  const pieces = tokens.map((t) => (
+    <g key={t.key} className={cn("token", walking === t.key && "stepping", t.home && "returning")} style={{ transform: `translate(${t.x}px,${t.y}px) scale(${t.scale})` }}>
+      {pachisi ? <PachisiPawn fill={th.pieces[t.c]} lying={t.lying} /> : <TokenArt style={style} fill={th.pieces[t.c]} />}
+    </g>
+  ));
   return (
     <div className="flex flex-col items-center gap-3">
-      <BoardPreview style={style} th={th} className="rounded-xl p-1.5">
-        {tokens.map((t) => (
-          <g key={t.key} className={cn("token", walking === t.key && "stepping", t.home && "returning")} style={{ transform: `translate(${t.x}px,${t.y}px) scale(${t.scale})` }}>
-            <TokenArt style={style} fill={th.pieces[t.c]} />
-          </g>
-        ))}
-      </BoardPreview>
+      {pachisi ? <PachisiBoardPreview>{pieces}</PachisiBoardPreview> : <BoardPreview style={style} th={th} className="rounded-xl p-1.5">{pieces}</BoardPreview>}
       <div className="flex min-h-12 items-center gap-3 text-sm font-bold">
         <span className="flex items-center gap-1.5">
           <span className="h-3 w-3 rounded-full ring-2 ring-white/30" style={{ background: th.pieces[dice.c] }} />
-          {NAMES[dice.c]} {dice.rolling ? "rolls…" : `rolled${dice.note ? " · " + dice.note : ""}`}
+          {NAMES[dice.c]} {dice.rolling ? (pachisi ? "throws…" : "rolls…") : `${pachisi ? "threw" : "rolled"}${dice.note ? " · " + dice.note : ""}`}
         </span>
-        <DiceView spin={spinA} face={dice.faceA} roll={dice.a} rolling={dice.rolling} size={40} label="Dice" />
+        {pachisi ? (
+          <CowrieView value={dice.faceA} roll={dice.a} rolling={dice.rolling} shell={26} label="Cowrie shells" />
+        ) : (
+          <DiceView spin={spinA} face={dice.faceA} roll={dice.a} rolling={dice.rolling} size={40} label="Dice" />
+        )}
         {twoDice && <DiceView spin={spinB} face={dice.faceB} roll={dice.b} rolling={dice.rolling} size={40} label="Second dice" />}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A Pachisi board on its own (home page demo, tutorials, Settings); `children` are
+ * drawn on top in board units 0-19. `style`: a design to show (default: the one in use).
+ */
+export function PachisiBoardPreview({ children, className, style }: { children?: React.ReactNode; className?: string; style?: PachisiStyle }) {
+  const uid = "pp" + useId().replace(/[^a-zA-Z0-9]/g, "");
+  const [inUse, th] = usePachisiStyle();
+  const look = pachisiLook(style ?? inUse, th);
+  return (
+    <div className={cn("relative aspect-square w-full rounded-xl p-1.5", className)} style={look.frame}>
+      <div className="relative h-full w-full">
+        <svg viewBox={`0 0 ${P_SIZE} ${P_SIZE}`} className="board-layer absolute inset-0 block h-full w-full rounded-sm" aria-hidden="true">
+          <PachisiSurface look={look} hex={(c) => th.pieces[c]} light={(c) => th.light[c]} uid={uid} />
+        </svg>
+        {children && (
+          <svg viewBox={`0 0 ${P_SIZE} ${P_SIZE}`} className="board-layer absolute inset-0 block h-full w-full" aria-hidden="true">
+            {children}
+          </svg>
+        )}
       </div>
     </div>
   );
@@ -420,6 +467,7 @@ function PlaneBoard({ v }: { v: Variant }) {
 /** The animated preview for a game. */
 export function GamePreview({ variant }: { variant: Variant }) {
   if (variant.id === "ludo") return <LudoDemo />;
+  if (variant.id === "pachisi") return <LudoDemo game="pachisi" />;
   if (variant.id === "parchis") return <LudoDemo twoDice />;
   const board =
     variant.board === "cloth" ? <ClothBoard v={variant} /> : variant.board === "plane" ? <PlaneBoard v={variant} /> : <FloorGrid v={variant} />;

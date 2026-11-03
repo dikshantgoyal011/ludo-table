@@ -3,13 +3,14 @@
 import { Bot, Mic, MicOff, Pencil, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { useGame } from "@/hooks/use-game";
+import { useGame, useSettings } from "@/hooks/use-game";
 import { defaultAvatar } from "@/lib/avatars";
 import { countryName, flagUrl } from "@/lib/country";
-import { FINISH, MAX_MISSES, NAMES } from "@/lib/game/constants";
+import { MAX_MISSES, NAMES } from "@/lib/game/constants";
+import { finishOf } from "@/lib/game/rules";
+import { themeOf } from "@/lib/theme/themes";
 import { uiStore, useUi } from "@/lib/ui-store";
 import { Avatar } from "./avatar";
-import { useBoardStyle } from "./board";
 
 const ORDINAL = ["1st", "2nd", "3rd", "4th"];
 
@@ -17,7 +18,7 @@ const ORDINAL = ["1st", "2nd", "3rd", "4th"];
 export function ProfileDialog() {
   const game = useGame();
   const { profileOf: c } = useUi();
-  const [, th] = useBoardStyle();
+  const th = themeOf(useSettings()[0].theme);
   const seat = c ? game.state.seats[c] : undefined;
   const close = () => uiStore.set({ profileOf: null });
   if (!c || !seat) return null;
@@ -28,7 +29,7 @@ export function ProfileDialog() {
   const cc = looks.cc;
   const bot = !!seat.bot && !seat.takeover;
   const hex = th.pieces[game.displayColor(c)];
-  const home = s.tokens[c].filter((p) => p === FINISH).length;
+  const home = s.tokens[c].filter((p) => p === finishOf(s)).length;
   const place = s.winners.indexOf(c);
   const inVoice = !you && !seat.bot && game.voice.on && game.inVoice(seat.id);
 

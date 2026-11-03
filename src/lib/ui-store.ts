@@ -2,15 +2,16 @@
 // the settings sheet is open).
 import { useSyncExternalStore } from "react";
 
-import type { Color } from "@/lib/game/types";
+import type { Color, GameId } from "@/lib/game/types";
 
 /**
  * leaveOpen: the game menu is open, from the Menu button or the phone's Back button.
  * profileOf: whose player profile is open (the colour of their seat).
+ * tutorial: How to play is open, for this game.
  */
-type UiState = { settingsOpen: boolean; leaveOpen: false | "menu" | "back"; profileOf: Color | null };
+type UiState = { settingsOpen: boolean; leaveOpen: false | "menu" | "back"; profileOf: Color | null; tutorial: GameId | null };
 
-let ui: UiState = { settingsOpen: false, leaveOpen: false, profileOf: null };
+let ui: UiState = { settingsOpen: false, leaveOpen: false, profileOf: null, tutorial: null };
 const listeners = new Set<() => void>();
 
 export const uiStore = {
@@ -27,7 +28,7 @@ export const uiStore = {
   },
 };
 
-const SERVER: UiState = { settingsOpen: false, leaveOpen: false, profileOf: null };
+const SERVER: UiState = { settingsOpen: false, leaveOpen: false, profileOf: null, tutorial: null };
 export function useUi() {
   return useSyncExternalStore(uiStore.subscribe, uiStore.get, () => SERVER);
 }

@@ -6,13 +6,14 @@ import { Avatar } from "@/components/game/avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
-import { getController, useProfile, useSettings } from "@/hooks/use-game";
+import { getController, useGame, useProfile, useSettings } from "@/hooks/use-game";
 import { playSound } from "@/lib/audio/sfx";
 import { AVATAR_COUNT, defaultAvatar } from "@/lib/avatars";
 import { countriesByName, detectCountry, flagUrl } from "@/lib/country";
 import { COLORS } from "@/lib/game/constants";
-import { BoardPreview } from "@/components/game/board";
-import { BOARD_STYLE_IDS, BOARD_STYLES } from "@/lib/theme/boards";
+import { BoardPreview } from "@/components/game/ludo-board";
+import { PachisiBoardPreview } from "@/components/menu/game-preview";
+import { BOARD_STYLE_IDS, BOARD_STYLES, PACHISI_STYLE_IDS, PACHISI_STYLES } from "@/lib/theme/boards";
 import { THEME_IDS, THEMES, themeOf } from "@/lib/theme/themes";
 import { uiStore, useUi } from "@/lib/ui-store";
 import { cn } from "@/lib/utils";
@@ -116,6 +117,11 @@ function YouSection() {
 export function SettingsDialog() {
   const { settingsOpen } = useUi();
   const [settings, save] = useSettings();
+  const game = useGame();
+  // In a game: only that game's boards. Elsewhere: both.
+  const playing = game.mode ? (game.state.game === "pachisi" ? "pachisi" : "ludo") : null;
+  const showLudo = playing !== "pachisi";
+  const showPachisi = playing !== "ludo";
 
   return (
     <Dialog open={settingsOpen} onOpenChange={(o) => uiStore.set({ settingsOpen: o })}>
@@ -158,8 +164,31 @@ export function SettingsDialog() {
             </div>
           </section>
 
+          {showPachisi && (
+            <section className="flex flex-col gap-2">
+              <SectionTitle>Pachisi board</SectionTitle>
+              <div className="grid grid-cols-2 gap-2 min-[420px]:grid-cols-3">
+                {(["auto", ...PACHISI_STYLE_IDS] as const).map((key) => {
+                  const on = settings.pachisiBoard === key;
+                  const th = themeOf(settings.theme);
+                  const style = key === "auto" ? th.boardStyle : key;
+                  return (
+                    <Choice key={key} on={on} onClick={() => save({ ...settings, pachisiBoard: key })} className="flex flex-col items-stretch gap-1.5 bg-secondary p-2">
+                      <PachisiBoardPreview style={style} className="rounded-lg p-1" />
+                      <span className="truncate text-xs leading-tight font-bold">{key === "auto" ? "Match theme" : PACHISI_STYLES[key].name}</span>
+                      <span className="truncate text-[11px] leading-tight text-muted-foreground">
+                        {key === "auto" ? PACHISI_STYLES[style].name : PACHISI_STYLES[key].hint}
+                      </span>
+                    </Choice>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {showLudo && (
           <section className="flex flex-col gap-2">
-            <SectionTitle>Board</SectionTitle>
+            <SectionTitle>{showPachisi ? "Ludo board" : "Board"}</SectionTitle>
             <div className="grid grid-cols-2 gap-2 min-[420px]:grid-cols-3">
               {(["auto", ...BOARD_STYLE_IDS] as const).map((key) => {
                 const on = settings.board === key;
@@ -177,6 +206,7 @@ export function SettingsDialog() {
               })}
             </div>
           </section>
+          )}
 
           <section className="flex flex-col gap-2">
             <SectionTitle>Token movement</SectionTitle>

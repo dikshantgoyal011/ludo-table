@@ -15,3 +15,19 @@ export const BOARD_STYLES: Record<BoardStyleId, { name: string; hint: string }> 
 
 export const BOARD_STYLE_IDS = Object.keys(BOARD_STYLES) as BoardStyleId[];
 export const isBoardChoice = (v: unknown): v is BoardChoice => v === "auto" || (typeof v === "string" && v in BOARD_STYLES);
+
+/**
+ * Pachisi board designs: the traditional embroidered cloth, and one to match each
+ * Ludo board design (so a theme dresses Pachisi too). "auto" follows the theme.
+ */
+export type PachisiStyle = "cloth" | BoardStyleId;
+export type PachisiChoice = PachisiStyle | "auto";
+export const PACHISI_STYLES: Record<PachisiStyle, { name: string; hint: string }> = {
+  cloth: { name: "Embroidered cloth", hint: "Crimson cloth, gold thread" },
+  sandstone: { name: "Sandstone", hint: "Red sandstone and marble" },
+  royal: { name: "Royal Darbar", hint: "Ivory and gold on emerald" },
+  carved: { name: "Carved wood", hint: "Inlaid wooden board" },
+  modern: { name: "Modern", hint: "Clean, in the theme's colours" },
+};
+export const PACHISI_STYLE_IDS = Object.keys(PACHISI_STYLES) as PachisiStyle[];
+export const isPachisiChoice = (v: unknown): v is PachisiChoice => v === "auto" || (typeof v === "string" && v in PACHISI_STYLES);

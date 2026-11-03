@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useGame, useSettings } from "@/hooks/use-game";
 import { COLORS, NAMES } from "@/lib/game/constants";
-import { progress } from "@/lib/game/luck";
+import { rulesFor } from "@/lib/game/rules";
 import type { Color } from "@/lib/game/types";
 import { themeOf } from "@/lib/theme/themes";
 import { cn } from "@/lib/utils";
@@ -29,7 +29,7 @@ export function WinDialog() {
   const myPlace = me ? s.winners.indexOf(me) : -1;
 
   // Everyone at the table: finishers in order, then the rest by how far they got.
-  const rest = COLORS.filter((c) => s.seats[c] && !s.winners.includes(c)).sort((a, b) => progress(s, b) - progress(s, a));
+  const rest = COLORS.filter((c) => s.seats[c] && !s.winners.includes(c)).sort((a, b) => rulesFor(s).progress(s, b) - rulesFor(s).progress(s, a));
   const rows: { c: Color; place: number | null; note: string }[] = [
     ...s.winners.map((c, k) => ({ c, place: k, note: "" })),
     ...rest.map((c) => ({ c, place: null, note: s.seats[c]?.out ? (s.seats[c]?.left ? "Left" : "Out") : final ? "" : "Still playing" })),

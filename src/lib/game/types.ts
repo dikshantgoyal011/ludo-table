@@ -6,9 +6,12 @@ export type Color = "red" | "green" | "yellow" | "blue";
 /** How the game is being played. */
 export type Mode = "online" | "computer" | "local" | "friends";
 
+/** Which game: Ludo, or Pachisi (cross board, cowrie shells). */
+export type GameId = "ludo" | "pachisi";
+
 export type Phase = "lobby" | "playing" | "done";
 
-/** -1 = in the yard, 0-50 = on the track, 51-55 = home column, 56 = finished */
+/** Ludo: -1 = in the yard, 0-50 = on the track, 51-55 = home column, 56 = finished (Pachisi: see pachisi/board.ts) */
 export type TokenPos = number;
 
 /** How a player shows up to others: country code (e.g. "IN") and picture number (avatar.tsx). Both optional. */
@@ -64,6 +67,8 @@ export interface LogLine {
 }
 
 export interface GameState {
+  /** Which game is played at this table (absent: Ludo). */
+  game?: GameId;
   phase: Phase;
   players: Player[];
   seats: Partial<Record<Color, Seat>>;
@@ -91,6 +96,59 @@ export interface GameState {
   luck?: Partial<Record<Color, LuckStats>>;
   /** Version, bumped on every change; newer always wins on the network. */
   v?: number;
+}
+
+/** How a move is made (Pachisi): `pair` two pieces from one square together; `extra` round again instead of home. */
+export interface MoveOpt {
+  pair?: boolean;
+  extra?: boolean;
+}
+/** One way a token can move: where it lands, and how. */
+export interface MoveChoice extends MoveOpt {
+  to: number;
+}
+
+/** Where a token is drawn on its game's board, in board units. */
+export interface Point {
+  x: number;
+  y: number;
+  /** Tokens sharing a key sit on the same square. */
+  key: string;
+  /** Pachisi: drawn lying on its side (on its way back up, or home). */
+  lying?: boolean;
+}
+
+/**
+ * One game's rules. The engine (controller, table) only ever asks the rulebook
+ * of the game being played (rulesFor in rules.ts), so each game's rules live in
+ * their own folder and changing one game can't touch another.
+ */
+export interface Rulebook {
+  id: GameId;
+  /** Position of a token that is home. */
+  finish: number;
+  /** The roll that brings a token out and earns another roll (Ludo's 6). */
+  isBonus(v: number): boolean;
+  /** A random roll for c, with this game's odds. */
+  roll(s: GameState, c: Color): number;
+  /** A number someone could really have rolled (checked on rolls from the network). */
+  validRoll(v: number): boolean;
+  /** Record c's roll of v. Returns false if the roll isn't allowed right now. */
+  applyRoll(s: GameState, c: Color, v: number): boolean;
+  /** Every way token i of c can move with v (none: it can't move). */
+  moveChoices(s: GameState, c: Color, i: number, v: number): MoveChoice[];
+  /** Move token i of c by v, the way `opt` says. */
+  applyMove(s: GameState, c: Color, i: number, v: number, opt?: MoveOpt): void;
+  /** c chooses not to move with the roll in hand; null in games where that isn't allowed. */
+  pass: ((s: GameState, c: Color) => boolean) | null;
+  /** Computer players: which token to move with v, and how (i = -1: none can move). */
+  chooseMove(s: GameState, c: Color, v: number): { i: number; opt: MoveOpt };
+  /** The positions a token passes through from a to b, b included (for step-by-step animation). */
+  steps(a: number, b: number): number[];
+  /** Where token i of c is drawn at position p. */
+  point(c: Color, i: number, p: number): Point;
+  /** How far c has got (to rank players who haven't finished). */
+  progress(s: GameState, c: Color): number;
 }
 
 export interface ChatMessage {
