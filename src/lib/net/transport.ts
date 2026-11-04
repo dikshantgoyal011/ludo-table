@@ -22,6 +22,12 @@ export type NetMessage =
   | { type: "join"; id: string; nick: string; cc?: string; av?: number }
   | { type: "leave"; id: string }
   | { type: "start" }
+  /** Friends lobby: I'm ready to start (or not any more). */
+  | { type: "ready"; id: string; on: boolean }
+  /** Friends lobby (Pachisi): I agree to the variations as of version `vv` (or not any more). */
+  | { type: "agree"; id: string; on: boolean; vv: number }
+  /** Friends lobby (Pachisi), from the room's creator: play with these variations. */
+  | { type: "variations"; id: string; variations: unknown }
   | { type: "state"; state: GameState }
   | ({ type: "chat" } & ChatMessage)
   | { type: "chatHistory"; msgs: ChatMessage[] }
@@ -35,8 +41,8 @@ export type NetMessage =
    * the game changes, so two devices can never change it at the same moment.
    */
   | { type: "roll"; id: string; c: Color; v: number }
-  // i = -1: Pachisi skip. pair: two pieces together; extra: round again (Pachisi).
-  | { type: "move"; id: string; c: Color; i: number; pair?: boolean; extra?: boolean }
+  // i = -1: Pachisi skip. use: which throw in hand; extra: round again (Pachisi).
+  | { type: "move"; id: string; c: Color; i: number; use?: number; extra?: boolean }
   /**
    * "My dice is spinning and will show v" (roll number `seq`), sent the moment
    * the player taps it, so everyone's dice spins together instead of one

@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useGame, useProfile, useSettings } from "@/hooks/use-game";
-import { COLORS, NAMES, NICK_MAX } from "@/lib/game/constants";
-import { rulesFor, seated } from "@/lib/game/rules";
+import { COLORS, NICK_MAX } from "@/lib/game/constants";
+import { seated } from "@/lib/game/rules";
 import type { Color } from "@/lib/game/types";
 import { themeOf } from "@/lib/theme/themes";
 import { ColorPicker } from "./pickers";
+import { standings } from "./standings";
 
 /** Before and after a game: what's happening and the main action. */
 export function TurnCard() {
@@ -70,12 +71,10 @@ export function TurnCard() {
   } else if (s.phase === "done") {
     swatch = s.winners[0] ? th.pieces[game.displayColor(s.winners[0])] : "#f2c94c";
     label = "Game over";
-    title = s.winners[0] ? `${s.seats[s.winners[0]]?.nick || "Someone"} wins!` : "Game over";
-    // Everyone at the table: finishers in order, then the rest by how far they got.
-    const rest = COLORS.filter((c) => s.seats[c] && !s.winners.includes(c)).sort((a, b) => rulesFor(s).progress(s, b) - rulesFor(s).progress(s, a));
-    hint = [...s.winners, ...rest]
-      .map((c, k) => `${k + 1}. ${s.seats[c]?.nick || NAMES[c]}${s.seats[c]?.out ? (s.seats[c]?.left ? " (left)" : " (out)") : ""}`)
-      .join("   ");
+    // Everyone at the table (with partners: each side): finishers in order, then the rest by how far they got.
+    const rows = standings(game, true);
+    title = rows[0] ? `${rows[0].name} ${s.teams && rows[0].name.includes("&") ? "win" : "wins"}!` : "Game over";
+    hint = rows.map((r, k) => `${k + 1}. ${r.name}${r.note === "Left" ? " (left)" : r.note === "Out" ? " (out)" : ""}`).join("   ");
     if (!game.canRunTable()) hint += `\nWaiting for ${game.roomOwnerName()} to start a new game.`;
     else action = (
       <Button
@@ -121,7 +120,10 @@ export function PlayersPanel() {
   const list: { p: { id: string; nick: string }; slot?: Color }[] =
     s.phase === "lobby"
       ? s.players.map((p) => ({ p, slot: COLORS.find((c) => s.seats[c]?.id === p.id) }))
-      : seated(s).map((c) => ({ p: s.seats[c]!, slot: c }));
+      : // Once each (in Pachisi one person can play two colours).
+        seated(s)
+          .filter((c, k, all) => all.findIndex((o) => s.seats[o]!.id === s.seats[c]!.id) === k)
+          .map((c) => ({ p: s.seats[c]!, slot: c }));
 
   const cap = game.mode === "online" ? game.capacity() : 4;
 
@@ -217,7 +219,9 @@ export function PlayersPanel() {
               </span>
               <span className="shrink-0 text-xs text-muted-foreground">
                 {place >= 0
-                  ? `#${place + 1}`
+                  ? s.teams
+                    ? "Home"
+                    : `#${place + 1}`
                   : slot && s.seats[slot]?.out
                     ? s.seats[slot]?.left
                       ? "Left"
@@ -228,7 +232,9 @@ export function PlayersPanel() {
                         ? "Computer"
                         : slot && playing && game.awayInfo(s.seats[slot]!).away
                           ? "Offline"
-                          : `P${k + 1}`}
+                          : net
+                            ? `P${k + 1}`
+                            : ""}
               </span>
             </li>
           );

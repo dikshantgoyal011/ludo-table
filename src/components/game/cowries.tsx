@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useGame } from "@/hooks/use-game";
 import { DICE_ROLL_MS } from "@/lib/game/constants";
-import { COWRIE_MOVE, mouthsUp } from "@/lib/game/pachisi/board";
+import { GRACE_STEP, mouthsUp, shellsOf, SIX_SHELLS, type ShellSet } from "@/lib/game/pachisi/throws";
 import type { Color } from "@/lib/game/types";
 import { cn } from "@/lib/utils";
 import type { DiceRoll } from "./dice-3d";
@@ -30,12 +30,13 @@ export function Shell({ up, className, style }: { up: boolean; className?: strin
   );
 }
 
-/** Which of the 6 shells land mouth-up for a throw of v: always the same picture for the same seed. */
-function pattern(v: number, seed: number) {
-  const n = mouthsUp(v);
-  const order = [0, 1, 2, 3, 4, 5];
+/** Which of the shells land mouth-up for a throw of v: always the same picture for the same seed. */
+function pattern(set: ShellSet, v: number, seed: number) {
+  const up0 = mouthsUp(set, v);
+  const n = up0 < 0 ? 3 : up0;
+  const order = Array.from({ length: set.n }, (_, k) => k);
   let x = (seed * 2654435761) >>> 0;
-  for (let k = 5; k > 0; k--) {
+  for (let k = set.n - 1; k > 0; k--) {
     x = (x * 1103515245 + 12345) >>> 0;
     const j = x % (k + 1);
     [order[k], order[j]] = [order[j], order[k]];
@@ -45,9 +46,9 @@ function pattern(v: number, seed: number) {
 }
 
 /**
- * Six cowrie shells lying in a tray, as big as the space allows: they tumble when
- * thrown and land showing the throw (count the ones mouth-up; none = 25, one = 10).
- * The game's dice for Pachisi.
+ * Six (or seven) cowrie shells lying in a tray, as big as the space allows: they
+ * tumble when thrown and land showing the throw (count the ones mouth-up; with
+ * six, none = 25 and one = 10). The game's dice for Pachisi.
  */
 export function CowrieView({
   value,
@@ -59,8 +60,11 @@ export function CowrieView({
   onClick,
   label,
   shell = 26,
+  set = SIX_SHELLS,
   className,
 }: {
+  /** Which shells are thrown (six, or seven as a variation). */
+  set?: ShellSet;
   value: number;
   roll: DiceRoll | null;
   rolling: boolean;
@@ -87,13 +91,14 @@ export function CowrieView({
   const busy = tossing || rolling;
   const id = roll?.id ?? seed;
   // While thrown, the landing comes from the throw itself (the shells land showing it).
-  const ups = pattern(roll && busy ? roll.value : value, id);
+  const ups = pattern(set, roll && busy ? roll.value : value, id);
+  const mid = (set.n - 1) / 2;
   return (
     <button
       type="button"
       disabled={!ready}
       onClick={onClick}
-      aria-label={label ?? (ready ? "Throw the cowries" : `Cowries: ${mouthsUp(value)} mouth-up, ${value}`)}
+      aria-label={label ?? (ready ? "Throw the cowries" : `Cowries: ${mouthsUp(set, value)} mouth-up, ${value}`)}
       className={cn(
         "cowries relative flex shrink-0 items-center justify-center rounded-xl outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:cursor-default",
         ready && !busy && "cowries-ready",
@@ -116,7 +121,7 @@ export function CowrieView({
               height: shell,
               ["--tilt" as string]: `${tilt}deg`,
               ["--spin" as string]: `${spin + tilt}deg`,
-              ["--dx" as string]: `${(k - 2.5) * shell * 0.12}px`,
+              ["--dx" as string]: `${(k - mid) * shell * 0.12}px`,
               ["--k" as string]: k,
               animationDelay: busy ? `${k * 30}ms` : undefined,
             }}
@@ -143,14 +148,16 @@ export function CowrieView({
 export function TagCowries({ c, shell }: { c: Color; shell: number }) {
   const game = useGame();
   const s = game.state;
+  const set = shellsOf(game.variations());
   const turn = game.dieColor() === c;
   const canRoll = turn && game.canRollNow();
   // Thrown this turn: the throw in play. Not yet: the shells as this player last left them.
   const thrown = turn && (game.rolling || s.last?.c === c);
-  const last = thrown ? game.dieFace : s.luck?.[c]?.last?.[0];
-  const v = COWRIE_MOVE.includes(last || 0) ? (last as number) : 3;
+  const last = thrown ? (!game.rolling && s.last?.c === c ? s.last.v : game.dieFace) : s.luck?.[c]?.last?.[0];
+  const v = set.move.includes(last || 0) ? (last as number) : 3;
   return (
     <CowrieView
+      set={set}
       value={v}
       roll={turn ? game.diceRoll : null}
       rolling={turn && game.rolling}
@@ -158,22 +165,40 @@ export function TagCowries({ c, shell }: { c: Color; shell: number }) {
       ready={canRoll}
       dim={!turn}
       onClick={() => game.roll()}
-      label={canRoll ? "Throw the cowries" : thrown ? `Threw ${mouthsUp(v)} mouth-up: ${v}` : "Cowrie shells"}
-      shell={shell}
+      label={canRoll ? "Throw the cowries" : thrown ? `Threw ${mouthsUp(set, v)} mouth-up: ${v}` : "Cowrie shells"}
+      shell={set.n > 6 ? shell - 3 : shell}
       className="min-w-0 flex-1"
     />
   );
 }
 
 /**
- * Pachisi's row on a name tag: the cowries (only for the player whose turn it is)
- * and Skip. Every tag keeps the row's space, so nothing jumps as the cowries go round the table.
+ * Pachisi's row on a name tag: the cowries (only for the player whose turn it is),
+ * the throws still to play, and Skip. Every tag keeps the row's space, so
+ * nothing jumps as the cowries go round the table.
  */
 export function CowrieRow({ c, isTurn, right }: { c: Color; isTurn: boolean; right: boolean }) {
   const game = useGame();
+  const s = game.state;
+  // Throws waiting to be played: shown when there's more than the one just thrown (throwing first, a separate grace).
+  const hand = isTurn && s.turn === c && !game.rolling ? game.hand() : [];
+  const showHand = hand.length > 1 || (hand.length === 1 && hand[0] !== s.last?.v);
   return (
     <div className={cn("flex h-[34px] basis-full items-center gap-1.5", right && "flex-row-reverse")}>
       {isTurn && <TagCowries c={c} shell={22} />}
+      {showHand && (
+        <span
+          className="badge-pop flex h-7 shrink-0 items-center gap-1 rounded-full bg-paper px-2 text-xs font-extrabold text-[#23302c] tabular-nums shadow"
+          aria-label={`Throws to play: ${hand.map((x) => (x === GRACE_STEP ? "grace" : x)).join(", ")}`}
+          title="Throws to play"
+        >
+          {hand.map((x, k) => (
+            <span key={k} className={cn(k > 0 && "border-l border-[#23302c]/25 pl-1")}>
+              {x === GRACE_STEP ? "G" : x}
+            </span>
+          ))}
+        </span>
+      )}
       {isTurn && game.canPass() && (
         <button
           type="button"

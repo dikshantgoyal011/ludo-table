@@ -124,7 +124,8 @@ function PlayModes({ game }: { game: string }) {
             key={key}
             href={`/play/${key}${game === "ludo" ? "" : `?game=${game}`}`}
             className={cn(
-              "group flex min-h-[92px] flex-col justify-between gap-2 rounded-2xl border p-3 text-left transition outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[.97]",
+              // Icon, then title and line, from the top: every card's title on the same line.
+              "group flex min-h-[92px] flex-col justify-start gap-2 rounded-2xl border p-3 text-left transition outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[.97]",
               primary
                 ? "mode-primary border-transparent text-[#2a1206] shadow-[0_10px_24px_rgba(0,0,0,.3)]"
                 : "border-primary/45 bg-background/40 hover:border-primary hover:bg-background/60",

@@ -9,6 +9,7 @@
 // (from the browser today, from an API later), after which `get()` is
 // synchronous and `save()` writes through in the background.
 
+import type { PachisiVariations } from "@/lib/game/pachisi/variations";
 import type { Color, GameState, Mode } from "@/lib/game/types";
 import type { Settings } from "@/lib/settings/settings";
 
@@ -52,6 +53,8 @@ export interface Profile {
   cpuCount: number;
   /** Pass-and-play setup remembered between games. */
   localSetup: { count: number; rows: LocalSetupRow[] };
+  /** Pachisi: the variations last chosen (vs computer, this device, and rooms I create). */
+  pachisiVariations: PachisiVariations;
 }
 
 export interface ProfileRepository {

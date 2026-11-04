@@ -1,6 +1,7 @@
 import { isAvatar } from "@/lib/avatars";
 import { isCountry } from "@/lib/country";
 import { isColor, NICK_MAX } from "@/lib/game/constants";
+import { cleanVariations, NO_VARIATIONS } from "@/lib/game/pachisi/variations";
 import type { Profile, ProfileRepository } from "../types";
 import { Emitter, storage } from "../storage";
 
@@ -20,6 +21,7 @@ const DEFAULT_PROFILE: Profile = {
       { name: "", color: "blue" },
     ],
   },
+  pachisiVariations: { ...NO_VARIATIONS },
 };
 
 const okCount = (n: unknown, fallback: number) => (n === 2 || n === 3 || n === 4 ? n : fallback);
@@ -52,6 +54,7 @@ export class LocalProfileRepository implements ProfileRepository {
     if (ls && Array.isArray(ls.rows) && ls.rows.length === 4 && ls.rows.every((r) => r && isColor(r.color))) {
       p.localSetup = { count: okCount(ls.count, 2), rows: ls.rows.map((r) => ({ name: String(r.name || "").slice(0, NICK_MAX), color: r.color })) };
     }
+    p.pachisiVariations = cleanVariations(storage.getJSON("ludo.pachisiVariations"));
   }
 
   get(): Profile {
@@ -70,6 +73,7 @@ export class LocalProfileRepository implements ProfileRepository {
     if (patch.cpuCount) storage.set("ludo.cpuCount", String(p.cpuCount));
     if (patch.onlineCount) storage.set("ludo.onlineCount", String(p.onlineCount));
     if (patch.localSetup) storage.setJSON("ludo.localSetup", p.localSetup);
+    if (patch.pachisiVariations) storage.setJSON("ludo.pachisiVariations", p.pachisiVariations);
     this.emitter.emit();
   }
 }

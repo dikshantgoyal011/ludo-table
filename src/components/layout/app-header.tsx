@@ -19,8 +19,9 @@ export function AppHeader() {
 
   const onMenu = pathname === "/" || pathname === "/ludo";
   const inGame = pathname === "/game" || pathname.startsWith("/r/");
-  // Room code and Invite are for gathering players: hidden once the game is on, so the header stays one line.
-  const friends = inGame && game.mode === "friends" && game.state.phase !== "playing";
+  // Room code and Invite are for gathering players after a game (the lobby shows its own; hidden while
+  // a game is on, so the header stays one line).
+  const friends = inGame && game.mode === "friends" && game.loaded && game.state.phase === "done";
 
   // Back to the home screen (from a game in progress: only after "Leave this game?").
   const goMenu = () => {

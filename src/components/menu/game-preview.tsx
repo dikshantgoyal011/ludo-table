@@ -139,6 +139,7 @@ function freshDemo(players: number, game: GameId = "ludo"): GameState {
   s.turn = SLOTS_FOR[players][0];
   // Play a little first, so tokens are already out on the board.
   const rules = rulesFor(game);
+  rules.setup?.(s);
   for (let k = 0; k < 70 && s.phase === "playing"; k++) {
     const c = s.turn!;
     rules.applyRoll(s, c, rules.roll(s, c));
@@ -182,13 +183,14 @@ function LudoDemo({ twoDice = false, game: kind = "ludo" }: { twoDice?: boolean;
       const before = clone(s.tokens);
       rules.applyRoll(s, c, v);
       botMove(s, c);
-      const moved = before[c].some((a, i) => s.tokens[c][i] > a);
+      const moved = before[c].some((a, i) => s.tokens[c][i] !== a && s.tokens[c][i] !== -1);
       setDice((d) => ({ ...d, note: moved ? "" : "no move" }));
       for (let i = 0; i < 4 && alive; i++) {
         const a = before[c][i];
         const b = s.tokens[c][i];
-        if (b <= a) continue;
-        if (a === -1) {
+        if (b === a || b === -1) continue;
+        // Out of the yard onto the first square: one glide. (A Pachisi piece coming out further walks from there.)
+        if (a === -1 && b === 0) {
           pos[c][i] = 0;
           setShown(clone(pos));
           await wait(420);
@@ -284,12 +286,13 @@ function LudoDemo({ twoDice = false, game: kind = "ludo" }: { twoDice?: boolean;
     <div className="flex flex-col items-center gap-3">
       {pachisi ? <PachisiBoardPreview>{pieces}</PachisiBoardPreview> : <BoardPreview style={style} th={th} className="rounded-xl p-1.5">{pieces}</BoardPreview>}
       <div className="flex min-h-12 items-center gap-3 text-sm font-bold">
-        <span className="flex items-center gap-1.5">
+        {/* One line, however wide the shells: "Blue threw · no move" */}
+        <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
           <span className="h-3 w-3 rounded-full ring-2 ring-white/30" style={{ background: th.pieces[dice.c] }} />
           {NAMES[dice.c]} {dice.rolling ? (pachisi ? "throws…" : "rolls…") : `${pachisi ? "threw" : "rolled"}${dice.note ? " · " + dice.note : ""}`}
         </span>
         {pachisi ? (
-          <CowrieView value={dice.faceA} roll={dice.a} rolling={dice.rolling} shell={26} label="Cowrie shells" />
+          <CowrieView value={dice.faceA} roll={dice.a} rolling={dice.rolling} shell={22} label="Cowrie shells" />
         ) : (
           <DiceView spin={spinA} face={dice.faceA} roll={dice.a} rolling={dice.rolling} size={40} label="Dice" />
         )}

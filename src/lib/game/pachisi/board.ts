@@ -1,15 +1,14 @@
-// Pachisi: the cross-shaped board and cowrie throws, played by the traditional
-// rules (Wikipedia "Pachisi"; mastersofgames.com, "The rules of Pachisi"):
+// Pachisi: the cross-shaped board (Wikipedia "Pachisi"; mastersofgames.com,
+// "The rules of Pachisi"). The rules are in rules.ts, the throws in throws.ts.
 //
-// - Every piece starts in the Charkoni, the centre. A grace throw (6, 10 or 25)
-//   brings one onto the first square of its own arm's middle column, and the
-//   player throws again.
+// - Every piece starts in the Charkoni, the centre. Coming out, it counts the
+//   first square of its own arm's middle column as 1: a throw of 10 brings it
+//   to the 10th square.
 // - A piece goes down the middle column of its own arm, counter-clockwise round
 //   the outside of the cross, and back up the same middle column to the
 //   Charkoni: 84 squares. It must reach the Charkoni by an exact throw.
 // - 12 castles (safe squares): the end of every arm's middle column, and the
-//   squares four in from the ends of the outer columns. No capture on a castle,
-//   and no landing on a castle an opponent holds.
+//   squares four in from the ends of the outer columns.
 //
 // The board is 19 x 19 cells: four arms of 3 x 8 cells round a 3 x 3 centre.
 // Positions of a piece: -1 in the Charkoni waiting to come out, 0-6 going down
@@ -22,12 +21,6 @@ export const P_SIZE = 19;
 export const P_LAP_FROM = 7;
 export const P_LAP_TO = 75;
 export const P_FINISH = 83;
-
-/** Cowrie throw: 6 shells, the ones landing mouth-up counted. 0 up moves 25, 1 up moves 10, else the count. */
-export const COWRIE_MOVE = [25, 10, 2, 3, 4, 5, 6];
-export const mouthsUp = (v: number) => (v === 25 ? 0 : v === 10 ? 1 : v);
-/** Grace throws: bring a piece out, and throw again. */
-export const isGrace = (v: number) => v === 6 || v === 10 || v === 25;
 
 type Cell = [number, number]; // [row, col]
 
@@ -89,21 +82,21 @@ export const lapIndex = (p: number): number | null =>
 
 /**
  * Where a piece at p lands with a throw of v, going home at the end of its
- * round (`extra` false) or round again (`extra` true). null: not possible
- * (home needs the exact number, and never one square short of it).
+ * round (`extra` false) or round again (`extra` true). From the Charkoni (-1) it
+ * counts the first square as 1. null: not possible (home needs the exact
+ * number). Whether the rules allow the move at all is up to rules.ts.
  */
 export function pachisiAdvance(p: number, v: number, extra = false): number | null {
-  if (p === -1) return isGrace(v) ? 0 : null;
   if (p >= P_FINISH && p < P_EXTRA) return null;
   if (p > P_LAP_TO && p < P_FINISH) {
     const np = p + v; // already on the way up
-    return np <= P_FINISH && np !== P_FINISH - 1 ? np : null;
+    return np <= P_FINISH ? np : null;
   }
   const at = p >= P_EXTRA ? (lapIndex(p) as number) : p;
   const t = at + v;
   if (t <= P_LAP_TO) return extra ? null : p + v; // doesn't reach the end of the round
   if (extra) return p >= P_EXTRA ? p + v : P_EXTRA + (t - (P_LAP_TO + 1));
-  return t <= P_FINISH && t !== P_FINISH - 1 ? t : null; // up the middle (76-82) or home (83)
+  return t <= P_FINISH ? t : null; // up the middle (76-82) or home (83)
 }
 /** The positions a piece passes through moving from a to b (for step-by-step animation), b included. */
 export function pachisiSteps(a: number, b: number): number[] {
@@ -153,6 +146,3 @@ export function pachisiPoint(c: Color, i: number, p: number): Point {
   // Pieces on their way back up the middle are laid on their side, as on a real board.
   return { x: cc + 0.5, y: r + 0.5, key: p >= P_LAP_FROM && p <= P_LAP_TO ? "t" + key([r, cc]) : `m${c}${p}`, lying: p > P_LAP_TO };
 }
-
-/** Chances of 0-6 shells landing mouth-up (6 fair shells): 1, 6, 15, 20, 15, 6, 1 out of 64. */
-export const COWRIE_WEIGHTS = [1, 6, 15, 20, 15, 6, 1];

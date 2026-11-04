@@ -3,7 +3,7 @@
 // (those are in ludo/ and pachisi/). Functions take a state and change it in
 // place; callers work on a copy (see GameController.commit). No browser APIs in
 // here, so the same rules can later run on a server.
-import { CI, COLORS, NAMES, SLOTS_FOR } from "./constants";
+import { COLORS, NAMES, SLOTS_FOR } from "./constants";
 import type { Color, GameState, Player, Seat } from "./types";
 
 export const freshTokens = (): Record<Color, number[]> => ({
@@ -49,24 +49,35 @@ export function seatsFor(players: Player[]): Partial<Record<Color, Seat>> {
 /** Seats still playing: not finished and not out. */
 export const inPlay = (s: GameState) => seated(s).filter((c) => !s.winners.includes(c) && !s.seats[c]?.out);
 
+/** The side c plays for: c and its partners (just c when there are no partners). */
+export const teamOf = (s: GameState, c: Color): Color[] => s.teams?.find((t) => t.includes(c)) || [c];
+
 export function nextTurn(s: GameState) {
   s.roll = null;
   s.sixes = 0;
   const active = inPlay(s);
-  if (active.length <= 1) {
-    if (active.length === 1) s.winners.push(active[0]);
+  // Over once at most one side is still playing.
+  if (new Set(active.map((c) => teamOf(s, c).join())).size <= 1) {
+    s.winners.push(...active);
     s.phase = "done";
     s.turn = null;
     addLog(s, "", "Game over.");
     return;
   }
-  const i = s.turn ? CI[s.turn] : 0;
-  for (let k = 1; k <= 4; k++) {
-    const c = COLORS[(i + k) % 4];
-    if (active.includes(c)) {
-      s.turn = c;
-      return;
+  const order = s.order || COLORS;
+  const i = s.turn ? order.indexOf(s.turn) : 0;
+  // Twice round: someone who has to miss a turn is passed over once.
+  for (let k = 1; k <= 8; k++) {
+    const c = order[(i + k) % 4];
+    if (!active.includes(c)) continue;
+    if (s.skip?.[c]) {
+      s.skip[c] = (s.skip[c] as number) - 1;
+      if (!s.skip[c]) delete s.skip[c];
+      addLog(s, c, `${seatName(s, c)} misses this turn.`);
+      continue;
     }
+    s.turn = c;
+    return;
   }
 }
 

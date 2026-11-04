@@ -7,6 +7,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useGame, useSettings } from "@/hooks/use-game";
 import type { TokenView } from "@/lib/game/controller";
 import { COLORS } from "@/lib/game/constants";
+import { GRACE_STEP } from "@/lib/game/pachisi/throws";
 import type { Color, GameId, MoveChoice } from "@/lib/game/types";
 import { themeOf } from "@/lib/theme/themes";
 import { cn } from "@/lib/utils";
@@ -57,16 +58,18 @@ export function Board() {
   // Ripples dark on light squares, light on dark ones.
   const ripple = look.lightSquares ? RIPPLE_ON_LIGHT : RIPPLE_ON_DARK;
 
-  // A token that can move more than one way (Pachisi: one piece or the pair; home or round again) asks how.
-  const [pick, setPick] = useState<{ c: Color; i: number; seq: number } | null>(null);
+  // A token that can move more than one way (Pachisi: which throw to use; home or round again) asks how.
+  const [pick, setPick] = useState<{ c: Color; i: number; seq: number; hand: string } | null>(null);
   const seq = game.state.last?.seq || 0;
-  const pickView = pick && pick.seq === seq ? movableViews.find((t) => t.c === pick.c && t.i === pick.i) : undefined;
+  const hand = game.hand().join(",");
+  const pickView = pick && pick.seq === seq && pick.hand === hand ? movableViews.find((t) => t.c === pick.c && t.i === pick.i) : undefined;
   const pickChoices = pickView ? game.choicesFor(pickView.c, pickView.i) : [];
   const tapToken = (t: TokenView) => {
-    if (game.choicesFor(t.c, t.i).length > 1) setPick({ c: t.c, i: t.i, seq });
+    const choices = game.choicesFor(t.c, t.i);
+    if (choices.length > 1) setPick({ c: t.c, i: t.i, seq, hand });
     else {
       setPick(null);
-      game.move(t.c, t.i);
+      game.move(t.c, t.i, choices[0] ? { use: choices[0].use, extra: choices[0].extra } : {});
     }
   };
 
@@ -143,7 +146,7 @@ export function Board() {
             choices={pickChoices}
             onPick={(ch) => {
               setPick(null);
-              game.move(pickView.c, pickView.i, { pair: ch.pair, extra: ch.extra });
+              game.move(pickView.c, pickView.i, { use: ch.use, extra: ch.extra });
             }}
           />
         )}
@@ -154,12 +157,13 @@ export function Board() {
 
 /** What a choice does, in a word or two. */
 function choiceLabel(ch: MoveChoice, all: MoveChoice[]) {
-  const pairs = all.some((o) => o.pair);
-  const rounds = all.some((o) => o.extra);
+  const throws = new Set(all.map((o) => o.use)).size > 1;
+  // This throw can take it home or round again.
+  const twoWays = all.some((o) => o.use === ch.use && !!o.extra !== !!ch.extra);
   const way = ch.extra ? "Round again" : "Head home";
-  if (pairs && rounds) return `${ch.pair ? "Both" : "One"} · ${way.toLowerCase()}`;
-  if (pairs) return ch.pair ? "Move both" : "Move one";
-  return way;
+  const by = ch.use === GRACE_STEP ? "Grace · 1 square" : `Move ${ch.use}`;
+  if (!throws) return twoWays ? way : by;
+  return twoWays ? `${by} · ${way.toLowerCase()}` : by;
 }
 
 /**
@@ -188,7 +192,7 @@ function MoveChooser({ t, size, angle, choices, onPick }: { t: TokenView; size: 
       >
         {choices.map((ch) => (
           <button
-            key={`${!!ch.pair}${!!ch.extra}`}
+            key={`${ch.use}${!!ch.extra}`}
             type="button"
             role="menuitem"
             onClick={() => onPick(ch)}

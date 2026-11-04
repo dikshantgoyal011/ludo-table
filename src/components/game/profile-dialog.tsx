@@ -34,7 +34,7 @@ export function ProfileDialog() {
   const inVoice = !you && !seat.bot && game.voice.on && game.inVoice(seat.id);
 
   const facts: [string, React.ReactNode][] = [
-    ["Colour", <span key="c" className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-full" style={{ background: hex }} />{NAMES[game.displayColor(c)]}</span>],
+    ["Color", <span key="c" className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-full" style={{ background: hex }} />{NAMES[game.displayColor(c)]}</span>],
     ["Tokens home", `${home} of 4`],
   ];
   if (place >= 0) facts.push(["Finished", ORDINAL[place]]);

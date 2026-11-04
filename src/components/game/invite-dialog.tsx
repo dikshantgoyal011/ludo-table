@@ -32,7 +32,7 @@ export function InviteDialog({ open, onClose }: { open: boolean; onClose: () => 
   };
   const share = async () => {
     try {
-      await navigator.share({ title: "Ludo Darbar", text: `Join my Ludo room ${code}`, url: link });
+      await navigator.share({ title: "Ludo Darbar", text: `Join my ${game.state.game === "pachisi" ? "Pachisi" : "Ludo"} room ${code}`, url: link });
     } catch {
       /* closed without sharing */
     }

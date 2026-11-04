@@ -23,7 +23,10 @@ import {
   NICK_MAX,
 } from "@/lib/game/constants";
 import type { Color, GameId, Mode } from "@/lib/game/types";
+import { variationCount } from "@/lib/game/pachisi/variations";
+import { rulesFor } from "@/lib/game/rules";
 import { variantById } from "@/lib/game/variants";
+import { SidesPicker, VariationsDialog, variationsSummary } from "@/components/game/variations";
 import type { Profile } from "@/lib/services/types";
 import { cn } from "@/lib/utils";
 import { GameStrip } from "./game-picker";
@@ -49,14 +52,20 @@ function NameInput({
   );
 }
 
-/** Make sure no two pass-and-play players share a colour. */
-function fixLocalColors(setup: Profile["localSetup"]): Profile["localSetup"] {
+/**
+ * Make sure no two pass-and-play players share a colour. `pairs` (Pachisi as
+ * partners) with two players: each also plays the colour opposite theirs, so
+ * that one is taken too.
+ */
+function fixLocalColors(setup: Profile["localSetup"], pairs = false): Profile["localSetup"] {
   const rows = setup.rows.map((r) => ({ ...r }));
   const used = new Set<Color>();
+  const sides = pairs && setup.count === 2;
   for (let k = 0; k < setup.count; k++) {
     const r = rows[k];
     if (used.has(r.color)) r.color = COLORS.find((c) => !used.has(c)) as Color;
     used.add(r.color);
+    if (sides) used.add(COLORS[(COLORS.indexOf(r.color) + 2) % 4]);
   }
   return { ...setup, rows };
 }
@@ -74,6 +83,35 @@ export function SetupScreen({ mode }: { mode: Mode }) {
   }, []);
   const v = variantById(game);
   const gameQuery = game === "ludo" ? "" : `?game=${game}`;
+  const pachisi = game === "pachisi";
+  // Player counts this game is played with.
+  const counts = rulesFor(game).counts;
+  const fit = (n: number) => (counts.includes(n) ? n : counts.includes(4) && n > 2 ? 4 : counts[0]);
+  const [varsOpen, setVarsOpen] = useState(false);
+  const vars = profile.pachisiVariations;
+  // Pachisi: partners, or everyone for themselves.
+  const sidesField = (players: number) =>
+    pachisi && (
+      <Field label="How you play">
+        <SidesPicker value={vars} players={players} onChange={(pachisiVariations) => save({ pachisiVariations })} />
+      </Field>
+    );
+  const rulesField = pachisi && (mode === "computer" || mode === "local") && (
+    <Field label="Rules">
+      <button
+        type="button"
+        onClick={() => setVarsOpen(true)}
+        className="flex w-full items-center gap-3 rounded-xl border border-border bg-background/50 px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[.99]"
+      >
+        <span className="min-w-0 flex-1 text-sm">
+          <span className="block font-bold">{variationCount(vars) ? `${variationCount(vars)} variation${variationCount(vars) > 1 ? "s" : ""} on` : "Traditional rules"}</span>
+          <span className="block text-xs text-muted-foreground">{variationCount(vars) ? variationsSummary(vars) : "No variations. Tap to choose some."}</span>
+        </span>
+        <span className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-sm font-bold text-primary-foreground">Variations</span>
+      </button>
+      <VariationsDialog open={varsOpen} onClose={() => setVarsOpen(false)} value={vars} onChange={(pachisiVariations) => save({ pachisiVariations })} />
+    </Field>
+  );
 
   // Opening a setup screen leaves any table that was running.
   useEffect(() => {
@@ -158,27 +196,35 @@ export function SetupScreen({ mode }: { mode: Mode }) {
           <>
             <Field label="Game type">
               <CountPicker
-                value={profile.onlineCount}
+                counts={counts}
+                value={fit(profile.onlineCount)}
                 onChange={(onlineCount) => save({ onlineCount })}
               />
               <p className="mt-1.5 text-xs text-muted-foreground">
                 You&apos;ll only be matched with people who also picked a{" "}
-                {profile.onlineCount}-player game.
+                {fit(profile.onlineCount)}-player game.
+                {pachisi &&
+                  (fit(profile.onlineCount) === 2
+                    ? " Each of you plays both colors of one side."
+                    : fit(profile.onlineCount) === 4
+                      ? " You play 2 vs 2: the player opposite is your partner."
+                      : " Everyone plays for themselves.")}
               </p>
             </Field>
             <Button
               size="lg"
               className="w-full"
               onClick={() => {
-                getController().startOnline(profile.onlineCount, game);
+                getController().startOnline(fit(profile.onlineCount), game);
                 go("/game");
               }}
             >
-              Find a {profile.onlineCount}-player game
+              Find a {fit(profile.onlineCount)}-player game
             </Button>
             <p className="text-xs text-muted-foreground">
               The game starts as soon as the table is full. You have 15 seconds a turn; miss 5 turns and you&apos;re out.
               If someone goes offline, the computer plays for them until they&apos;re back.
+              {pachisi && " Online games use the traditional rules, without variations."}
             </p>
           </>
         )}
@@ -197,7 +243,7 @@ export function SetupScreen({ mode }: { mode: Mode }) {
             </div>
             <div className="flex gap-2">
               <Input
-                className="font-mono"
+                className="font-mono tracking-wider placeholder:font-sans placeholder:tracking-normal"
                 placeholder="Friend's room code"
                 maxLength={12}
                 autoCapitalize="off"
@@ -233,19 +279,21 @@ export function SetupScreen({ mode }: { mode: Mode }) {
           <>
             <Field label="Players">
               <CountPicker
-                value={profile.cpuCount}
+                counts={counts}
+                value={fit(profile.cpuCount)}
                 onChange={(cpuCount) => save({ cpuCount })}
               />
               <p className="mt-1.5 text-xs text-muted-foreground">
-                You plus {profile.cpuCount - 1} computer player
-                {profile.cpuCount > 2 ? "s" : ""}.
+                You plus {fit(profile.cpuCount) - 1} computer player{fit(profile.cpuCount) > 2 ? "s" : ""}.
               </p>
             </Field>
+            {sidesField(fit(profile.cpuCount))}
+            {rulesField}
             <Button
               size="lg"
               className="w-full"
               onClick={() => {
-                getController().startComputer(profile.cpuCount, game);
+                getController().startComputer(fit(profile.cpuCount), game, pachisi ? profile.pachisiVariations : undefined);
                 go("/game");
               }}
             >
@@ -259,6 +307,9 @@ export function SetupScreen({ mode }: { mode: Mode }) {
             profile={profile}
             save={save}
             game={game}
+            counts={counts}
+            rules={rulesField}
+            sides={sidesField}
             onStart={() => go("/game")}
           />
         )}
@@ -279,29 +330,45 @@ function LocalSetup({
   profile,
   save,
   game,
+  counts,
+  rules,
+  sides,
   onStart,
 }: {
   profile: Profile;
   save: (p: Partial<Profile>) => void;
   game: GameId;
+  counts: number[];
+  rules: React.ReactNode;
+  sides: (players: number) => React.ReactNode;
   onStart: () => void;
 }) {
-  const setup = profile.localSetup;
+  const pachisi = game === "pachisi";
+  const saved = profile.localSetup;
+  const count = counts.includes(saved.count) ? saved.count : counts[counts.length - 1];
+  // Pachisi as partners: two players each play a side (the colour picked and the one opposite).
+  const pairs = pachisi && !profile.pachisiVariations.alone;
+  const setup = fixLocalColors({ ...saved, count }, pairs);
   const update = (next: Profile["localSetup"]) => save({ localSetup: next });
   return (
     <>
       <div className="flex flex-col gap-4">
         <Field label="Players">
           <CountPicker
+            counts={counts}
             value={setup.count}
-            onChange={(count) => update(fixLocalColors({ ...setup, count }))}
+            onChange={(count) => update(fixLocalColors({ ...setup, count }, pairs))}
           />
         </Field>
+        {sides(setup.count)}
+        {rules}
         {setup.rows.slice(0, setup.count).map((row, k) => {
           const taken = setup.rows
             .slice(0, setup.count)
             .filter((_, j) => j !== k)
-            .map((r) => r.color);
+            .map((r) => r.color)
+            // Pachisi as partners, two players: the other player's partner colour is theirs too.
+            .flatMap((c) => (pairs && setup.count === 2 ? [c, COLORS[(COLORS.indexOf(c) + 2) % 4]] : [c]));
           const setRow = (patch: Partial<typeof row>) =>
             update({
               ...setup,
@@ -337,9 +404,9 @@ function LocalSetup({
         size="lg"
         className="w-full"
         onClick={() => {
-          const fixed = fixLocalColors(setup);
+          const fixed = fixLocalColors(setup, pairs);
           update(fixed);
-          getController().startLocal(fixed.rows.slice(0, fixed.count), game);
+          getController().startLocal(fixed.rows.slice(0, fixed.count), game, pachisi ? profile.pachisiVariations : undefined);
           onStart();
         }}
       >

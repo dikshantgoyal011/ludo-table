@@ -13,7 +13,6 @@ export function RoomScreen({ code }: { code: string }) {
   const mounted = useMounted();
   const params = useSearchParams();
   const room = cleanRoomCode(code);
-  const isNew = params.get("new") === "1";
   // The game a new room is set up for (someone joining plays whatever the room plays).
   const wanted = params.get("game") === "pachisi" ? "pachisi" : "ludo";
 
@@ -22,9 +21,9 @@ export function RoomScreen({ code }: { code: string }) {
       router.replace("/play/friends");
       return;
     }
+    // (A new room's lobby shows its code and Invite right away.)
     game.startFriends(room, wanted);
-    if (isNew) game.setBanner(`New room ${room} is ready. Tap Invite to send your friends the link or the code.`);
-  }, [room, isNew, wanted, game, router]);
+  }, [room, wanted, game, router]);
 
   if (!mounted || game.mode !== "friends") return null;
   return <GameScreen />;

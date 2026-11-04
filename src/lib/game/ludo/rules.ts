@@ -110,6 +110,7 @@ export function chooseMove(s: GameState, c: Color, v: number) {
 export const ludo: Rulebook = {
   id: "ludo",
   finish: FINISH,
+  counts: [2, 3, 4],
   isBonus: (v) => v === 6,
   // Random, with odds that lean on the state of the game (luck.ts).
   roll: (s, c) => rollDie(diceOdds(s, c).p),

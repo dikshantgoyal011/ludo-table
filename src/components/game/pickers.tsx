@@ -36,11 +36,11 @@ export function ColorPicker({ value, onChange, disabled = [] }: { value: Color; 
   );
 }
 
-/** 2 / 3 / 4 players */
-export function CountPicker({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+/** 2 / 3 / 4 players (or the counts a game is played with). */
+export function CountPicker({ value, onChange, counts = PLAYER_COUNTS }: { value: number; onChange: (n: number) => void; counts?: readonly number[] }) {
   return (
-    <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Number of players">
-      {PLAYER_COUNTS.map((n) => (
+    <div className={cn("grid gap-2", counts.length === 2 ? "grid-cols-2" : "grid-cols-3")} role="radiogroup" aria-label="Number of players">
+      {counts.map((n) => (
         <Button
           key={n}
           role="radio"

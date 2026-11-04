@@ -62,13 +62,13 @@ const LESSONS: Record<GameId, Lesson[]> = {
     },
     {
       title: "Stars are safe",
-      text: "Nobody can be cut on a star or a start square. Two colours can share it.",
+      text: "Nobody can be cut on a star or a start square. Two colors can share it.",
       tokens: { red: [5, -1, -1, -1], green: [47, -1, -1, -1] },
       steps: [{ wait: 600 }, { roll: 3, by: "red" }, { move: ["red", 0, 8] }, { wait: 1800 }],
     },
     {
-      title: "Up your colour to the middle",
-      text: "After one lap, go up your own coloured lane. Reaching the middle needs the exact number.",
+      title: "Up your color to the middle",
+      text: "After one lap, go up your own colored lane. Reaching the middle needs the exact number.",
       tokens: { red: [47, 56, 56, -1] },
       steps: [{ wait: 600 }, { roll: 6, by: "red" }, { move: ["red", 0, 53] }, { roll: 3, by: "red" }, { move: ["red", 0, 56] }, { wait: 1400 }],
     },
@@ -88,10 +88,10 @@ const LESSONS: Record<GameId, Lesson[]> = {
       shells: true,
     },
     {
-      title: "6, 10 or 25 brings a piece out",
-      text: "All your pieces start in the centre, the Charkoni. A 6, 10 or 25 brings one onto the first square of your own arm, and you throw again.",
+      title: "Coming out of the center",
+      text: "All your pieces start in the center, the Charkoni. Your first piece can come out with any throw; after that, it takes a grace: 6, 10 or 25. Count the first square of your arm as 1. A grace also gives you another throw.",
       tokens: { red: [-1, -1, -1, -1] },
-      steps: [{ wait: 600 }, { roll: 10, by: "red" }, { move: ["red", 0, 0] }, { wait: 1400 }],
+      steps: [{ wait: 600 }, { roll: 10, by: "red" }, { move: ["red", 0, 9] }, { wait: 1400 }],
     },
     {
       title: "Down your arm, then round the cross",
@@ -100,32 +100,32 @@ const LESSONS: Record<GameId, Lesson[]> = {
       steps: [{ wait: 600 }, { roll: 25, by: "red" }, { move: ["red", 0, 27] }, { wait: 1400 }],
     },
     {
-      title: "Land on a rival to send it back",
-      text: "Land exactly on someone's piece and it goes back to the centre. You throw again.",
+      title: "Land on the other side to send it back",
+      text: "Land exactly on the other side's pieces and they all go back to the center: they need a grace to come out again. You throw again.",
       tokens: { red: [14, -1, -1, -1], green: [sameSquare("green", "red", 18), -1, -1, -1] },
       steps: [{ wait: 600 }, { roll: 4, by: "red" }, { move: ["red", 0, 18] }, { cut: ["green", 0] }, { wait: 1400 }],
     },
     {
       title: "Castles are safe",
-      text: "Squares marked ✕ are castles. Nobody can be sent back from one, and you can't land on a castle where a rival is sitting.",
+      text: "Squares marked ✕ are castles. Nobody can be sent back from one, and you can't land on a castle where the other side is sitting.",
       tokens: { red: [9, -1, -1, -1] },
       steps: [{ wait: 600 }, { roll: 2, by: "red" }, { move: ["red", 0, 11] }, { wait: 1800 }],
     },
     {
-      title: "Two together make a pair",
-      text: "Two of your pieces on one square are a pair. Tap one to move just it, or both together. A single rival can't cut a pair: only a pair can.",
-      tokens: { red: [14, 14, -1, -1], green: [sameSquare("green", "red", 12), -1, -1, -1] },
-      steps: [{ wait: 600 }, { roll: 4, by: "red" }, { move: ["red", 0, 18] }, { move: ["red", 1, 18] }, { wait: 1800 }],
+      title: "Play with a partner",
+      text: "Traditionally you play in pairs: partners sit opposite (Red with Yellow, Green with Blue), never cut each other, and a side wins when all eight of its pieces are home. With two players, each plays both colors of a side. You can also play everyone for themselves.",
+      tokens: { red: [14, -1, -1, -1], yellow: [sameSquare("yellow", "red", 18), -1, -1, -1] },
+      steps: [{ wait: 600 }, { roll: 4, by: "red" }, { move: ["red", 0, 18] }, { wait: 1800 }],
     },
     {
       title: "It's your choice",
-      text: "You don't have to move: tap Skip to let a throw go. At the end of its round a piece can head home or go round again. But the same 6, 10 or 25 three times in a row is burned, and your turn passes.",
+      text: "You don't have to move: tap Skip to let a throw go, say to stay safe on a castle. At the end of its round a piece can head home or go round again, to help a partner who's behind.",
       tokens: { red: [70, -1, -1, -1] },
       steps: [{ wait: 600 }, { roll: 10, by: "red" }, { move: ["red", 0, 80] }, { wait: 1800 }],
     },
     {
-      title: "Back up your arm to the centre",
-      text: "Come back up the middle of your arm, the piece lying on its side. You need the exact number to reach the centre (one mouth-up is always 10, never 1). All four home first wins!",
+      title: "Back up your arm to the center",
+      text: "Come back up the middle of your arm, the piece lying on its side. You need the exact number to reach the center (one mouth-up is always 10, never 1). First home wins: all four pieces, or with partners all eight of your side's.",
       tokens: { red: [72, 83, 83, -1] },
       steps: [{ wait: 600 }, { roll: 6, by: "red" }, { move: ["red", 0, 78] }, { roll: 5, by: "red" }, { move: ["red", 0, 83] }, { wait: 1400 }],
     },
@@ -172,7 +172,8 @@ function Scene({ game, lesson }: { game: GameId; lesson: Lesson }) {
             setPulse(c + i);
             await wait(900);
             setPulse("");
-            if (from === -1) {
+            // Out of the centre onto the first square: one glide. Further out, it walks from there.
+            if (from === -1 && to === 0) {
               cur[c]![i] = to;
               setPos(JSON.parse(JSON.stringify(cur)));
               await wait(500);

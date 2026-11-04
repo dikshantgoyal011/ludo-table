@@ -1,5 +1,6 @@
 // Shared game types. Everything here is plain data so a game state can be
 // saved, sent over the network or (later) stored by a backend unchanged.
+import type { PachisiVariations } from "./pachisi/variations";
 
 export type Color = "red" | "green" | "yellow" | "blue";
 
@@ -96,11 +97,41 @@ export interface GameState {
   luck?: Partial<Record<Color, LuckStats>>;
   /** Version, bumped on every change; newer always wins on the network. */
   v?: number;
+  /** Partners: colours that play as one side and win together (Pachisi). Absent: everyone plays for themselves. */
+  teams?: Color[][];
+  /** The order turns go round in (absent: COLORS order). */
+  order?: Color[];
+  /** Turns a colour has to miss. */
+  skip?: Partial<Record<Color, number>>;
+  /** Friends lobby: ids of the players who are ready to start. */
+  ready?: string[];
+  /** Friends lobby (Pachisi): ids of the players who agreed to the variations, as of `variationsV`. */
+  agreed?: string[];
+  /** Pachisi: the variations this table plays (absent: none, the traditional rules). */
+  variations?: PachisiVariations;
+  /** Bumped whenever the variations change, so an agreement is always to the rules on show. */
+  variationsV?: number;
+  /** Pachisi: the throws of the turn being played. */
+  pachisi?: PachisiTurn;
 }
 
-/** How a move is made (Pachisi): `pair` two pieces from one square together; `extra` round again instead of home. */
+/** Pachisi: the turn in progress. */
+export interface PachisiTurn {
+  /** Whose turn this is about (anything for another colour is stale). */
+  c: Color | null;
+  /** Throws still to be played this turn (1: a grace played separately). */
+  hand: number[];
+  /** A throw is owed once these are played (a grace, when throws are played one at a time). */
+  again: boolean;
+  /** Moves made since the last throw (devices use it to tell their own moves apart). */
+  moved: number;
+  /** Colours whose first piece has left the Charkoni (after that, coming out takes a grace). */
+  entered: Color[];
+}
+
+/** How a move is made (Pachisi): `use` which throw in hand; `extra` round again instead of home. */
 export interface MoveOpt {
-  pair?: boolean;
+  use?: number;
   extra?: boolean;
 }
 /** One way a token can move: where it lands, and how. */
@@ -127,12 +158,20 @@ export interface Rulebook {
   id: GameId;
   /** Position of a token that is home. */
   finish: number;
+  /** Player counts this game is played with. */
+  counts: number[];
   /** The roll that brings a token out and earns another roll (Ludo's 6). */
-  isBonus(v: number): boolean;
+  isBonus(v: number, s?: GameState): boolean;
   /** A random roll for c, with this game's odds. */
   roll(s: GameState, c: Color): number;
-  /** A number someone could really have rolled (checked on rolls from the network). */
-  validRoll(v: number): boolean;
+  /** A number someone could really have rolled at this table (checked on rolls from the network). */
+  validRoll(v: number, s?: GameState): boolean;
+  /** Called as each game starts, once the players are seated (partners, who goes first). */
+  setup?(s: GameState): void;
+  /** Changes with every move made with the same roll (absent: a roll has one move). Lets a device tell whether its move has reached the host. */
+  stage?(s: GameState): number;
+  /** The throws still to play, for showing them (absent: just the roll). */
+  hand?(s: GameState): number[];
   /** Record c's roll of v. Returns false if the roll isn't allowed right now. */
   applyRoll(s: GameState, c: Color, v: number): boolean;
   /** Every way token i of c can move with v (none: it can't move). */
