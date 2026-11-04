@@ -5,7 +5,7 @@ let actx: AudioContext | null = null;
 
 function audio(): AudioContext | null {
   if (typeof window === "undefined") return null;
-  if (!actx) {
+  if (!actx || actx.state === "closed") {
     try {
       const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       actx = new Ctx();
@@ -13,8 +13,20 @@ function audio(): AudioContext | null {
       return null;
     }
   }
-  if (actx.state === "suspended") actx.resume().catch(() => {});
+  // Not only "suspended": iPhones put it "interrupted" when the phone's audio changes (a call, the microphone).
+  if (actx.state !== "running") actx.resume().catch(() => {});
   return actx;
+}
+
+/**
+ * The phone's audio changed (the microphone closed, earphones came or went):
+ * start the sounds afresh. On some phones the old sound output stays silent
+ * after such a change until the page is reloaded.
+ */
+export function resetSoundOutput() {
+  const old = actx;
+  actx = null;
+  void old?.close().catch(() => {});
 }
 
 /** Browsers only allow sound after the player has touched the page. */
@@ -28,6 +40,11 @@ export function unlockAudioOnFirstTouch() {
     },
     { passive: true },
   );
+  // Back to the page (or earphones plugged in / out): wake the sounds up again.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && actx && actx.state !== "running") actx.resume().catch(() => {});
+  });
+  navigator.mediaDevices?.addEventListener?.("devicechange", () => resetSoundOutput());
 }
 
 interface ToneOpts {

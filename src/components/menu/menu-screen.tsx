@@ -7,7 +7,7 @@ import { Bot, Globe, GraduationCap, Smartphone, Sparkles, Users, type LucideIcon
 import { openTutorial } from "@/components/tutorial/tutorial";
 import { Button } from "@/components/ui/button";
 import { getController, useSettings } from "@/hooks/use-game";
-import { isRoomCode, MODE_ORDER, MODES } from "@/lib/game/constants";
+import { isRoomCode, MODE_ORDER, MODES, roomPath } from "@/lib/game/constants";
 import type { GameId, Mode } from "@/lib/game/types";
 import { variantById, type Variant } from "@/lib/game/variants";
 import type { ActiveRoom } from "@/lib/services/types";
@@ -59,7 +59,7 @@ function ResumeButtons() {
     // Old invite links looked like /#abc123
     const hash = window.location.hash.slice(1).toLowerCase();
     if (isRoomCode(hash) && !hash.startsWith("pub")) {
-      router.replace(`/r/${hash}`);
+      router.replace(roomPath(hash));
       return;
     }
     game.exitToMenu();

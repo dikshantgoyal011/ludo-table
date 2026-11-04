@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { Volume2, X } from "lucide-react";
 import { openTutorial } from "@/components/tutorial/tutorial";
 import { useGame } from "@/hooks/use-game";
 import { cn } from "@/lib/utils";
@@ -102,6 +102,16 @@ export function GameScreen() {
       </div>
       )}
 
+      {/* The phone wouldn't start a friend's voice by itself: one tap does. */}
+      {net && game.voice.on && game.voice.blocked && (
+        <button
+          type="button"
+          onClick={() => game.voice.resumeAll()}
+          className="toast-in fixed inset-x-3 top-[calc(env(safe-area-inset-top,0px)+4.25rem)] z-40 mx-auto flex max-w-xs items-center justify-center gap-2 rounded-full bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-[0_8px_24px_rgba(0,0,0,.45)]"
+        >
+          <Volume2 className="size-4" /> Tap to hear voice chat
+        </button>
+      )}
       <ChatDialog />
       <WinDialog />
       <LeaveDialog />

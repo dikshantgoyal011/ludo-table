@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ import {
   MODES,
   newRoomCode,
   NICK_MAX,
+  roomPath,
 } from "@/lib/game/constants";
 import type { Color, GameId, Mode } from "@/lib/game/types";
 import { variationCount } from "@/lib/game/pachisi/variations";
@@ -118,7 +119,14 @@ export function SetupScreen({ mode }: { mode: Mode }) {
     getController().exitToMenu();
   }, []);
 
-  const go = (path: string) => router.push(path);
+  // Going on to a room or a game: show it's on its way (and don't start a second one).
+  const [opening, startOpening] = useTransition();
+  const go = (path: string) => startOpening(() => router.push(path));
+  // Ready before the tap: the room and game pages load at once.
+  useEffect(() => {
+    router.prefetch("/room");
+    router.prefetch("/game");
+  }, [router]);
   // The same game strip, in the same place, as on the home page: switch game in one tap.
   const strip = (
     <GameStrip
@@ -234,9 +242,10 @@ export function SetupScreen({ mode }: { mode: Mode }) {
             <Button
               size="lg"
               className="w-full"
-              onClick={() => go(`/r/${newRoomCode()}${gameQuery}`)}
+              disabled={opening}
+              onClick={() => go(roomPath(newRoomCode(), game === "ludo" ? "" : `game=${game}`))}
             >
-              Create a room
+              {opening ? "Opening the room…" : "Create a room"}
             </Button>
             <div className="text-center text-xs tracking-widest text-muted-foreground uppercase">
               or
@@ -266,8 +275,9 @@ export function SetupScreen({ mode }: { mode: Mode }) {
                     setError("Room codes are 3 to 12 letters or numbers.");
                     return;
                   }
-                  go(`/r/${v}`);
+                  go(roomPath(v));
                 }}
+                disabled={opening}
               >
                 Join
               </Button>

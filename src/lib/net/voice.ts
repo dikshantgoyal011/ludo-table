@@ -5,9 +5,15 @@
 //
 // Everyone joins listening: until their mic is turned on, a player's calls
 // carry silence (no microphone permission needed). Turning the mic on swaps
-// the real microphone into the running calls, and turning it off swaps the
-// silence back and closes the microphone.
+// the real microphone into the running calls. Turning it off only silences it:
+// the microphone stays open (it closes when you leave the table). Closing it
+// switched phones out of their call audio mode, and on some phones that left
+// game sounds and the other players' voices silent until the page was reloaded.
+//
+// Calls look after themselves: one that died (even if the other end never said
+// so) is hung up and placed again, and a voice that stopped playing is restarted.
 
+import { resetSoundOutput } from "@/lib/audio/sfx";
 import type { RoomTransport, VoiceCall, VoiceMember } from "./transport";
 
 interface Line {
@@ -17,10 +23,14 @@ interface Line {
   startedAt: number;
   audio?: HTMLAudioElement;
   meter?: AnalyserNode;
+  /** Since when the connection has been lost (0: it's fine). */
+  downSince?: number;
 }
 
 /** A call that hasn't connected after this long is dropped and tried again. */
 const CONNECT_TIMEOUT = 12_000;
+/** A call whose connection has been lost this long is dropped and tried again. */
+const DOWN_TIMEOUT = 6_000;
 /** Speaking indicator: how loud counts as talking (RMS, 0-1). */
 const SPEAKING_LEVEL = 0.035;
 
@@ -31,6 +41,8 @@ export class VoiceChat {
   micOn = false;
   /** Player ids talking right now ("me" included as my own id). */
   speaking = new Set<string>();
+  /** The phone won't play someone's voice until the page is tapped. */
+  blocked = false;
 
   /** The microphone, while it's on. */
   private mic: MediaStream | null = null;
@@ -69,7 +81,12 @@ export class VoiceChat {
   /** Leave voice chat: hang up, close the microphone. */
   stop() {
     for (const pid of [...this.lines.keys()]) this.hangUp(pid);
-    this.closeMic();
+    // Closing the microphone changes the phone's audio: start the game sounds afresh.
+    if (this.mic) {
+      this.closeMic();
+      resetSoundOutput();
+    }
+    this.blocked = false;
     this.silence?.stop();
     this.silence = null;
     if (this.meterTimer) clearInterval(this.meterTimer);
@@ -88,23 +105,75 @@ export class VoiceChat {
   async setMic(on: boolean) {
     if (on === this.micOn) return;
     if (on) {
-      const mic = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-        video: false,
-      });
-      if (!this.on) {
-        mic.getTracks().forEach((t) => t.stop());
-        return;
+      // Open the microphone the first time (or again, if it was lost); after that it's just switched on.
+      if (!this.micTrack()) {
+        const mic = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          video: false,
+        });
+        if (!this.on) {
+          mic.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        this.mic = mic;
+        this.myMeter = this.meter(mic);
+        mic.getAudioTracks()[0]?.addEventListener("ended", this.micLost);
       }
-      this.mic = mic;
+      this.mic?.getAudioTracks().forEach((t) => (t.enabled = true));
       this.micOn = true;
-      this.myMeter = this.meter(mic);
     } else {
-      this.closeMic();
+      // Silenced, not closed (see the top of this file).
+      this.mic?.getAudioTracks().forEach((t) => (t.enabled = false));
       this.micOn = false;
+      this.speaking.delete("me");
     }
+    this.sendOut();
+    this.keepPlaying();
+    this.changed();
+  }
+
+  /** The microphone stopped by itself (unplugged, or the phone took it away): send silence instead. */
+  private micLost = () => {
+    this.closeMic();
+    this.micOn = false;
+    this.sendOut();
+    this.changed();
+  };
+
+  /** Put what I send (microphone or silence) into every call. */
+  private sendOut() {
     const track = this.outTrack();
     for (const [pid, line] of this.lines) if (!track || !line.call.sendTrack(track)) this.hangUp(pid); // called again with the new sound
+  }
+
+  /** The open microphone, if there is one. */
+  private micTrack() {
+    const t = this.mic?.getAudioTracks()[0];
+    return t && t.readyState === "live" ? t : null;
+  }
+
+  /** Make sure everyone I should hear is playing (phones pause them when their audio changes). */
+  private keepPlaying() {
+    for (const [pid, line] of this.lines) {
+      const a = line.audio;
+      if (!a || !this.hears(pid) || !a.paused) continue;
+      a.play().then(
+        () => this.setBlocked(false),
+        () => this.setBlocked(true),
+      );
+    }
+  }
+  private setBlocked(b: boolean) {
+    if (this.blocked === b) return;
+    this.blocked = b;
+    this.changed();
+  }
+
+  /** A tap on "Tap to hear": play everyone (a tap lets the phone start sound). */
+  resumeAll() {
+    if (this.ctx && this.ctx.state !== "running") void this.ctx.resume().catch(() => {});
+    this.blocked = false;
+    this.keepPlaying();
     this.changed();
   }
 
@@ -139,8 +208,14 @@ export class VoiceChat {
     for (const [pid, line] of this.lines) {
       const m = others.get(pid);
       const stale = !line.audio && now - line.startedAt > CONNECT_TIMEOUT;
-      if (!m || m.peerId !== line.peerId || stale) this.hangUp(pid);
+      // Dead, or lost for a while: hang up, and it's placed again below (or by them).
+      const health = line.call.health?.() || "ok";
+      if (health === "down") line.downSince ||= now;
+      else line.downSince = 0;
+      const dead = health === "dead" || (!!line.downSince && now - line.downSince > DOWN_TIMEOUT);
+      if (!m || m.peerId !== line.peerId || stale || dead) this.hangUp(pid);
     }
+    this.keepPlaying();
     if (!transport) return;
     for (const m of others.values()) {
       if (this.lines.has(m.id) || !(myId < m.id)) continue;
@@ -162,9 +237,9 @@ export class VoiceChat {
     this.attach(call.pid, call.peerId, call);
   }
 
-  /** What my calls send: the microphone when it's on, silence otherwise. */
+  /** What my calls send: the microphone once it's been opened (switched off, it sends nothing), silence before that. */
   private outTrack(): MediaStreamTrack | null {
-    return (this.micOn && this.mic?.getAudioTracks()[0]) || this.silence;
+    return this.micTrack() || this.silence;
   }
   private outStream(): MediaStream | null {
     const t = this.outTrack();
@@ -172,6 +247,7 @@ export class VoiceChat {
   }
 
   private closeMic() {
+    this.mic?.getAudioTracks()[0]?.removeEventListener("ended", this.micLost);
     this.mic?.getTracks().forEach((t) => t.stop());
     this.mic = null;
     this.myMeter = null;
@@ -184,8 +260,8 @@ export class VoiceChat {
   }
 
   private unlock = () => {
-    if (this.ctx?.state === "suspended") void this.ctx.resume().catch(() => {});
-    for (const line of this.lines.values()) if (line.audio?.paused) void line.audio.play().catch(() => {});
+    if (this.ctx && this.ctx.state !== "running") void this.ctx.resume().catch(() => {});
+    this.keepPlaying();
   };
 
   private attach(pid: string, peerId: string, call: VoiceCall) {
@@ -198,8 +274,12 @@ export class VoiceChat {
       audio.setAttribute("playsinline", "");
       audio.srcObject = remote;
       audio.muted = !this.hears(pid);
-      void audio.play().catch(() => {});
       line.audio = audio;
+      // A phone may refuse to start it without a tap: then "Tap to hear" shows.
+      audio.play().then(
+        () => this.setBlocked(false),
+        () => this.setBlocked(true),
+      );
       line.meter = this.meter(remote) || undefined;
       this.changed();
     });

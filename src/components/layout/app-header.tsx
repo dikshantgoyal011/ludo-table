@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Menu as MenuIcon, Settings as SettingsIcon } from "lucide-react";
 import { InviteDialog } from "@/components/game/invite-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useGame } from "@/hooks/use-game";
-import { cleanRoomCode, MODES, newRoomCode } from "@/lib/game/constants";
+import { cleanRoomCode, MODES, newRoomCode, roomPath } from "@/lib/game/constants";
 import { uiStore } from "@/lib/ui-store";
 
 export function AppHeader() {
@@ -18,18 +18,23 @@ export function AppHeader() {
   const [code, setCode] = useState("");
 
   const onMenu = pathname === "/" || pathname === "/ludo";
-  const inGame = pathname === "/game" || pathname.startsWith("/r/");
+  const inGame = pathname === "/game" || pathname === "/room" || pathname.startsWith("/r/");
+  // The home page loads at once when the logo or Menu is tapped.
+  useEffect(() => {
+    if (!onMenu) router.prefetch("/");
+  }, [onMenu, router]);
   // Room code and Invite are for gathering players after a game (the lobby shows its own; hidden while
   // a game is on, so the header stays one line).
   const friends = inGame && game.mode === "friends" && game.loaded && game.state.phase === "done";
 
   // Back to the home screen (from a game in progress: only after "Leave this game?").
+  // The home page leaves the table itself once it's there: leaving first emptied this
+  // screen while the home page was still on its way.
   const goMenu = () => {
     if (inGame && game.leaveNeedsConfirm()) {
       uiStore.set({ leaveOpen: "menu" });
       return;
     }
-    game.exitToMenu();
     router.push("/");
   };
 
@@ -41,7 +46,7 @@ export function AppHeader() {
     }
     setCode("");
     setRoomOpen(false);
-    router.push(`/r/${v}`);
+    router.push(roomPath(v));
   };
 
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -132,7 +137,7 @@ export function AppHeader() {
             className="h-10 px-4"
             onClick={() => {
               setRoomOpen(false);
-              router.push(`/r/${newRoomCode()}?new=1${game.state.game === "pachisi" ? "&game=pachisi" : ""}`);
+              router.push(roomPath(newRoomCode(), `new=1${game.state.game === "pachisi" ? "&game=pachisi" : ""}`));
             }}
           >
             Start a new room

@@ -94,7 +94,8 @@ export function WinDialog() {
             size="lg"
             variant="outline"
             onClick={() => {
-              game.exitToMenu();
+              // The home page leaves the table once it's there (leaving first emptied this screen while it loaded).
+              game.closeWinner();
               router.push("/");
             }}
           >

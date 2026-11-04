@@ -66,6 +66,8 @@ export interface VoiceCall {
   sendTrack(track: MediaStreamTrack): boolean;
   onStream(cb: (stream: MediaStream) => void): void;
   onClose(cb: () => void): void;
+  /** Is the call still connected? "down": lost for now (it may come back); "dead": over, even if nobody said so. */
+  health?(): "ok" | "down" | "dead";
   close(): void;
 }
 

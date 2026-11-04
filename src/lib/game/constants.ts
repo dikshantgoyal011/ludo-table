@@ -61,5 +61,10 @@ export const isMode = (v: unknown): v is Mode => typeof v === "string" && v in M
 export const cleanRoomCode = (v: string) => v.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
 export const isRoomCode = (v: string) => /^[a-z0-9]{3,12}$/.test(v);
 export const newRoomCode = () => Math.random().toString(36).slice(2, 8);
+/**
+ * Where to open friends room `code` from inside the app (a page built ahead of
+ * time; invite links use /r/code). `extra`: more of the query, e.g. "new=1&game=pachisi".
+ */
+export const roomPath = (code: string, extra = "") => `/room?c=${encodeURIComponent(code)}${extra ? "&" + extra : ""}`;
 /** Longest player name. */
 export const NICK_MAX = 24;

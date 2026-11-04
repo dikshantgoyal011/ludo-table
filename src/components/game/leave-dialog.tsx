@@ -130,7 +130,7 @@ export function LeaveDialog() {
             onClick={() => {
               close();
               leaving = true;
-              game.exitToMenu();
+              // The home page leaves the game once it's there (leaving first emptied this screen while it loaded).
               router.replace("/");
             }}
           >

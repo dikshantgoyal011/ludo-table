@@ -26,6 +26,7 @@ import {
   ONLINE_TURN_LIMIT,
   PING_MS,
   REMOTE_MOVE_DELAY,
+  roomPath,
   STEP_MS,
   TYPING_TTL,
 } from "./constants";
@@ -92,6 +93,9 @@ const WATCH_GAP_MS = 5_000;
 
 /** Online: someone waiting alone at a table other than the first looks again for an earlier table this often. */
 const RESEARCH_MS = 8_000;
+
+/** Everyone in voice chat says so again this often. */
+const VOICE_REPEAT_MS = 5_000;
 
 /** Unconfirmed actions older than this are dropped (the message must have been lost). */
 const PENDING_TIMEOUT = 4_000;
@@ -230,6 +234,8 @@ export class GameController {
   private preRolledColor: Color | null = null;
   /** Host: who's in voice chat. */
   private voiceMembers = new Map<string, VoiceMember>();
+  /** When I last told the host I'm in voice chat. */
+  private voiceSaidAt = 0;
   private typingSentAt = 0;
   /** My colour while a game is on; changing the colour setting waits for the next game. */
   private lockedColor: Color | null = null;
@@ -1078,7 +1084,7 @@ export class GameController {
     if (!a) return null;
     if (a.mode === "friends") {
       if (!(this.mode === "friends" && this.room === a.room)) this.leaveCurrent();
-      return `/r/${a.room}`;
+      return roomPath(a.room);
     }
     this.leaveCurrent();
     this.mode = "online";
@@ -1567,8 +1573,12 @@ export class GameController {
   }
   /** Host: someone joined / left voice chat or muted their mic. */
   private hostVoice(m: { id: string; peerId: string; on: boolean; muted: boolean }) {
-    if (m.on && m.peerId) this.voiceMembers.set(m.id, { id: m.id, peerId: m.peerId, muted: !!m.muted });
-    else if (!this.voiceMembers.delete(m.id)) return;
+    if (m.on && m.peerId) {
+      const was = this.voiceMembers.get(m.id);
+      // (Everyone repeats this every few seconds: only tell the table when something changed.)
+      if (was && was.peerId === m.peerId && was.muted === !!m.muted) return;
+      this.voiceMembers.set(m.id, { id: m.id, peerId: m.peerId, muted: !!m.muted });
+    } else if (!this.voiceMembers.delete(m.id)) return;
     this.shareVoice();
   }
   /** Host: drop people from voice chat who went offline. */
@@ -1630,8 +1640,14 @@ export class GameController {
       }
       if (this.isHost && s.phase === "playing") this.checkPresence();
       if (this.isHost) this.pruneVoice();
-      // Retry voice calls that didn't connect.
+      // Retry voice calls that didn't connect (or died).
       if (this.voice.on) this.voice.sync(this.voiceRoster, this.myId, this.transport);
+      // Say again that I'm in voice chat: a host that dropped me (I was offline for a moment,
+      // or it's a new host) takes me back, so the others call me again.
+      if (this.voice.on && this.online && now - this.voiceSaidAt > VOICE_REPEAT_MS) {
+        this.voiceSaidAt = now;
+        this.announceVoice();
+      }
       if (this.isHost && this.mode === "online") {
         // Waiting alone at a later table: an earlier one may have freed up with
         // someone waiting there (two players could each end up hosting a table

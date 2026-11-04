@@ -63,6 +63,15 @@ class PeerVoiceCall implements VoiceCall {
     this.mc.on("close", cb);
     this.mc.on("error", cb);
   }
+  health(): "ok" | "down" | "dead" {
+    // PeerJS doesn't always tell one end that the other hung up: look at the connection itself.
+    const pc = this.mc.peerConnection;
+    if (!pc) return "ok"; // still being set up
+    const st = pc.connectionState || pc.iceConnectionState;
+    if (st === "failed" || st === "closed") return "dead";
+    if (st === "disconnected") return "down";
+    return "ok";
+  }
   close() {
     try {
       this.mc.close();
