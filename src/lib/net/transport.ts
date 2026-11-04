@@ -15,6 +15,8 @@ export interface VoiceMember {
   peerId: string;
   /** Their microphone is off (they only listen). */
   muted: boolean;
+  /** Goes up when they lost a call they can't place again themselves: whoever calls them calls again. */
+  gen?: number;
 }
 
 export type NetMessage =
@@ -51,7 +53,7 @@ export type NetMessage =
    */
   | { type: "dice"; id: string; c: Color; v: number; seq: number }
   /** Guest to host: my voice chat status (on = false: I left voice chat). */
-  | { type: "voice"; id: string; peerId: string; on: boolean; muted: boolean }
+  | { type: "voice"; id: string; peerId: string; on: boolean; muted: boolean; gen?: number }
   /** Host to everyone: who is in voice chat. */
   | { type: "voiceRoster"; list: VoiceMember[] };
 
@@ -66,6 +68,8 @@ export interface VoiceCall {
   sendTrack(track: MediaStreamTrack): boolean;
   onStream(cb: (stream: MediaStream) => void): void;
   onClose(cb: () => void): void;
+  /** How loud their voice is arriving right now (0-1), from the call itself; null if the browser can't tell. */
+  level?(): Promise<number | null>;
   /** Is the call still connected? "down": lost for now (it may come back); "dead": over, even if nobody said so. */
   health?(): "ok" | "down" | "dead";
   close(): void;

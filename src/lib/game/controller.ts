@@ -243,7 +243,10 @@ export class GameController {
   constructor(
     private services: Services,
     private makeTransport: TransportFactory = createPeerTransport,
-  ) {}
+  ) {
+    // I lost a voice call the other player places: tell the table, so they call me again.
+    this.voice.onLost = () => this.announceVoice();
+  }
 
   // ============================================================ subscriptions
   subscribe = (fn: () => void) => {
@@ -1567,17 +1570,18 @@ export class GameController {
     return this.voice.speaking.has(pid === this.myId ? "me" : pid);
   }
   private announceVoice() {
-    const m = { type: "voice" as const, id: this.myId, peerId: this.transport?.peerId() || "", on: this.voice.on, muted: !this.voice.micOn };
+    const m = { type: "voice" as const, id: this.myId, peerId: this.transport?.peerId() || "", on: this.voice.on, muted: !this.voice.micOn, gen: this.voice.gen };
     if (this.isHost) this.hostVoice(m);
     else this.transport?.sendToHost(m);
   }
   /** Host: someone joined / left voice chat or muted their mic. */
-  private hostVoice(m: { id: string; peerId: string; on: boolean; muted: boolean }) {
+  private hostVoice(m: { id: string; peerId: string; on: boolean; muted: boolean; gen?: number }) {
     if (m.on && m.peerId) {
       const was = this.voiceMembers.get(m.id);
+      const gen = m.gen || 0;
       // (Everyone repeats this every few seconds: only tell the table when something changed.)
-      if (was && was.peerId === m.peerId && was.muted === !!m.muted) return;
-      this.voiceMembers.set(m.id, { id: m.id, peerId: m.peerId, muted: !!m.muted });
+      if (was && was.peerId === m.peerId && was.muted === !!m.muted && (was.gen || 0) === gen) return;
+      this.voiceMembers.set(m.id, { id: m.id, peerId: m.peerId, muted: !!m.muted, gen });
     } else if (!this.voiceMembers.delete(m.id)) return;
     this.shareVoice();
   }
@@ -2036,7 +2040,7 @@ export class GameController {
       const use = Number(m.use);
       if (seat?.id === link.pid && !seat.bot) this.doMove(m.c, Number(m.i), { ...(use > 0 ? { use } : {}), extra: !!m.extra });
     } else if (m.type === "voice" && link.pid && m.id === link.pid)
-      this.hostVoice({ id: link.pid, peerId: String(m.peerId || ""), on: !!m.on, muted: !!m.muted });
+      this.hostVoice({ id: link.pid, peerId: String(m.peerId || ""), on: !!m.on, muted: !!m.muted, gen: Math.max(0, Math.floor(Number(m.gen) || 0)) });
     else if (m.type === "state") {
       // Send the result to everyone, the sender included: if the host changed
       // something at the same moment, the sender must end up with the same state.

@@ -25,6 +25,10 @@ interface Line {
   meter?: AnalyserNode;
   /** Since when the connection has been lost (0: it's fine). */
   downSince?: number;
+  /** The other player's `gen` when this call was made (see VoiceMember.gen). */
+  gen?: number;
+  /** How loud their voice last arrived, from the call's own figures (null: not known, use `meter`). */
+  level?: number | null;
 }
 
 /** A call that hasn't connected after this long is dropped and tried again. */
@@ -33,6 +37,8 @@ const CONNECT_TIMEOUT = 12_000;
 const DOWN_TIMEOUT = 6_000;
 /** Speaking indicator: how loud counts as talking (RMS, 0-1). */
 const SPEAKING_LEVEL = 0.035;
+/** The same, from a call's own figures of how loud a voice arrives (0-1). */
+const SPEAKING_ARRIVING = 0.012;
 
 export class VoiceChat {
   /** In voice chat at this table (calls placed / taken). */
@@ -43,6 +49,17 @@ export class VoiceChat {
   speaking = new Set<string>();
   /** The phone won't play someone's voice until the page is tapped. */
   blocked = false;
+  /**
+   * Goes up each time I lose a call that the other player places (the one with
+   * the smaller id calls). Shared through the host (VoiceMember.gen): seeing it
+   * change, they call me again at once instead of waiting for their end of the
+   * dead call to time out.
+   */
+  gen = 0;
+  /** Tell the table my voice status again (set by the game: my `gen` changed). */
+  onLost: (() => void) | null = null;
+  /** Who is in voice chat, as last shared by the host. */
+  private roster = new Map<string, VoiceMember>();
 
   /** The microphone, while it's on. */
   private mic: MediaStream | null = null;
@@ -70,6 +87,7 @@ export class VoiceChat {
     }
     this.on = true;
     this.micOn = false;
+    this.gen = 0;
     this.hearAll = true;
     this.hearOne.clear();
     this.meterTimer = setInterval(() => this.measure(), 200);
@@ -94,6 +112,7 @@ export class VoiceChat {
     if (typeof document !== "undefined") document.removeEventListener("pointerdown", this.unlock);
     void this.ctx?.close().catch(() => {});
     this.ctx = null;
+    this.meters.clear();
     this.speaking.clear();
     const was = this.on;
     this.on = false;
@@ -205,6 +224,8 @@ export class VoiceChat {
     if (!this.on || !out) return;
     const now = Date.now();
     const others = new Map(members.filter((m) => m.id !== myId && m.peerId).map((m) => [m.id, m]));
+    this.roster = others;
+    let lost = false;
     for (const [pid, line] of this.lines) {
       const m = others.get(pid);
       const stale = !line.audio && now - line.startedAt > CONNECT_TIMEOUT;
@@ -213,7 +234,17 @@ export class VoiceChat {
       if (health === "down") line.downSince ||= now;
       else line.downSince = 0;
       const dead = health === "dead" || (!!line.downSince && now - line.downSince > DOWN_TIMEOUT);
-      if (!m || m.peerId !== line.peerId || stale || dead) this.hangUp(pid);
+      // They lost their end of our call (their gen went up): call again.
+      const redial = !!m && (m.gen || 0) !== (line.gen || 0);
+      if (!m || m.peerId !== line.peerId || stale || dead || redial) {
+        this.hangUp(pid);
+        // A call they place: tell them to place it again.
+        if ((stale || dead) && !(myId < pid)) lost = true;
+      }
+    }
+    if (lost) {
+      this.gen++;
+      this.onLost?.();
     }
     this.keepPlaying();
     if (!transport) return;
@@ -250,6 +281,7 @@ export class VoiceChat {
     this.mic?.getAudioTracks()[0]?.removeEventListener("ended", this.micLost);
     this.mic?.getTracks().forEach((t) => t.stop());
     this.mic = null;
+    this.dropMeter(this.myMeter);
     this.myMeter = null;
     this.speaking.delete("me");
   }
@@ -265,7 +297,7 @@ export class VoiceChat {
   };
 
   private attach(pid: string, peerId: string, call: VoiceCall) {
-    const line: Line = { call, peerId, startedAt: Date.now() };
+    const line: Line = { call, peerId, startedAt: Date.now(), gen: this.roster.get(pid)?.gen || 0 };
     this.lines.set(pid, line);
     call.onStream((remote) => {
       if (this.lines.get(pid) !== line) return;
@@ -300,6 +332,7 @@ export class VoiceChat {
 
   private drop(pid: string, line: Line) {
     this.lines.delete(pid);
+    this.dropMeter(line.meter);
     if (line.audio) {
       line.audio.pause();
       line.audio.srcObject = null;
@@ -307,16 +340,41 @@ export class VoiceChat {
     this.speaking.delete(pid);
   }
 
+  /**
+   * A level meter on a stream (for the speaking lights). The whole chain is kept
+   * referenced and ends at the speakers through a volume of zero: a chain that
+   * goes nowhere can be thrown away by the browser (Chrome does), and the light
+   * then stayed dark for good while the voice itself still played.
+   */
   private meter(stream: MediaStream): AnalyserNode | null {
     if (!this.ctx) return null;
     try {
       const src = this.ctx.createMediaStreamSource(stream);
       const an = this.ctx.createAnalyser();
       an.fftSize = 512;
-      src.connect(an); // not to the speakers: playback is the <audio> element
+      const mute = this.ctx.createGain();
+      mute.gain.value = 0; // playback is the <audio> element, not this
+      src.connect(an);
+      an.connect(mute);
+      mute.connect(this.ctx.destination);
+      this.meters.set(an, { src, mute });
       return an;
     } catch {
       return null;
+    }
+  }
+  /** Each meter's nodes, kept so they aren't thrown away (and to disconnect them when done). */
+  private meters = new Map<AnalyserNode, { src: MediaStreamAudioSourceNode; mute: GainNode }>();
+  private dropMeter(an?: AnalyserNode | null) {
+    const m = an && this.meters.get(an);
+    if (!an || !m) return;
+    this.meters.delete(an);
+    try {
+      m.src.disconnect();
+      an.disconnect();
+      m.mute.disconnect();
+    } catch {
+      /* already gone */
     }
   }
 
@@ -334,7 +392,17 @@ export class VoiceChat {
     };
     const next = new Set<string>();
     if (this.micOn && loud(this.myMeter)) next.add("me");
-    for (const [pid, line] of this.lines) if (this.hears(pid) && loud(line.meter)) next.add(pid);
+    for (const [pid, line] of this.lines) {
+      if (!this.hears(pid)) continue;
+      // Others: how loud their voice arrives, as the call itself measures it. (A meter on the
+      // arriving sound sometimes heard only silence while the voice played fine, on a phone
+      // that hadn't opened its own microphone: the light then stayed dark.)
+      if (line.call.level)
+        void line.call.level().then((v) => {
+          if (this.lines.get(pid) === line) line.level = v;
+        });
+      if (typeof line.level === "number" ? line.level > SPEAKING_ARRIVING : loud(line.meter)) next.add(pid);
+    }
     const same = next.size === this.speaking.size && [...next].every((p) => this.speaking.has(p));
     if (same) return;
     this.speaking = next;
