@@ -187,6 +187,30 @@ function LudoDemo({ twoDice = false, game: kind = "ludo" }: { twoDice?: boolean;
     note: "",
   });
   const [box, seen] = useOnScreen<HTMLDivElement>();
+  // The shells / dice under the board shrink to fit beside the "Yellow threw" line when the
+  // preview is narrow (a short phone), instead of sticking out of the frame; narrower
+  // still, the line keeps just the player's colour.
+  const label = useRef<HTMLSpanElement>(null);
+  const [width, setWidth] = useState(999);
+  const [labelW, setLabelW] = useState(0);
+  useEffect(() => {
+    const el = box.current;
+    const lab = label.current;
+    if (!el || !lab || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      setWidth(el.clientWidth);
+      setLabelW(lab.offsetWidth);
+    });
+    ro.observe(el);
+    ro.observe(lab);
+    return () => ro.disconnect();
+  }, [box]);
+  const dieCount = twoDice ? 2 : 1;
+  const narrow = width < (pachisi ? 250 : twoDice ? 230 : 170);
+  const room = narrow ? width - 28 : width - labelW - 12;
+  // A tray of six shells is about 6.1 shells wide; a dice is its size wide (plus the gap between two).
+  const shellPx = Math.max(13, Math.min(22, Math.floor(room / 6.1)));
+  const diePx = Math.max(26, Math.min(40, Math.floor((room - (dieCount - 1) * 12) / dieCount)));
   const wait = useTimers(seen);
 
   useEffect(() => {
@@ -309,20 +333,22 @@ function LudoDemo({ twoDice = false, game: kind = "ludo" }: { twoDice?: boolean;
     </g>
   ));
   return (
-    <div ref={box} className="flex flex-col items-center gap-3">
+    <div ref={box} className="flex flex-col items-center gap-2 md:gap-3">
       {pachisi ? <PachisiBoardPreview>{pieces}</PachisiBoardPreview> : <BoardPreview style={style} th={th} className="rounded-xl p-1.5">{pieces}</BoardPreview>}
-      <div className="flex min-h-12 items-center gap-3 text-sm font-bold">
+      <div className="flex min-h-11 max-w-full items-center justify-center gap-3 text-sm font-bold md:min-h-12">
         {/* One line, however wide the shells: "Blue threw · no move" */}
-        <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
+        <span ref={label} className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
           <span className="h-3 w-3 rounded-full ring-2 ring-white/30" style={{ background: th.pieces[dice.c] }} />
-          {NAMES[dice.c]} {dice.rolling ? (pachisi ? "throws…" : "rolls…") : `${pachisi ? "threw" : "rolled"}${dice.note ? " · " + dice.note : ""}`}
+          <span className={cn(narrow && "sr-only")}>
+            {NAMES[dice.c]} {dice.rolling ? (pachisi ? "throws…" : "rolls…") : `${pachisi ? "threw" : "rolled"}${dice.note ? " · " + dice.note : ""}`}
+          </span>
         </span>
         {pachisi ? (
-          <CowrieView value={dice.faceA} roll={dice.a} rolling={dice.rolling} shell={22} label="Cowrie shells" />
+          <CowrieView value={dice.faceA} roll={dice.a} rolling={dice.rolling} shell={shellPx} label="Cowrie shells" />
         ) : (
-          <DiceView spin={spinA} face={dice.faceA} roll={dice.a} rolling={dice.rolling} size={40} label="Dice" />
+          <DiceView spin={spinA} face={dice.faceA} roll={dice.a} rolling={dice.rolling} size={diePx} label="Dice" />
         )}
-        {twoDice && <DiceView spin={spinB} face={dice.faceB} roll={dice.b} rolling={dice.rolling} size={40} label="Second dice" />}
+        {twoDice && <DiceView spin={spinB} face={dice.faceB} roll={dice.b} rolling={dice.rolling} size={diePx} label="Second dice" />}
       </div>
     </div>
   );

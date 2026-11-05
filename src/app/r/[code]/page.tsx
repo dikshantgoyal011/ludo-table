@@ -5,8 +5,10 @@ import { RoomScreen } from "@/components/game/room-screen";
 export default async function RoomPage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
   return (
-    <Suspense>
-      <RoomScreen code={code} />
-    </Suspense>
+    <div className="app-scroll">
+      <Suspense>
+        <RoomScreen code={code} />
+      </Suspense>
+    </div>
   );
 }

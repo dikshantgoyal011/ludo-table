@@ -54,18 +54,9 @@ export function AppHeader() {
     if (game.inviteLink()) setInviteOpen(true);
   };
 
-  // The header's frosted background shows only once the page has scrolled a little.
-  const [scrolled, setScrolled] = useState(false);
-  useEffect(() => {
-    const check = () => setScrolled(window.scrollY > 16);
-    check();
-    window.addEventListener("scroll", check, { passive: true });
-    return () => window.removeEventListener("scroll", check);
-  }, [pathname]);
-
   return (
     <>
-      <header className="app-bar flex flex-wrap items-center justify-between gap-2" data-scrolled={scrolled ? "" : undefined}>
+      <header className="app-bar flex flex-wrap items-center justify-between gap-2">
         <h1 className="shrink-0 leading-none">
           <a
             href="/"
@@ -73,7 +64,7 @@ export function AppHeader() {
             onClick={(e) => {
               e.preventDefault();
               if (pathname === "/") {
-                window.scrollTo({ top: 0, behavior: "smooth" });
+                document.querySelector(".app-scroll")?.scrollTo({ top: 0, behavior: "smooth" });
                 return;
               }
               goMenu();

@@ -1,9 +1,9 @@
 "use client";
 
 // Settings: a short main page of grouped rows (profile, look, play), each detailed
-// choice on a page of its own. Board designs get one row per game and their
-// pictures only on that game's page, so Settings stays short and quick to open
-// however many games there are.
+// choice on a page of its own. Board designs sit behind one "Boards" row (a list
+// of games, each opening its own page of designs), so Settings stays short and
+// quick to open however many games there are.
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 import { Avatar } from "@/components/game/avatar";
@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * Each game's board designs. A new game adds one entry here (one row on the
- * main page, and its own page of designs).
+ * Boards page, and its own page of designs).
  */
 interface BoardChoices {
   game: GameId;
@@ -67,7 +67,7 @@ const BOARDS: BoardChoices[] = [
   },
 ];
 
-type Page = { kind: "main" } | { kind: "you" } | { kind: "theme" } | { kind: "board"; game: GameId };
+type Page = { kind: "main" } | { kind: "you" } | { kind: "theme" } | { kind: "boards" } | { kind: "board"; game: GameId };
 
 /** A group of rows on the main page. */
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
@@ -93,7 +93,7 @@ function Row({ label, value, onClick, children, lead }: { label: string; value?:
     </>
   );
   return onClick ? (
-    <button type="button" onClick={onClick} className="flex min-h-14 w-full items-center gap-3 px-3 py-2 text-left outline-none hover:bg-foreground/5 focus-visible:bg-foreground/10 active:bg-foreground/10">
+    <button type="button" onClick={onClick} className="settings-row flex min-h-14 w-full items-center gap-3 px-3 py-2 text-left outline-none focus-visible:bg-foreground/10 active:bg-foreground/10">
       {inner}
     </button>
   ) : (
@@ -113,7 +113,7 @@ function Choice({ on, onClick, className, style, children }: { on: boolean; onCl
       aria-pressed={on}
       onClick={onClick}
       className={cn(
-        "relative min-w-0 rounded-xl border-2 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring active:scale-95",
+        "hover-lift relative min-w-0 rounded-xl border-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95",
         on ? "border-primary" : "border-transparent",
         className,
       )}
@@ -271,6 +271,38 @@ function BoardPage({ b }: { b: BoardChoices }) {
   );
 }
 
+/** What a game's board is set to, in words. */
+function boardValue(b: BoardChoices, settings: Settings, th: Theme) {
+  const cur = b.current(settings);
+  return cur === "auto" ? `Match theme · ${b.name(b.auto(th))}` : b.name(cur);
+}
+
+/** Every game's board, one row each (the game being played first); a row opens its designs. */
+function BoardsPage({ go }: { go: (p: Page) => void }) {
+  const [settings] = useSettings();
+  const game = useGame();
+  const th = themeOf(settings.theme);
+  const playing = game.mode ? game.state.game || "ludo" : null;
+  const boards = [...BOARDS].sort((a, b) => (a.game === playing ? -1 : b.game === playing ? 1 : 0));
+  return (
+    <div className="flex flex-col divide-y divide-border overflow-hidden rounded-xl border border-border bg-background/50">
+      {boards.map((b) => (
+        <Row
+          key={b.game}
+          label={b.title.replace(/ board$/, "")}
+          value={boardValue(b, settings, th)}
+          onClick={() => go({ kind: "board", game: b.game })}
+          lead={
+            <span className="size-10 shrink-0 overflow-hidden rounded-lg bg-secondary p-0.5">
+              {b.preview(b.current(settings) === "auto" ? b.auto(th) : b.current(settings), th)}
+            </span>
+          }
+        />
+      ))}
+    </div>
+  );
+}
+
 function MainPage({ go }: { go: (p: Page) => void }) {
   const [settings, save] = useSettings();
   const [profile] = useProfile();
@@ -278,13 +310,9 @@ function MainPage({ go }: { go: (p: Page) => void }) {
   const th = themeOf(settings.theme);
   const av = profile.avatar >= 0 ? profile.avatar : defaultAvatar(game.myId);
   const cc = profile.country || detectCountry();
-  // In a game, that game's board comes first.
+  // In a game, that game's board is named first.
   const playing = game.mode ? game.state.game || "ludo" : null;
   const boards = [...BOARDS].sort((a, b) => (a.game === playing ? -1 : b.game === playing ? 1 : 0));
-  const boardValue = (b: BoardChoices) => {
-    const cur = b.current(settings);
-    return cur === "auto" ? `Match theme · ${b.name(b.auto(th))}` : b.name(cur);
-  };
   return (
     <div className="flex flex-col gap-4">
       <Group title="Profile">
@@ -303,9 +331,11 @@ function MainPage({ go }: { go: (p: Page) => void }) {
         <Row label="Theme" value={th.name} onClick={() => go({ kind: "theme" })}>
           <Swatch th={th} />
         </Row>
-        {boards.map((b) => (
-          <Row key={b.game} label={b.title} value={boardValue(b)} onClick={() => go({ kind: "board", game: b.game })} />
-        ))}
+        <Row
+          label="Boards"
+          value={boards.map((b) => `${b.title.replace(/ board$/, "")}: ${boardValue(b, settings, th).replace(/^Match theme · /, "")}`).join(" · ")}
+          onClick={() => go({ kind: "boards" })}
+        />
       </Group>
       <Group title="Play">
         <Row label="Token movement" value={settings.steps ? "Hops square by square" : "Slides straight to the square"}>
@@ -352,7 +382,9 @@ export function SettingsDialog() {
     if (settingsOpen) setPage({ kind: "main" });
   }, [settingsOpen]);
   const board = page.kind === "board" ? BOARDS.find((b) => b.game === page.game) : undefined;
-  const title = page.kind === "you" ? "Profile" : page.kind === "theme" ? "Theme" : board ? board.title : "Settings";
+  const title = page.kind === "you" ? "Profile" : page.kind === "theme" ? "Theme" : page.kind === "boards" ? "Boards" : board ? board.title : "Settings";
+  // Back: from a game's designs to the list of boards, otherwise to the main page.
+  const back = () => setPage(page.kind === "board" ? { kind: "boards" } : { kind: "main" });
   const scroller = useRef<HTMLDivElement>(null);
   // (In braces: newer browsers return a Promise from scrollTo, and React takes a returned value for a cleanup function.)
   useEffect(() => {
@@ -364,7 +396,7 @@ export function SettingsDialog() {
       <DialogContent className="max-h-[88vh]">
         <div className="flex items-center gap-2 border-b border-border px-3 py-3">
           {page.kind !== "main" ? (
-            <Button variant="ghost" size="sm" className="-ml-1 gap-0.5 px-2" onClick={() => setPage({ kind: "main" })}>
+            <Button variant="ghost" size="sm" className="-ml-1 gap-0.5 px-2" onClick={back}>
               <ChevronLeft className="size-4" /> Back
             </Button>
           ) : (
@@ -382,6 +414,7 @@ export function SettingsDialog() {
           {page.kind === "main" && <MainPage go={setPage} />}
           {page.kind === "you" && <YouPage />}
           {page.kind === "theme" && <ThemePage />}
+          {page.kind === "boards" && <BoardsPage go={setPage} />}
           {board && <BoardPage b={board} />}
         </div>
       </DialogContent>

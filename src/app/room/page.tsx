@@ -17,8 +17,10 @@ function Room() {
 
 export default function RoomPage() {
   return (
-    <Suspense>
-      <Room />
-    </Suspense>
+    <div className="app-scroll">
+      <Suspense>
+        <Room />
+      </Suspense>
+    </div>
   );
 }

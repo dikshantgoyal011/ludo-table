@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -77,11 +77,12 @@ export function SetupScreen({ mode }: { mode: Mode }) {
   const [profile, save] = useProfile();
   const [error, setError] = useState("");
   const [code, setCode] = useState("");
-  // Which game: ?game= in the address (Ludo when absent).
-  const [game, setGame] = useState<GameId>("ludo");
-  useEffect(() => {
-    setGame(new URLSearchParams(window.location.search).get("game") === "pachisi" ? "pachisi" : "ludo");
-  }, []);
+  // Which game: ?game= in the address (Ludo when absent). Read from the router, so a
+  // page opened from inside the app has the right game from its very first frame
+  // (reading it after opening showed Ludo for a moment on every Pachisi screen).
+  const query = useSearchParams();
+  const [picked, setGame] = useState<GameId | null>(null);
+  const game: GameId = picked ?? (query.get("game") === "pachisi" ? "pachisi" : "ludo");
   const v = variantById(game);
   const gameQuery = game === "ludo" ? "" : `?game=${game}`;
   const pachisi = game === "pachisi";
@@ -102,7 +103,7 @@ export function SetupScreen({ mode }: { mode: Mode }) {
       <button
         type="button"
         onClick={() => setVarsOpen(true)}
-        className="flex w-full items-center gap-3 rounded-xl border border-border bg-background/50 px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[.99]"
+        className="hover-lift flex w-full items-center gap-3 rounded-xl border border-border bg-background/50 px-3 py-2.5 text-left outline-none hover:border-primary/60 focus-visible:ring-2 focus-visible:ring-ring active:scale-[.99]"
       >
         <span className="min-w-0 flex-1 text-sm">
           <span className="block font-bold">{variationCount(vars) ? `${variationCount(vars)} variation${variationCount(vars) > 1 ? "s" : ""} on` : "Traditional rules"}</span>
@@ -118,6 +119,8 @@ export function SetupScreen({ mode }: { mode: Mode }) {
   useEffect(() => {
     getController().exitToMenu();
   }, []);
+  // The home page opens on the game last looked at.
+  useEffect(() => rememberGame(game), [game]);
 
   // Going on to a room or a game: show it's on its way (and don't start a second one).
   const [opening, startOpening] = useTransition();
@@ -142,17 +145,13 @@ export function SetupScreen({ mode }: { mode: Mode }) {
     />
   );
 
-  if (!mounted)
-    return (
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 py-1">
-        {strip}
-        <Card className="mx-auto min-h-[420px] w-full max-w-xl" />
-      </div>
-    );
+  // (Only on a fresh load, before the saved profile is read; opened from inside the app it's drawn at once.)
+  if (!mounted) return <SetupSkeleton strip={strip} />;
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 py-1">
+    <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col gap-3 sm:gap-4">
       {strip}
+      <div className="app-scroll">
       <Card className="mx-auto w-full max-w-xl">
         <nav
           aria-label="How to play"
@@ -327,11 +326,24 @@ export function SetupScreen({ mode }: { mode: Mode }) {
         <Button
           variant="outline"
           className="self-start"
-          onClick={() => go("/")}
+          onClick={() => go(`/${gameQuery}`)}
         >
           ← All games
         </Button>
       </Card>
+      </div>
+    </div>
+  );
+}
+
+/** The setup screen's frame while it's on its way: the game strip and an empty card, in their places. */
+export function SetupSkeleton({ strip }: { strip?: React.ReactNode }) {
+  return (
+    <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col gap-3 sm:gap-4">
+      {strip ?? <GameStrip selected="" onSelect={() => {}} />}
+      <div className="app-scroll">
+        <Card className="mx-auto min-h-[420px] w-full max-w-xl" />
+      </div>
     </div>
   );
 }

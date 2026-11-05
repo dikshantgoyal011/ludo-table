@@ -42,10 +42,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-full antialiased" suppressHydrationWarning>
         <ThemeApplier />
         <div className="page-shell">
-        <div className="app-frame mx-auto flex max-w-6xl flex-col gap-3 py-3 lg:gap-5 lg:py-6">
-          <AppHeader />
-          {children}
-        </div>
+          <div className="app-frame mx-auto flex w-full max-w-6xl flex-col gap-3 pt-3 lg:gap-4 lg:pt-4">
+            <AppHeader />
+            <main className="app-main">{children}</main>
+          </div>
         </div>
         <LazyDialogs />
         <Confetti />

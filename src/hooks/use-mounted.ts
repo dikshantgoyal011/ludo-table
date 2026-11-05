@@ -1,10 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
-/** false during the server render and the first client render. */
+const never = () => () => {};
+
+/**
+ * false during the server render and while the page is first hydrated; true
+ * straight away on a page opened from inside the app (no blank first frame, so
+ * nothing changes size a moment after it opens).
+ */
 export function useMounted() {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  return mounted;
+  return useSyncExternalStore(never, () => true, () => false);
 }

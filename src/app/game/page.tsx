@@ -24,5 +24,9 @@ export default function GamePage() {
   }, [mounted, game, game.mode, router]);
 
   if (!mounted || !game.mode) return null;
-  return <GameScreen />;
+  return (
+    <div className="app-scroll">
+      <GameScreen />
+    </div>
+  );
 }

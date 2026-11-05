@@ -133,12 +133,9 @@
    * sideways when Settings opened and back when it closed.
    */
   .page-shell {
-    /* (The top safe area is the header's: see .app-bar.) */
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    /* (The top safe area is the header's, the bottom one the scroll area's.) */
     padding-left: max(12px, env(safe-area-inset-left, 0px));
     padding-right: max(12px, env(safe-area-inset-right, 0px));
-    /* (clip, not hidden: hidden would stop the header from sticking) */
-    overflow-x: clip;
   }
   button:not(:disabled) {
     cursor: pointer;
@@ -154,55 +151,125 @@
   color: transparent;
   filter: var(--brand-shadow);
 }
+/* ---------------------------------------------------------------- app shell */
 /*
- * The header stays on screen when a page scrolls. At the top of the page it has
- * no background at all; once the page has scrolled a little (data-scrolled, set
- * in app-header.tsx) a soft frosted band, the full width of the screen and
- * starting under the phone's status bar, fades in behind it.
+ * The app is exactly one screen and the page itself never scrolls: the header
+ * (and on the menu screens the game strip) stay put, and only the part of a
+ * screen that can be longer than the phone scrolls, inside itself (.app-scroll).
+ * So the whole page never jumps when a screen's length changes.
  */
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+.page-shell {
+  height: 100%;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+.app-frame {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.app-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 .app-bar {
-  position: sticky;
-  top: 0;
-  z-index: 30;
-  isolation: isolate;
+  flex-shrink: 0;
   padding-top: calc(env(safe-area-inset-top, 0px) + 0.25rem);
-  padding-bottom: 0.5rem;
   margin-top: -0.75rem; /* (in place of the frame's own top padding) */
-}
-.app-bar::before {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  top: 0;
-  bottom: 0;
-  /* The screen's full width (the page shell clips anything past its edges, so
-     this never makes the page wider). */
-  left: 50%;
-  width: 100vw;
-  transform: translateX(-50%);
-  background: color-mix(in srgb, var(--page-base, #3c0814) 55%, transparent);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
-  backdrop-filter: blur(14px) saturate(140%);
-  box-shadow: 0 1px 0 color-mix(in srgb, var(--page-base, #3c0814) 40%, rgb(255 255 255 / 0.08)),
-    0 8px 24px -12px rgb(0 0 0 / 0.45);
-  opacity: 0;
-  transition: opacity 0.25s ease;
-  pointer-events: none;
-}
-.app-bar[data-scrolled]::before {
-  opacity: 1;
-}
-@media (prefers-reduced-transparency: reduce) {
-  .app-bar::before {
-    background: color-mix(in srgb, var(--page-base, #3c0814) 96%, transparent);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
 }
 @media (min-width: 1024px) {
   .app-bar {
-    margin-top: -1.5rem;
-    padding-top: calc(env(safe-area-inset-top, 0px) + 1rem);
+    margin-top: -1rem;
+    padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
+  }
+}
+/*
+ * The scrolling part of a screen. It reaches out to the screen's edges (so its
+ * scrollbar sits at the edge of the screen, not beside the content) while its
+ * content stays in the column. Room for the scrollbar is kept on both sides
+ * whether it's needed or not: nothing moves sideways when a screen gets longer
+ * or shorter.
+ */
+.app-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable both-edges;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--c-gold) / 0.35) transparent;
+  margin-inline: calc(50% - 50vw);
+  padding-inline: calc(50vw - 50%);
+  padding-top: 0.25rem;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);
+}
+@media (min-width: 1024px) {
+  .app-scroll {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 1.5rem);
+  }
+}
+@layer components {
+  /* (Its content keeps its own height and scrolls; a game in play fills it instead: flex-1 min-h-0.) */
+  .app-scroll > * {
+    flex-shrink: 0;
+  }
+}
+
+/*
+ * A soft response to the pointer on cards and tiles (mouse and trackpad only,
+ * never stuck on after a tap): the card rises a little and glows in the
+ * theme's accent.
+ */
+.hover-lift {
+  transition:
+    translate 0.3s cubic-bezier(0.2, 0.7, 0.3, 1),
+    scale 0.15s ease,
+    box-shadow 0.3s ease,
+    border-color 0.3s ease,
+    background-color 0.3s ease,
+    filter 0.3s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .hover-lift:hover {
+    translate: 0 -2px;
+    box-shadow:
+      0 12px 28px -12px rgb(0 0 0 / 0.6),
+      0 0 0 1px rgb(var(--c-gold) / 0.35),
+      0 0 24px -8px rgb(var(--c-gold) / 0.45);
+  }
+  .mode-primary.hover-lift:hover {
+    filter: brightness(1.06) saturate(1.06);
+  }
+  .settings-row:hover {
+    background-color: color-mix(in srgb, var(--foreground) 6%, transparent);
+  }
+  .settings-row:hover > svg:last-child {
+    translate: 2px 0;
+    color: rgb(var(--c-gold));
+  }
+}
+.settings-row {
+  transition: background-color 0.25s ease;
+}
+.settings-row > svg:last-child {
+  transition:
+    translate 0.25s ease,
+    color 0.25s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hover-lift:hover {
+    translate: none;
   }
 }
 .brand-title {
@@ -212,6 +279,55 @@
 }
 
 /* ---------------------------------------------------------------- home: Darbar showcase */
+/*
+ * The home page's showcase. Phone: the game's name, its preview, the ways to
+ * play, and (scrolled to) what the game is. The preview takes the height the
+ * rest leaves on this screen (100cqh: the scroll area's height), so the ways to
+ * play always show without scrolling; only on a very short screen does it stop
+ * shrinking and let the area scroll. Tablets and up: the preview on the left,
+ * the rest beside it, sized to the screen's height too.
+ */
+.home-stage {
+  container-type: size;
+}
+.showcase {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "title" "preview" "modes" "about";
+}
+.sc-title {
+  grid-area: title;
+}
+.sc-preview {
+  grid-area: preview;
+  justify-self: center;
+  /* (The arch is its width plus about 86px tall, and the rest down to the ways to play about 261px.) */
+  width: min(100%, 300px, max(150px, 100cqh - 350px));
+}
+.sc-modes {
+  grid-area: modes;
+}
+/* A short phone: the strip's heading makes way for the preview (the chips say what they are). */
+@media (max-width: 639px) and (max-height: 700px) {
+  .strip-heading {
+    display: none;
+  }
+}
+.sc-about {
+  grid-area: about;
+}
+@media (min-width: 768px) {
+  .showcase {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: 1fr auto auto auto 1fr;
+    grid-template-areas: "preview ." "preview title" "preview about" "preview modes" "preview .";
+  }
+  .sc-preview {
+    align-self: center;
+    /* (Arch: its width plus about 90px, its crown 32px, the card's padding 40px.) */
+    width: min(400px, 42vw, max(240px, 100cqh - 165px));
+  }
+}
 /*
  * The frame around the home page's live preview, in the theme's own colours:
  * a palace-window arch with gold rims (royal themes, wood), or a clean rounded
@@ -349,16 +465,6 @@
  * The board takes whatever room the name tags leave: as wide as it can be, but
  * never taller than the space it has.
  */
-html.in-game,
-html.in-game body {
-  height: 100%;
-  overflow: hidden;
-  overscroll-behavior: none;
-}
-html.in-game .app-frame {
-  /* (The top safe area is inside the header now.) */
-  height: calc(100dvh - env(safe-area-inset-bottom, 0px));
-}
 .board-size {
   width: 100%;
 }
