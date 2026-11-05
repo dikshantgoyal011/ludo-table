@@ -133,10 +133,12 @@
    * sideways when Settings opened and back when it closed.
    */
   .page-shell {
-    padding-top: env(safe-area-inset-top, 0px);
+    /* (The top safe area is the header's: see .app-bar.) */
     padding-bottom: env(safe-area-inset-bottom, 0px);
     padding-left: max(12px, env(safe-area-inset-left, 0px));
     padding-right: max(12px, env(safe-area-inset-right, 0px));
+    /* (clip, not hidden: hidden would stop the header from sticking) */
+    overflow-x: clip;
   }
   button:not(:disabled) {
     cursor: pointer;
@@ -151,6 +153,57 @@
   background-clip: text;
   color: transparent;
   filter: var(--brand-shadow);
+}
+/*
+ * The header stays on screen when a page scrolls. At the top of the page it has
+ * no background at all; once the page has scrolled a little (data-scrolled, set
+ * in app-header.tsx) a soft frosted band, the full width of the screen and
+ * starting under the phone's status bar, fades in behind it.
+ */
+.app-bar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  isolation: isolate;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 0.25rem);
+  padding-bottom: 0.5rem;
+  margin-top: -0.75rem; /* (in place of the frame's own top padding) */
+}
+.app-bar::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  bottom: 0;
+  /* The screen's full width (the page shell clips anything past its edges, so
+     this never makes the page wider). */
+  left: 50%;
+  width: 100vw;
+  transform: translateX(-50%);
+  background: color-mix(in srgb, var(--page-base, #3c0814) 55%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  backdrop-filter: blur(14px) saturate(140%);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--page-base, #3c0814) 40%, rgb(255 255 255 / 0.08)),
+    0 8px 24px -12px rgb(0 0 0 / 0.45);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+}
+.app-bar[data-scrolled]::before {
+  opacity: 1;
+}
+@media (prefers-reduced-transparency: reduce) {
+  .app-bar::before {
+    background: color-mix(in srgb, var(--page-base, #3c0814) 96%, transparent);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+@media (min-width: 1024px) {
+  .app-bar {
+    margin-top: -1.5rem;
+    padding-top: calc(env(safe-area-inset-top, 0px) + 1rem);
+  }
 }
 .brand-title {
   font-family: var(--brand-font);
@@ -258,6 +311,17 @@
   }
 }
 
+/* Home page mode cards: "Opening…" from the tap until the page is there (menu-screen.tsx). */
+.mode-opening {
+  display: none;
+}
+.mode-card[data-opening] .mode-line {
+  display: none;
+}
+.mode-card[data-opening] .mode-opening {
+  display: flex;
+}
+
 /* Lobby: waiting to connect / for a table. */
 .lobby-spinner {
   width: 2.25rem;
@@ -292,7 +356,8 @@ html.in-game body {
   overscroll-behavior: none;
 }
 html.in-game .app-frame {
-  height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  /* (The top safe area is inside the header now.) */
+  height: calc(100dvh - env(safe-area-inset-bottom, 0px));
 }
 .board-size {
   width: 100%;

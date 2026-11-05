@@ -321,4 +321,3 @@ export function TutorialDialog() {
 }
 
 /** Open How to play for a game. */
-export const openTutorial = (game: GameId) => uiStore.set({ tutorial: game });

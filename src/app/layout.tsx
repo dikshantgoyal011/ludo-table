@@ -2,16 +2,15 @@ import type { Metadata, Viewport } from "next";
 import { Baloo_2, IBM_Plex_Mono, Rozha_One } from "next/font/google";
 import { AppHeader } from "@/components/layout/app-header";
 import { Confetti } from "@/components/game/confetti";
-import { SettingsDialog } from "@/components/settings/settings-dialog";
-import { TutorialDialog } from "@/components/tutorial/tutorial";
+import { LazyDialogs } from "@/components/layout/lazy-dialogs";
 import { ThemeApplier } from "@/components/providers/theme-applier";
 import { themeBootScript } from "@/lib/theme/boot-script";
 import { brandVars, THEMES } from "@/lib/theme/themes";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Ludo Darbar",
-  description: "Every Ludo ever played. Ludo online, with friends, against the computer or pass-and-play, with Pachisi, Chowka Bara and more on the way.",
+  title: "Ludo Darbar · Every Ludo ever played",
+  description: "Every Ludo ever played. Ludo and Pachisi online, with friends, against the computer or pass-and-play, with Chowka Bara and more on the way.",
   applicationName: "Ludo Darbar",
   appleWebApp: { capable: true, title: "Ludo Darbar", statusBarStyle: "black-translucent" },
 };
@@ -48,8 +47,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {children}
         </div>
         </div>
-        <SettingsDialog />
-        <TutorialDialog />
+        <LazyDialogs />
         <Confetti />
       </body>
     </html>

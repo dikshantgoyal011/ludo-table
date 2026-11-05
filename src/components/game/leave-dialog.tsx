@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { GraduationCap, RotateCcw } from "lucide-react";
-import { openTutorial } from "@/components/tutorial/tutorial";
+import { openTutorial } from "@/lib/ui-store";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";

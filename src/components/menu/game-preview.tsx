@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { BoardPreview, TokenArt, useBoardStyle } from "@/components/game/ludo-board";
 import { PachisiPawn, PachisiSurface, pachisiLook, usePachisiStyle } from "@/components/game/pachisi-board";
 import { CowrieView } from "@/components/game/cowries";
@@ -13,21 +13,39 @@ import { clone, freshState, rulesFor } from "@/lib/game/rules";
 import type { Color, GameId, GameState } from "@/lib/game/types";
 import type { Variant } from "@/lib/game/variants";
 import type { PachisiStyle } from "@/lib/theme/boards";
+import { holdDecoration, whenIdle } from "@/lib/busy";
 import { cn } from "@/lib/utils";
 
 const COLS = ["#c8262b", "#16894a", "#e9a912", "#1f5fcc"];
 
 const reducedMotion = () => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
-/** setTimeout that waits while the tab is hidden, so the demo never runs in the background. */
-function useTimers() {
+/**
+ * setTimeout for the demos that holds still while they're no use: the tab is
+ * hidden, the demo is scrolled off the screen (`seen` false), or the player
+ * just tapped to open another page (see busy.ts).
+ */
+function useTimers(seen?: React.RefObject<boolean>) {
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
   return (ms: number) =>
     new Promise<void>((res) => {
-      const go = () => (document.hidden ? timers.current.push(setTimeout(go, 400)) : res());
+      const go = () => (holdDecoration() || seen?.current === false ? timers.current.push(setTimeout(go, 400)) : res());
       timers.current.push(setTimeout(go, ms));
     });
+}
+
+/** Is this element on the screen? (A ref, read by the demo's timers: no re-renders.) */
+function useOnScreen<T extends Element>() {
+  const el = useRef<T>(null);
+  const seen = useRef(true);
+  useEffect(() => {
+    if (!el.current || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(([e]) => (seen.current = e.isIntersecting));
+    io.observe(el.current);
+    return () => io.disconnect();
+  }, []);
+  return [el, seen] as const;
 }
 
 // ---------------------------------------------------------------- thrown things
@@ -168,7 +186,8 @@ function LudoDemo({ twoDice = false, game: kind = "ludo" }: { twoDice?: boolean;
     faceB: 5,
     note: "",
   });
-  const wait = useTimers();
+  const [box, seen] = useOnScreen<HTMLDivElement>();
+  const wait = useTimers(seen);
 
   useEffect(() => {
     let alive = true;
@@ -177,6 +196,11 @@ function LudoDemo({ twoDice = false, game: kind = "ludo" }: { twoDice?: boolean;
     const pos: Shown = clone(s0.tokens);
     setShown(clone(pos));
     if (reducedMotion()) return;
+    // The demo only starts once the page can answer taps (it's decoration: it waits its turn).
+    let cancelIdle = () => {};
+    const begin = new Promise<void>((res) => {
+      cancelIdle = whenIdle(res, 3000);
+    });
 
     /** Apply a roll of v for c and walk the token exactly that far (or out of the yard on a 6). */
     const play = async (s: GameState, c: Color, v: number) => {
@@ -218,6 +242,7 @@ function LudoDemo({ twoDice = false, game: kind = "ludo" }: { twoDice?: boolean;
     };
 
     (async () => {
+      await begin;
       let id = 0;
       while (alive) {
         let s = game.current!;
@@ -253,6 +278,7 @@ function LudoDemo({ twoDice = false, game: kind = "ludo" }: { twoDice?: boolean;
     })();
     return () => {
       alive = false;
+      cancelIdle();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -283,7 +309,7 @@ function LudoDemo({ twoDice = false, game: kind = "ludo" }: { twoDice?: boolean;
     </g>
   ));
   return (
-    <div className="flex flex-col items-center gap-3">
+    <div ref={box} className="flex flex-col items-center gap-3">
       {pachisi ? <PachisiBoardPreview>{pieces}</PachisiBoardPreview> : <BoardPreview style={style} th={th} className="rounded-xl p-1.5">{pieces}</BoardPreview>}
       <div className="flex min-h-12 items-center gap-3 text-sm font-bold">
         {/* One line, however wide the shells: "Blue threw · no move" */}
@@ -309,12 +335,15 @@ function LudoDemo({ twoDice = false, game: kind = "ludo" }: { twoDice?: boolean;
 export function PachisiBoardPreview({ children, className, style }: { children?: React.ReactNode; className?: string; style?: PachisiStyle }) {
   const uid = "pp" + useId().replace(/[^a-zA-Z0-9]/g, "");
   const [inUse, th] = usePachisiStyle();
-  const look = pachisiLook(style ?? inUse, th);
+  // Kept the same between renders, so the board itself (memo) isn't drawn again for every move of the demo.
+  const look = useMemo(() => pachisiLook(style ?? inUse, th), [style, inUse, th]);
+  const hex = useMemo(() => (c: Color) => th.pieces[c], [th]);
+  const light = useMemo(() => (c: Color) => th.light[c], [th]);
   return (
     <div className={cn("relative aspect-square w-full rounded-xl p-1.5", className)} style={look.frame}>
       <div className="relative h-full w-full">
         <svg viewBox={`0 0 ${P_SIZE} ${P_SIZE}`} className="board-layer absolute inset-0 block h-full w-full rounded-sm" aria-hidden="true">
-          <PachisiSurface look={look} hex={(c) => th.pieces[c]} light={(c) => th.light[c]} uid={uid} />
+          <PachisiSurface look={look} hex={hex} light={light} uid={uid} />
         </svg>
         {children && (
           <svg viewBox={`0 0 ${P_SIZE} ${P_SIZE}`} className="board-layer absolute inset-0 block h-full w-full" aria-hidden="true">

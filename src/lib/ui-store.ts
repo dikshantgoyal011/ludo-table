@@ -28,6 +28,9 @@ export const uiStore = {
   },
 };
 
+/** Open How to play for a game. (Here, not in tutorial.tsx: opening it mustn't load the whole tutorial up front.) */
+export const openTutorial = (game: GameId) => uiStore.set({ tutorial: game });
+
 const SERVER: UiState = { settingsOpen: false, leaveOpen: false, profileOf: null, tutorial: null };
 export function useUi() {
   return useSyncExternalStore(uiStore.subscribe, uiStore.get, () => SERVER);

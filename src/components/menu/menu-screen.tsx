@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { goingSomewhere } from "@/lib/busy";
 import { useRouter } from "next/navigation";
 import { Bot, Globe, GraduationCap, Smartphone, Sparkles, Users, type LucideIcon } from "lucide-react";
-import { openTutorial } from "@/components/tutorial/tutorial";
+import { openTutorial } from "@/lib/ui-store";
 import { Button } from "@/components/ui/button";
 import { getController, useSettings } from "@/hooks/use-game";
 import { isRoomCode, MODE_ORDER, MODES, roomPath } from "@/lib/game/constants";
@@ -112,8 +113,40 @@ function ResumeButtons() {
   );
 }
 
+/**
+ * A mode card's line, swapped for "Opening…" from the moment it's tapped until
+ * its page is there (see .mode-card in globals.css). Done by marking the card
+ * itself, without React: Next's useLinkStatus, and even a state change on the
+ * tap, made these navigations take half a second or more on a slow phone,
+ * instead of a few milliseconds.
+ */
+function Opening({ className, children }: { className?: string; children: React.ReactNode }) {
+  return (
+    <span className={className}>
+      <span className="mode-line">{children}</span>
+      <span className="mode-opening items-center gap-1.5" aria-hidden="true">
+        <span className="lobby-spinner size-3.5! shrink-0 border-2!" />
+        Opening…
+      </span>
+    </span>
+  );
+}
+/** Mark a tapped card as opening (and unmark it if its page never came). */
+function markOpening(a: HTMLElement) {
+  a.dataset.opening = "1";
+  setTimeout(() => delete a.dataset.opening, 15000);
+}
+
 /** The four ways to play a game that's ready. */
 function PlayModes({ game }: { game: string }) {
+  const router = useRouter();
+  const href = (key: Mode) => `/play/${key}${game === "ludo" ? "" : `?game=${game}`}`;
+  // Fetch all four pages straight away. (Next only fetches links on the screen, and on
+  // a phone these are below the demo: the first tap then had to wait for the network.)
+  useEffect(() => {
+    MODE_ORDER.forEach((key) => router.prefetch(href(key)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game, router]);
   return (
     <div className="grid grid-cols-2 gap-2.5">
       {MODE_ORDER.map((key, k) => {
@@ -122,8 +155,14 @@ function PlayModes({ game }: { game: string }) {
         return (
           <Link
             key={key}
-            href={`/play/${key}${game === "ludo" ? "" : `?game=${game}`}`}
+            href={href(key)}
+            // The demo holds still, so the page asked for opens as fast as the phone can.
+            onClick={(e) => {
+              goingSomewhere();
+              markOpening(e.currentTarget);
+            }}
             className={cn(
+              "mode-card",
               // Icon, then title and line, from the top: every card's title on the same line.
               "group flex min-h-[92px] flex-col justify-start gap-2 rounded-2xl border p-3 text-left transition outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[.97]",
               primary
@@ -136,7 +175,9 @@ function PlayModes({ game }: { game: string }) {
             </span>
             <span className="flex flex-col">
               <span className="text-[15px] leading-tight font-extrabold">{MODES[key].title}</span>
-              <span className={cn("text-xs leading-snug", primary ? "text-[#2a1d06]/75" : "text-muted-foreground")}>{MODE_SHORT[key]}</span>
+              <Opening className={cn("text-xs leading-snug", primary ? "text-[#2a1d06]/75" : "text-muted-foreground")}>
+                {MODE_SHORT[key]}
+              </Opening>
             </span>
           </Link>
         );
@@ -233,12 +274,7 @@ function Showcase({ v, onPick }: { v: Variant; onPick: (id: string) => void }) {
           </Button>
         )}
         {v.ready ? (
-          <>
-            <PlayModes game={v.id} />
-            <p className="text-xs text-muted-foreground">
-              {v.thrown === "cowries" ? "Real cowrie odds, with a little help when you're stuck." : "Random dice that give you a little help when you're stuck."}
-            </p>
-          </>
+          <PlayModes game={v.id} />
         ) : (
           <div className="flex flex-col gap-3 rounded-2xl border border-dashed border-primary/50 bg-background/40 p-4">
             <span className="flex items-center gap-2 text-sm font-extrabold tracking-[0.16em] text-primary uppercase">

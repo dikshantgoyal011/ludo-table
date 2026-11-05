@@ -27,7 +27,7 @@ export const PACHISI_STYLES: Record<PachisiStyle, { name: string; hint: string }
   sandstone: { name: "Sandstone", hint: "Red sandstone and marble" },
   royal: { name: "Royal Darbar", hint: "Ivory and gold on emerald" },
   carved: { name: "Carved wood", hint: "Inlaid wooden board" },
-  modern: { name: "Modern", hint: "Clean, in the theme's colours" },
+  modern: { name: "Modern", hint: "Clean, in the theme's colors" },
 };
 export const PACHISI_STYLE_IDS = Object.keys(PACHISI_STYLES) as PachisiStyle[];
 export const isPachisiChoice = (v: unknown): v is PachisiChoice => v === "auto" || (typeof v === "string" && v in PACHISI_STYLES);

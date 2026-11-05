@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Volume2, X } from "lucide-react";
-import { openTutorial } from "@/components/tutorial/tutorial";
+import { openTutorial } from "@/lib/ui-store";
 import { useGame } from "@/hooks/use-game";
 import { cn } from "@/lib/utils";
 import { Board } from "./board";

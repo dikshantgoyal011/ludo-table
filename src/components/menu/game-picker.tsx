@@ -13,7 +13,7 @@ export function GameStrip({ selected, onSelect }: { selected: string; onSelect: 
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-end justify-between gap-3">
-        <h2 className="text-sm font-bold tracking-[0.2em] text-primary uppercase">Every Ludo ever played</h2>
+        <h2 className="text-sm font-bold tracking-[0.2em] text-primary uppercase">Choose a game</h2>
         <span className="hidden text-xs text-muted-foreground sm:inline lg:hidden">Swipe to see them all</span>
       </div>
       <GamePicker selected={selected} onSelect={onSelect} />

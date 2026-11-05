@@ -54,9 +54,18 @@ export function AppHeader() {
     if (game.inviteLink()) setInviteOpen(true);
   };
 
+  // The header's frosted background shows only once the page has scrolled a little.
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const check = () => setScrolled(window.scrollY > 16);
+    check();
+    window.addEventListener("scroll", check, { passive: true });
+    return () => window.removeEventListener("scroll", check);
+  }, [pathname]);
+
   return (
     <>
-      <header className="flex flex-wrap items-center justify-between gap-2">
+      <header className="app-bar flex flex-wrap items-center justify-between gap-2" data-scrolled={scrolled ? "" : undefined}>
         <h1 className="shrink-0 leading-none">
           <a
             href="/"
@@ -73,7 +82,11 @@ export function AppHeader() {
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo.svg" alt="" width={44} height={44} className="h-9 w-9 shrink-0 min-[420px]:h-10 min-[420px]:w-10 sm:h-12 sm:w-12" />
-            <span className="brand-gold brand-title pt-1 text-2xl min-[420px]:text-[1.7rem] sm:text-4xl">Ludo Darbar</span>
+            <span className="flex flex-col">
+              <span className="brand-gold brand-title pt-1 text-2xl leading-none min-[420px]:text-[1.7rem] sm:text-4xl">Ludo Darbar</span>
+              {/* The app's tagline */}
+              <span className="mt-0.5 text-[10px] leading-none font-bold tracking-[0.18em] text-primary/90 uppercase sm:text-xs">Every Ludo ever played</span>
+            </span>
           </a>
         </h1>
         <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
