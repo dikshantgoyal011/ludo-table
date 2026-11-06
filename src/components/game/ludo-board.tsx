@@ -101,12 +101,16 @@ const RoyalSurface = memo(function RoyalSurface({ th, colorKey, uid, turn = 0 }:
   const { hex, light } = useSlotColors(th, colorKey);
   const id = (n: string) => `${uid}-${n}`;
   const url = (n: string) => `url(#${id(n)})`;
+  // Night (the Dark theme): black onyx and gold instead of ivory and gold.
+  const P = th.night
+    ? { ivory: ["#2a2730", "#17151b"], cell: "#221f27", line: "#8a6a2a", inlay: "#3a3020" }
+    : { ivory: ["#fdf7e6", "#efdfb8"], cell: "#fffaf0", line: "#b8954a", inlay: "#fff6dc" };
   return (
     <g>
       <defs>
         <linearGradient id={id("ivory")} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#fdf7e6" />
-          <stop offset="1" stopColor="#efdfb8" />
+          <stop offset="0" stopColor={P.ivory[0]} />
+          <stop offset="1" stopColor={P.ivory[1]} />
         </linearGradient>
         <linearGradient id={id("gold")} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#fff0b0" />
@@ -164,10 +168,10 @@ const RoyalSurface = memo(function RoyalSurface({ th, colorKey, uid, turn = 0 }:
         const startOf = COLORS.find((col) => START[col] === idx);
         return (
           <g key={idx}>
-            <rect x={c} y={r} width={1} height={1} strokeWidth={0.035} stroke="#b8954a" fill={startOf ? hex(startOf) : "#fffaf0"} />
+            <rect x={c} y={r} width={1} height={1} strokeWidth={0.035} stroke={P.line} fill={startOf ? hex(startOf) : P.cell} />
             {startOf && <rect x={c} y={r} width={1} height={1} fill={url("cell")} />}
             {SAFE.has(idx) && (
-              <polygon points={star8(c + 0.5, r + 0.5, 0.36)} fill={startOf ? "#fffaf0" : url("gold")} stroke={GOLD_DARK} strokeWidth={0.03} />
+              <polygon points={star8(c + 0.5, r + 0.5, 0.36)} fill={startOf ? P.cell : url("gold")} stroke={GOLD_DARK} strokeWidth={0.03} />
             )}
           </g>
         );
@@ -176,7 +180,7 @@ const RoyalSurface = memo(function RoyalSurface({ th, colorKey, uid, turn = 0 }:
         HOMECOL[c].map(([r, cc]) => (
           <g key={`${c}${r}${cc}`}>
             <rect x={cc} y={r} width={1} height={1} fill={hex(c)} />
-            <rect x={cc} y={r} width={1} height={1} fill={url("cell")} strokeWidth={0.035} stroke="#b8954a" />
+            <rect x={cc} y={r} width={1} height={1} fill={url("cell")} strokeWidth={0.035} stroke={P.line} />
           </g>
         )),
       )}
@@ -187,7 +191,7 @@ const RoyalSurface = memo(function RoyalSurface({ th, colorKey, uid, turn = 0 }:
       <rect x={6} y={6} width={3} height={3} fill={url("sheen")} />
       <path d="M6 6L9 9M9 6L6 9" stroke={url("gold")} strokeWidth={0.06} />
       <circle cx={7.5} cy={7.5} r={0.5} fill={url("gold")} stroke={GOLD_DARK} strokeWidth={0.04} />
-      <polygon points={star8(7.5, 7.5, 0.34)} fill="#fff6dc" stroke={GOLD_DARK} strokeWidth={0.025} />
+      <polygon points={star8(7.5, 7.5, 0.34)} fill={P.inlay} stroke={GOLD_DARK} strokeWidth={0.025} />
       <rect x={6} y={6} width={3} height={3} fill="none" strokeWidth={0.1} stroke={url("gold")} />
       <rect x={0.06} y={0.06} width={14.88} height={14.88} fill="none" strokeWidth={0.12} stroke={url("gold")} />
       <rect x={0} y={0} width={15} height={15} fill="none" strokeWidth={0.05} stroke={GOLD_DARK} />
@@ -200,22 +204,26 @@ const CarvedSurface = memo(function CarvedSurface({ th, colorKey, uid }: Surface
   const { hex } = useSlotColors(th, colorKey);
   const id = (n: string) => `${uid}-${n}`;
   const url = (n: string) => `url(#${id(n)})`;
-  const INK = "#5a3418";
+  // Night (the Dark theme): ebony with brass inlay instead of light wood.
+  const P = th.night
+    ? { wood: ["#3b2a1f", "#2a1d15", "#35261c"], grain: "#d9b07a", ink: "#c9a06a", cup: ["#0e0806", "#24180f", "#4a3424"] }
+    : { wood: ["#ecca92", "#deb176", "#e7c088"], grain: "#9a6430", ink: "#5a3418", cup: ["#7a4a22", "#a8723e", "#d9a86a"] };
+  const INK = P.ink;
   return (
     <g>
       <defs>
         <linearGradient id={id("wood")} x1="0" y1="0" x2="1" y2=".4">
-          <stop offset="0" stopColor="#ecca92" />
-          <stop offset=".5" stopColor="#deb176" />
-          <stop offset="1" stopColor="#e7c088" />
+          <stop offset="0" stopColor={P.wood[0]} />
+          <stop offset=".5" stopColor={P.wood[1]} />
+          <stop offset="1" stopColor={P.wood[2]} />
         </linearGradient>
         <pattern id={id("grain")} width="15" height="1.1" patternUnits="userSpaceOnUse">
-          <path d="M0 .3C2 .1 4 .55 7 .3S12 .05 15 .3M0 .85C3 .7 5 1 8 .8S13 .65 15 .85" fill="none" stroke="#9a6430" strokeOpacity=".22" strokeWidth=".04" />
+          <path d="M0 .3C2 .1 4 .55 7 .3S12 .05 15 .3M0 .85C3 .7 5 1 8 .8S13 .65 15 .85" fill="none" stroke={P.grain} strokeOpacity={th.night ? 0.12 : 0.22} strokeWidth=".04" />
         </pattern>
         <radialGradient id={id("cup")} cx="50%" cy="38%" r="60%">
-          <stop offset="0" stopColor="#7a4a22" />
-          <stop offset=".7" stopColor="#a8723e" />
-          <stop offset="1" stopColor="#d9a86a" />
+          <stop offset="0" stopColor={P.cup[0]} />
+          <stop offset=".7" stopColor={P.cup[1]} />
+          <stop offset="1" stopColor={P.cup[2]} />
         </radialGradient>
       </defs>
       <rect x={0} y={0} width={15} height={15} fill={url("wood")} />
@@ -305,14 +313,18 @@ const SandstoneSurface = memo(function SandstoneSurface({ th, colorKey, uid }: S
   const { hex, light } = useSlotColors(th, colorKey);
   const id = (n: string) => `${uid}-${n}`;
   const url = (n: string) => `url(#${id(n)})`;
-  const LINE = "#c9a160";
-  const DARK = "#7a3a12";
+  // Night (the Dark theme): dark red sandstone and gold instead of ivory.
+  const P = th.night
+    ? { ivory: ["#3a1d15", "#22100b"], cell: "#2e1710", line: "#7a5530", dark: "#c98a3a", lotus: "#4a2a18" }
+    : { ivory: ["#fff8e8", "#f3dfb6"], cell: "#fffaf0", line: "#c9a160", dark: "#7a3a12", lotus: "#fff3d6" };
+  const LINE = P.line;
+  const DARK = P.dark;
   return (
     <g>
       <defs>
         <linearGradient id={id("ivory")} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#fff8e8" />
-          <stop offset="1" stopColor="#f3dfb6" />
+          <stop offset="0" stopColor={P.ivory[0]} />
+          <stop offset="1" stopColor={P.ivory[1]} />
         </linearGradient>
         <linearGradient id={id("gold")} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#fff2b8" />
@@ -354,7 +366,7 @@ const SandstoneSurface = memo(function SandstoneSurface({ th, colorKey, uid }: S
             ))}
             {YARD_SPOTS.map(([dy, dx]) => (
               <g key={`${dy}${dx}`}>
-                <circle cx={c0 + dx} cy={r0 + dy} r={0.58} fill="#fffaf0" stroke={url("gold")} strokeWidth={0.09} />
+                <circle cx={c0 + dx} cy={r0 + dy} r={0.58} fill={P.cell} stroke={url("gold")} strokeWidth={0.09} />
                 <circle cx={c0 + dx} cy={r0 + dy} r={0.44} fill="none" stroke={hex(c)} strokeWidth={0.05} strokeOpacity={0.7} />
               </g>
             ))}
@@ -365,7 +377,7 @@ const SandstoneSurface = memo(function SandstoneSurface({ th, colorKey, uid }: S
         const startOf = COLORS.find((col) => START[col] === idx);
         return (
           <g key={idx}>
-            <rect x={c} y={r} width={1} height={1} strokeWidth={0.035} stroke={LINE} fill={startOf ? hex(startOf) : "#fffaf0"} />
+            <rect x={c} y={r} width={1} height={1} strokeWidth={0.035} stroke={LINE} fill={startOf ? hex(startOf) : P.cell} />
             {startOf && <rect x={c} y={r} width={1} height={1} fill={url("cell")} />}
             {SAFE.has(idx) && <Sun cx={c + 0.5} cy={r + 0.5} fill={startOf ? "#fffaf0" : url("gold")} ray={startOf ? "#fffaf0" : DARK} />}
           </g>
@@ -385,7 +397,7 @@ const SandstoneSurface = memo(function SandstoneSurface({ th, colorKey, uid }: S
       <polygon points="6,9 9,9 7.5,7.5" fill={hex("blue")} />
       <rect x={6} y={6} width={3} height={3} fill={url("sheen")} />
       <path d="M6 6L9 9M9 6L6 9" stroke={url("gold")} strokeWidth={0.06} />
-      <Lotus cx={7.5} cy={7.5} r={0.66} fill="#fff3d6" stroke={DARK} sw={0.03} />
+      <Lotus cx={7.5} cy={7.5} r={0.66} fill={P.lotus} stroke={DARK} sw={0.03} />
       <circle cx={7.5} cy={7.5} r={0.2} fill={url("gold")} stroke={DARK} strokeWidth={0.03} />
       <rect x={6} y={6} width={3} height={3} fill="none" strokeWidth={0.1} stroke={url("gold")} />
       <rect x={0.06} y={0.06} width={14.88} height={14.88} fill="none" strokeWidth={0.12} stroke={url("gold")} />
@@ -398,6 +410,17 @@ const SURFACES: Record<BoardStyleId, typeof ModernSurface> = { modern: ModernSur
 
 /** The frame around the board, per design (Parchís dresses its board the same way). */
 export function frameStyle(style: BoardStyleId, th: Theme): React.CSSProperties {
+  // Night (the Dark theme): the same frames, in their darkest shades.
+  if (th.night && style !== "modern")
+    return {
+      background:
+        style === "sandstone"
+          ? "linear-gradient(145deg, #5a2416 0%, #3a140b 45%, #4e1e12 70%, #26100a 100%)"
+          : style === "royal"
+            ? "linear-gradient(145deg, #6b5524 0%, #3c2e12 35%, #241a0a 60%, #54421c 100%)"
+            : "linear-gradient(145deg, #2e2018 0%, #1c130d 50%, #281b12 100%)",
+      boxShadow: `0 14px 30px rgba(0,0,0,.55), inset 0 0 0 1.5px ${style === "carved" ? "#6a4a2c" : "#a8823a"}, inset 0 0 0 4px #0e0b08`,
+    };
   if (style === "sandstone")
     return {
       // Red sandstone, gold inlay.
@@ -531,6 +554,6 @@ export function useLudoLook(colorKey: string, uid: string, turn: number): BoardL
       </>
     ),
     // The royal, sandstone and wooden boards are always light; the modern one takes the theme's squares.
-    lightSquares: style !== "modern" || isLight(th.track),
+    lightSquares: th.night ? false : style !== "modern" || isLight(th.track),
   };
 }

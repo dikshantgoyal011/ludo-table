@@ -20,6 +20,8 @@ export interface Theme {
   scheme: "dark" | "light";
   /** The board design this theme uses unless Settings picks another */
   boardStyle: BoardStyleId;
+  /** Every board design is drawn in its night colours (dark squares) with this theme. */
+  night?: boolean;
   /** The "Ludo Darbar" title */
   brand: BrandStyle;
   /** UI colours as "r g b" triplets, exposed as CSS variables --c-NAME */
@@ -156,6 +158,7 @@ export const THEMES: Record<ThemeId, Theme> = {
   dark: {
     name: "Dark",
     boardStyle: "modern",
+    night: true,
     bg: "radial-gradient(900px 600px at 50% 0%, #23272f, transparent 70%), #0c0d10",
     meta: "#0c0d10",
     scheme: "dark",
