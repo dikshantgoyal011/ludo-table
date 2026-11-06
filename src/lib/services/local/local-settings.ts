@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS, type Settings } from "@/lib/settings/settings";
-import { isBoardChoice, isPachisiChoice } from "@/lib/theme/boards";
+import { isBoardChoice, isPachisiChoice, isParchisChoice } from "@/lib/theme/boards";
 import { isThemeId } from "@/lib/theme/themes";
 import type { SettingsRepository } from "../types";
 import { Emitter, storage } from "../storage";
@@ -23,6 +23,7 @@ export class LocalSettingsRepository implements SettingsRepository {
     if (isThemeId(sv.theme)) s.theme = sv.theme;
     if (isBoardChoice(sv.board)) s.board = sv.board;
     if (isPachisiChoice(sv.pachisiBoard)) s.pachisiBoard = sv.pachisiBoard;
+    if (isParchisChoice(sv.parchisBoard)) s.parchisBoard = sv.parchisBoard;
     if (typeof sv.steps === "boolean") s.steps = sv.steps;
     if (sv.sound && typeof sv.sound === "object") {
       for (const k of Object.keys(s.sound) as (keyof Settings["sound"])[]) {

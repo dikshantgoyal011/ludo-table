@@ -9,6 +9,7 @@ import { openTutorial } from "@/lib/ui-store";
 import { Button } from "@/components/ui/button";
 import { getController, useSettings } from "@/hooks/use-game";
 import { isRoomCode, MODE_ORDER, MODES, roomPath } from "@/lib/game/constants";
+import { isGameId } from "@/lib/game/rules";
 import type { GameId, Mode } from "@/lib/game/types";
 import { variantById, type Variant } from "@/lib/game/variants";
 import type { ActiveRoom } from "@/lib/services/types";
@@ -263,7 +264,7 @@ function ArchCrown({ kind }: { kind: Crown }) {
 function Showcase({ v, onPick }: { v: Variant; onPick: (id: string) => void }) {
   const [settings] = useSettings();
   const crown = CROWN[themeOf(settings.theme).boardStyle];
-  const howTo = v.ready && (v.id === "ludo" || v.id === "pachisi");
+  const howTo = v.ready && isGameId(v.id);
   return (
     <section
       key={v.id}

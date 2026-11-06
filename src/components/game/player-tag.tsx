@@ -134,6 +134,9 @@ export function PlayerTag({ corner }: { corner: number }) {
   const showTyping = !showBubble && !!seat && game.isTyping(seat.id);
   const takeover = !!seat?.takeover && s.phase === "playing";
   const pachisi = s.game === "pachisi";
+  // Parchís: a move the dice doesn't show (a 6 counting 7, or a bonus count of 20 / 10) waits in hand.
+  const pending = s.game === "parchis" && s.turn === c && !game.rolling ? game.hand()[0] : undefined;
+  const count = pending && pending >= 7 ? (pending >= 10 ? `Count ${pending}` : "Move 7") : "";
   // My own flag always comes from my settings (also in a game started before I picked one).
   const cc = seat ? (you ? game.myLooks().cc : seat.cc) : undefined;
 
@@ -318,6 +321,11 @@ export function PlayerTag({ corner }: { corner: number }) {
               </>
             ) : (
               s.phase !== "lobby" && <HomeDots home={home} color={hex} />
+            )}
+            {count && (
+              <span className="badge-pop shrink-0 rounded-full bg-primary px-2 py-0.5 text-[11px] leading-none font-extrabold whitespace-nowrap text-primary-foreground shadow" title={count}>
+                {count}
+              </span>
             )}
             {/* Another player: hear them or not (for me only); a small mic-off mark when they aren't talking */}
             {showHear && !note && (

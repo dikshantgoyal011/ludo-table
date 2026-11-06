@@ -80,6 +80,9 @@ const stageOf = (s: GameState) => {
 
 const newGameId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
+/** Each game has its own public tables (room names pub<prefix><count>x<n>): players only meet players of the same game. */
+const PUBLIC_PREFIX: Record<GameId, string> = { ludo: "", pachisi: "p", parchis: "x" };
+
 /** "Continue your pass-and-play game" is offered for this long after the last move. */
 const LOCAL_RESUME_MS = 60 * 60_000;
 /** Friends room: its creator offline this long hands starting / restarting to the next player. */
@@ -282,8 +285,9 @@ export class GameController {
     // The dice shows the game's latest roll, except while someone else's dice has
     // landed here before their roll itself arrived: then it keeps the number it
     // landed on (going back to the previous roll for a moment looked like a second roll).
+    // (The number rolled, not the move in hand: in Parchís that can be a 6 counting 7, or a count of 20 or 10.)
     if (!this.rolling && !this.awaitingPreRoll()) {
-      const lv = this.state.roll || this.state.last?.v;
+      const lv = this.state.last?.v || this.state.roll;
       if (lv) this.dieFace = lv;
     }
     this.version++;
@@ -1008,7 +1012,7 @@ export class GameController {
     this.searching = true;
     this.autoJoin = true;
     // Each game has its own public tables (Pachisi players only meet Pachisi players).
-    void this.openRoom(`pub${this.wantGame === "pachisi" ? "p" : ""}${this.wantCount}x${n}`);
+    void this.openRoom(`pub${PUBLIC_PREFIX[this.wantGame]}${this.wantCount}x${n}`);
   }
 
   /** Friends room `code`; `game` is used if this device sets the room up (a new room). */
@@ -1095,7 +1099,7 @@ export class GameController {
     // Show the last known board straight away; the table's live state replaces it once connected.
     const carry = this.services.saves.loadRoom(a.room);
     // "Find another game" after this one looks for the same game.
-    this.wantGame = carry?.game || (a.room.startsWith("pubp") ? "pachisi" : "ludo");
+    this.wantGame = carry?.game || (a.room.startsWith("pubp") ? "pachisi" : a.room.startsWith("pubx") ? "parchis" : "ludo");
     // Check, once connected, that it's still this game and I'm still in it.
     this.rejoinGid = carry?.gid ?? a.gid ?? "";
     if (carry) {

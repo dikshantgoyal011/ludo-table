@@ -25,7 +25,7 @@ import {
 } from "@/lib/game/constants";
 import type { Color, GameId, Mode } from "@/lib/game/types";
 import { variationCount } from "@/lib/game/pachisi/variations";
-import { rulesFor } from "@/lib/game/rules";
+import { isGameId, rulesFor } from "@/lib/game/rules";
 import { variantById } from "@/lib/game/variants";
 import { SidesPicker, VariationsDialog, variationsSummary } from "@/components/game/variations";
 import type { Profile } from "@/lib/services/types";
@@ -82,7 +82,8 @@ export function SetupScreen({ mode }: { mode: Mode }) {
   // (reading it after opening showed Ludo for a moment on every Pachisi screen).
   const query = useSearchParams();
   const [picked, setGame] = useState<GameId | null>(null);
-  const game: GameId = picked ?? (query.get("game") === "pachisi" ? "pachisi" : "ludo");
+  const asked = query.get("game");
+  const game: GameId = picked ?? (isGameId(asked) ? asked : "ludo");
   const v = variantById(game);
   const gameQuery = game === "ludo" ? "" : `?game=${game}`;
   const pachisi = game === "pachisi";
@@ -137,7 +138,7 @@ export function SetupScreen({ mode }: { mode: Mode }) {
       onSelect={(id) => {
         rememberGame(id);
         // Another playable game: stay on this screen with it; one that's coming: show it on the home page.
-        if (variantById(id).ready && (id === "ludo" || id === "pachisi")) {
+        if (variantById(id).ready && isGameId(id)) {
           setGame(id);
           router.replace(`/play/${mode}${id === "ludo" ? "" : `?game=${id}`}`);
         } else go(`/?game=${id}`);

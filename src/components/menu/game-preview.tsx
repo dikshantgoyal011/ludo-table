@@ -3,6 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { BoardPreview, TokenArt, useBoardStyle } from "@/components/game/ludo-board";
 import { PachisiPawn, PachisiSurface, pachisiLook, usePachisiStyle } from "@/components/game/pachisi-board";
+import { ParchisBoardPreview, ParchisToken } from "@/components/game/parchis-board";
 import { CowrieView } from "@/components/game/cowries";
 import { DiceView, newSpin, type DiceRoll } from "@/components/game/dice-3d";
 
@@ -140,13 +141,18 @@ function Thrown({ kind }: { kind: Variant["thrown"] }) {
 type Shown = Record<Color, number[]>;
 
 
-/** The computer's move with the roll in hand (or none: games that allow it let the roll go). */
+/**
+ * The computer's moves with the roll in hand (or none: games that allow it let
+ * the roll go). Parchís can add moves to the same roll (count 20 / count 10): those are made too.
+ */
 function botMove(s: GameState, c: Color) {
-  if (!s.roll) return;
   const r = rulesFor(s);
-  const { i, opt } = r.chooseMove(s, c, s.roll);
-  if (i >= 0) r.applyMove(s, c, i, s.roll, opt);
-  else r.pass?.(s, c);
+  const many = s.game === "parchis";
+  for (let k = 0; k < (many ? 6 : 1) && s.roll && s.turn === c && s.phase === "playing"; k++) {
+    const { i, opt } = r.chooseMove(s, c, s.roll);
+    if (i >= 0) r.applyMove(s, c, i, s.roll, opt);
+    else r.pass?.(s, c);
+  }
 }
 
 function freshDemo(players: number, game: GameId = "ludo"): GameState {
@@ -166,9 +172,10 @@ function freshDemo(players: number, game: GameId = "ludo"): GameState {
   return s.phase === "playing" ? s : freshDemo(players, game);
 }
 
-/** A real game played by the computer: Ludo on the theme's board, or Pachisi on its cloth. */
+/** A real game played by the computer: Ludo on the theme's board, Pachisi on its cloth, or Parchís. */
 function LudoDemo({ twoDice = false, game: kind = "ludo" }: { twoDice?: boolean; game?: GameId }) {
   const pachisi = kind === "pachisi";
+  const parchis = kind === "parchis";
   const rules = rulesFor(kind);
   const [style, th] = useBoardStyle();
   const game = useRef<GameState | null>(null);
@@ -329,12 +336,20 @@ function LudoDemo({ twoDice = false, game: kind = "ludo" }: { twoDice?: boolean;
 
   const pieces = tokens.map((t) => (
     <g key={t.key} className={cn("token", walking === t.key && "stepping", t.home && "returning")} style={{ transform: `translate(${t.x}px,${t.y}px) scale(${t.scale})` }}>
-      {pachisi ? <PachisiPawn fill={th.pieces[t.c]} lying={t.lying} /> : <TokenArt style={style} fill={th.pieces[t.c]} />}
+      {pachisi ? <PachisiPawn fill={th.pieces[t.c]} lying={t.lying} /> : parchis ? <ParchisToken fill={th.pieces[t.c]} /> : <TokenArt style={style} fill={th.pieces[t.c]} />}
     </g>
   ));
   return (
     <div ref={box} className="flex flex-col items-center gap-2 md:gap-3">
-      {pachisi ? <PachisiBoardPreview>{pieces}</PachisiBoardPreview> : <BoardPreview style={style} th={th} className="rounded-xl p-1.5">{pieces}</BoardPreview>}
+      {pachisi ? (
+        <PachisiBoardPreview>{pieces}</PachisiBoardPreview>
+      ) : parchis ? (
+        <ParchisBoardPreview>{pieces}</ParchisBoardPreview>
+      ) : (
+        <BoardPreview style={style} th={th} className="rounded-xl p-1.5">
+          {pieces}
+        </BoardPreview>
+      )}
       <div className="flex min-h-11 max-w-full items-center justify-center gap-3 text-sm font-bold md:min-h-12">
         {/* One line, however wide the shells: "Blue threw · no move" */}
         <span ref={label} className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
@@ -526,7 +541,7 @@ function PlaneBoard({ v }: { v: Variant }) {
 export function GamePreview({ variant }: { variant: Variant }) {
   if (variant.id === "ludo") return <LudoDemo />;
   if (variant.id === "pachisi") return <LudoDemo game="pachisi" />;
-  if (variant.id === "parchis") return <LudoDemo twoDice />;
+  if (variant.id === "parchis") return <LudoDemo game="parchis" />;
   const board =
     variant.board === "cloth" ? <ClothBoard v={variant} /> : variant.board === "plane" ? <PlaneBoard v={variant} /> : <FloorGrid v={variant} />;
   return (

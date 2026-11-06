@@ -12,6 +12,9 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { COLORS, DICE_ROLL_MS } from "@/lib/game/constants";
 import { rulesFor } from "@/lib/game/rules";
 import { P_LAP_FROM, P_LAP_TO, ROUTE } from "@/lib/game/pachisi/board";
+import { SALIDA, squareOf as xSquareOf } from "@/lib/game/parchis/board";
+import { variantById } from "@/lib/game/variants";
+import { ParchisBoardPreview, ParchisToken } from "@/components/game/parchis-board";
 import type { Color, GameId } from "@/lib/game/types";
 import { uiStore, useUi } from "@/lib/ui-store";
 import { cn } from "@/lib/utils";
@@ -39,6 +42,8 @@ const sameSquare = (c: Color, of: Color, p: number) => {
   const [r, cc] = ROUTE[of][p];
   return ROUTE[c].findIndex(([a, b], i) => i >= P_LAP_FROM && i <= P_LAP_TO && a === r && b === cc);
 };
+/** Parchís: the position colour `c` has on the square where colour `of` stands at position p. */
+const sameSquareX = (c: Color, of: Color, p: number) => ((xSquareOf(of, p) as number) - SALIDA[c] + 68) % 68;
 
 const LESSONS: Record<GameId, Lesson[]> = {
   ludo: [
@@ -130,6 +135,50 @@ const LESSONS: Record<GameId, Lesson[]> = {
       steps: [{ wait: 600 }, { roll: 6, by: "red" }, { move: ["red", 0, 78] }, { roll: 5, by: "red" }, { move: ["red", 0, 83] }, { wait: 1400 }],
     },
   ],
+  parchis: [
+    {
+      title: "A 5 brings a piece out",
+      text: "Your four pieces start in your house. A 5 brings one out onto your salida, the colored square by your house. If you roll a 5 and can bring one out, you must.",
+      tokens: { red: [-1, -1, -1, -1] },
+      steps: [{ wait: 600 }, { roll: 5, by: "red" }, { move: ["red", 0, 0] }, { wait: 1400 }],
+    },
+    {
+      title: "Round the 68 squares",
+      text: "Roll the dice and move one piece that many squares, counter-clockwise round the board. Moving is compulsory: if a piece can move, one must.",
+      tokens: { red: [3, -1, -1, -1] },
+      steps: [{ wait: 600 }, { roll: 4, by: "red" }, { move: ["red", 0, 7] }, { wait: 1400 }],
+    },
+    {
+      title: "Capture, and count 20",
+      text: "Land on a rival standing alone on an ordinary square and it goes back to its house. Then count 20: move any one of your pieces 20 squares.",
+      tokens: { red: [10, -1, -1, -1], yellow: [sameSquareX("yellow", "red", 13), -1, -1, -1] },
+      steps: [{ wait: 600 }, { roll: 3, by: "red" }, { move: ["red", 0, 13] }, { cut: ["yellow", 0] }, { wait: 500 }, { move: ["red", 0, 33] }, { wait: 1400 }],
+    },
+    {
+      title: "Grey squares are safe",
+      text: "On a seguro (grey, with a ring) and on the salidas nobody is captured: two colors can share the square. Two pieces at most fit on any square.",
+      tokens: { red: [5, -1, -1, -1], yellow: [sameSquareX("yellow", "red", 7), -1, -1, -1] },
+      steps: [{ wait: 600 }, { roll: 2, by: "red" }, { move: ["red", 0, 7] }, { wait: 1800 }],
+    },
+    {
+      title: "Two of a color make a barrier",
+      text: "Two of your pieces on one square make a barrier: no piece can pass it or land on it, not even yours. Roll a 6 while you have a barrier and you must open it.",
+      tokens: { red: [15, 18, -1, -1], yellow: [sameSquareX("yellow", "red", 14), -1, -1, -1] },
+      steps: [{ wait: 600 }, { roll: 3, by: "red" }, { move: ["red", 0, 18] }, { wait: 1800 }],
+    },
+    {
+      title: "A 6 rolls again",
+      text: "A 6 gives you another roll, and once none of your pieces is left in the house it counts as 7. But a third 6 in a row sends the piece you moved with the last 6 home.",
+      tokens: { red: [10, 20, 30, 40] },
+      steps: [{ wait: 600 }, { roll: 6, by: "red" }, { move: ["red", 0, 17] }, { wait: 1400 }],
+    },
+    {
+      title: "Up your pasillo to the meta",
+      text: "After the round, go up your own colored pasillo to your meta in the middle, by the exact count. Each piece that reaches it lets you count 10 with another. First to bring all four in wins.",
+      tokens: { red: [67, 30, -1, -1] },
+      steps: [{ wait: 600 }, { roll: 4, by: "red" }, { move: ["red", 0, 71] }, { wait: 500 }, { move: ["red", 1, 40] }, { wait: 1400 }],
+    },
+  ],
 };
 
 const reducedMotion = () => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -137,6 +186,7 @@ const reducedMotion = () => typeof window !== "undefined" && !!window.matchMedia
 /** Plays one lesson's scene on the board, over and over. */
 function Scene({ game, lesson }: { game: GameId; lesson: Lesson }) {
   const pachisi = game === "pachisi";
+  const parchis = game === "parchis";
   const [style, th] = useBoardStyle();
   const [pos, setPos] = useState<Tokens>(lesson.tokens);
   const [walking, setWalking] = useState("");
@@ -228,14 +278,22 @@ function Scene({ game, lesson }: { game: GameId; lesson: Lesson }) {
             <circle r={0.42} fill="none" stroke="#24170f" strokeWidth={0.09} />
           </g>
         ))}
-      {pachisi ? <PachisiPawn fill={th.pieces[t.c]} lying={t.lying} /> : <TokenArt style={style} fill={th.pieces[t.c]} />}
+      {pachisi ? <PachisiPawn fill={th.pieces[t.c]} lying={t.lying} /> : parchis ? <ParchisToken fill={th.pieces[t.c]} /> : <TokenArt style={style} fill={th.pieces[t.c]} />}
     </g>
   ));
 
   return (
     <div className="flex w-full flex-col items-center gap-2">
       <div className="w-full max-w-[300px]">
-        {pachisi ? <PachisiBoardPreview>{layer}</PachisiBoardPreview> : <BoardPreview style={style} th={th} className="rounded-xl p-1.5">{layer}</BoardPreview>}
+        {pachisi ? (
+          <PachisiBoardPreview>{layer}</PachisiBoardPreview>
+        ) : parchis ? (
+          <ParchisBoardPreview>{layer}</ParchisBoardPreview>
+        ) : (
+          <BoardPreview style={style} th={th} className="rounded-xl p-1.5">
+            {layer}
+          </BoardPreview>
+        )}
       </div>
       <div className="flex min-h-12 items-center gap-3 text-sm font-bold">
         <span className="flex items-center gap-1.5">
@@ -290,7 +348,7 @@ export function TutorialDialog() {
     <Dialog open onOpenChange={(o) => !o && close()}>
       <DialogContent variant="center" className="max-h-[92dvh] items-center gap-3 overflow-y-auto p-4 text-center sm:p-6">
         <span className="text-xs font-bold tracking-[0.2em] text-primary uppercase">
-          How to play {tutorial === "pachisi" ? "Pachisi" : "Ludo"} · {step + 1} of {lessons.length}
+          How to play {variantById(tutorial).name} · {step + 1} of {lessons.length}
         </span>
         <DialogTitle className="text-2xl leading-tight font-extrabold">{lesson.title}</DialogTitle>
         <DialogDescription className="min-h-[3.75rem] text-sm leading-snug text-muted-foreground">{lesson.text}</DialogDescription>

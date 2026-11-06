@@ -154,7 +154,8 @@ export function DiceView({
   useEffect(() => {
     const cube = cubeRef.current;
     if (!cube || rolling) return;
-    const t = SHOW[face];
+    // (Only faces 1-6 exist: anything else shows the 1 rather than breaking the dice.)
+    const t = SHOW[face] || SHOW[1];
     const norm = (a: number) => ((Math.round(a) % 360) + 360) % 360;
     const a = spin.angles;
     if (norm(a.x) !== norm(t.x) || norm(a.y) !== norm(t.y) || norm(a.z) !== 0) {

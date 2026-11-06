@@ -396,8 +396,8 @@ const SandstoneSurface = memo(function SandstoneSurface({ th, colorKey, uid }: S
 
 const SURFACES: Record<BoardStyleId, typeof ModernSurface> = { modern: ModernSurface, sandstone: SandstoneSurface, royal: RoyalSurface, carved: CarvedSurface };
 
-/** The frame around the board, per design. */
-function frameStyle(style: BoardStyleId, th: Theme): React.CSSProperties {
+/** The frame around the board, per design (Parchís dresses its board the same way). */
+export function frameStyle(style: BoardStyleId, th: Theme): React.CSSProperties {
   if (style === "sandstone")
     return {
       // Red sandstone, gold inlay.
@@ -418,7 +418,7 @@ function frameStyle(style: BoardStyleId, th: Theme): React.CSSProperties {
 }
 
 /** Ornaments on the corners of the frame: gold rosettes (royal) or saffron lotus buds (sandstone). */
-function FrameCorners({ kind }: { kind: "rosette" | "lotus" }) {
+export function FrameCorners({ kind }: { kind: "rosette" | "lotus" }) {
   return (
     <>
       {["left-0 top-0", "right-0 top-0", "left-0 bottom-0", "right-0 bottom-0"].map((pos) => (

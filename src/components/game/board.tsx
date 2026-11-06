@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { svgId, type BoardLook } from "./board-look";
 import { useLudoLook } from "./ludo-board";
 import { usePachisiLook } from "./pachisi-board";
+import { useParchisLook } from "./parchis-board";
 
 /** Ripples around tokens you can move. */
 const RIPPLE_ON_LIGHT = { ring: "#24170f", edge: "rgba(255,255,255,.8)" };
@@ -48,10 +49,11 @@ export function Board() {
   const movableViews = views.filter((t) => t.movable && !t.hidden);
   const hex = (slot: Color) => th.pieces[game.displayColor(slot)];
   const light = (slot: Color) => th.light[game.displayColor(slot)];
-  // Each game's own board (both are worked out, so switching games keeps the hooks in order).
+  // Each game's own board (all are worked out, so switching games keeps the hooks in order).
   const looks: Record<GameId, BoardLook> = {
     ludo: useLudoLook(colorKey, uid, game.rot.target),
     pachisi: usePachisiLook(hex, light, uid),
+    parchis: useParchisLook(hex, light, uid),
   };
   const look = looks[game.state.game || "ludo"];
   const size = look.size;

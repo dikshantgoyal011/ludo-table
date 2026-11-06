@@ -5,6 +5,7 @@ import { Check, Copy, Link2, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useGame } from "@/hooks/use-game";
+import { variantById } from "@/lib/game/variants";
 
 /** Invite friends to a friends room: copy the code, copy the link, or share it. */
 export function InviteDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -32,7 +33,7 @@ export function InviteDialog({ open, onClose }: { open: boolean; onClose: () => 
   };
   const share = async () => {
     try {
-      await navigator.share({ title: "Ludo Darbar", text: `Join my ${game.state.game === "pachisi" ? "Pachisi" : "Ludo"} room ${code}`, url: link });
+      await navigator.share({ title: "Ludo Darbar", text: `Join my ${variantById(game.state.game || "ludo").name} room ${code}`, url: link });
     } catch {
       /* closed without sharing */
     }

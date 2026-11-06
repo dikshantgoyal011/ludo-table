@@ -20,18 +20,19 @@ export function GameScreen() {
   const playing = game.loaded && game.state.phase === "playing";
   useBackGuard();
 
-  // First Pachisi game on this device: show How to play (most people only know Ludo).
-  const pachisi = game.state.game === "pachisi";
+  // First Pachisi / Parchís game on this device: show How to play (most people only know Ludo).
+  const kind = game.state.game || "ludo";
   useEffect(() => {
-    if (!playing || !pachisi) return;
+    if (!playing || kind === "ludo") return;
+    const key = kind === "pachisi" ? "ludo.seenPachisiHelp" : `ludo.seenHelp.${kind}`;
     try {
-      if (localStorage.getItem("ludo.seenPachisiHelp")) return;
-      localStorage.setItem("ludo.seenPachisiHelp", "1");
+      if (localStorage.getItem(key)) return;
+      localStorage.setItem(key, "1");
     } catch {
       return;
     }
-    openTutorial("pachisi");
-  }, [playing, pachisi]);
+    openTutorial(kind);
+  }, [playing, kind]);
 
   // While a game is on, the screen is locked to one phone screen: nothing scrolls,
   // the board takes the room that's left (see .in-game in globals.css).

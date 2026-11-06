@@ -7,8 +7,8 @@ export type Color = "red" | "green" | "yellow" | "blue";
 /** How the game is being played. */
 export type Mode = "online" | "computer" | "local" | "friends";
 
-/** Which game: Ludo, or Pachisi (cross board, cowrie shells). */
-export type GameId = "ludo" | "pachisi";
+/** Which game: Ludo, Pachisi (cross board, cowrie shells) or Parchís (Spain's: one dice, bonus counts, barriers). */
+export type GameId = "ludo" | "pachisi" | "parchis";
 
 export type Phase = "lobby" | "playing" | "done";
 
@@ -113,6 +113,22 @@ export interface GameState {
   variationsV?: number;
   /** Pachisi: the throws of the turn being played. */
   pachisi?: PachisiTurn;
+  /** Parchís: the moves of the turn being played. */
+  parchis?: ParchisTurn;
+}
+
+/** Parchís: the turn in progress. */
+export interface ParchisTurn {
+  /** Whose turn this is about (anything for another colour is stale). */
+  c: Color | null;
+  /** Moves still to make: the dice (a 6 counting 7 once all pieces are out), then any bonus counts (20 for a capture, 10 for a piece home). */
+  hand: number[];
+  /** Another roll is owed once these are made (the roll was a 6). */
+  again: boolean;
+  /** Moves made since the last roll (devices use it to tell their own moves apart). */
+  moved: number;
+  /** The piece moved with the last 6 this turn (a third 6 sends it home). */
+  sixPiece: number | null;
 }
 
 /** Pachisi: the turn in progress. */

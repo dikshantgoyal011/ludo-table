@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useGame } from "@/hooks/use-game";
 import { cleanRoomCode, MODES, newRoomCode, roomPath } from "@/lib/game/constants";
+import { variantById } from "@/lib/game/variants";
 import { uiStore } from "@/lib/ui-store";
 
 export function AppHeader() {
@@ -83,7 +84,7 @@ export function AppHeader() {
         <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
           {inGame && game.mode && (
             <span className="hidden rounded-lg border border-border bg-card px-2.5 py-1.5 text-sm font-semibold text-muted-foreground sm:inline">
-              {game.state.game === "pachisi" ? "Pachisi · " : ""}
+              {game.state.game && game.state.game !== "ludo" ? `${variantById(game.state.game).name} · ` : ""}
               {MODES[game.mode].chip}
             </span>
           )}
@@ -141,7 +142,7 @@ export function AppHeader() {
             className="h-10 px-4"
             onClick={() => {
               setRoomOpen(false);
-              router.push(roomPath(newRoomCode(), `new=1${game.state.game === "pachisi" ? "&game=pachisi" : ""}`));
+              router.push(roomPath(newRoomCode(), `new=1${game.state.game && game.state.game !== "ludo" ? `&game=${game.state.game}` : ""}`));
             }}
           >
             Start a new room
