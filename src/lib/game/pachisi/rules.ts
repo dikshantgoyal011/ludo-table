@@ -264,6 +264,9 @@ export function applyRoll(s: GameState, c: Color, v: number): boolean {
 export function chooseMove(s: GameState, c: Color, v: number): { i: number; opt: MoveOpt } {
   let best = { i: -1, opt: {} as MoveOpt };
   let bestScore = -Infinity;
+  // The best move that isn't going round again.
+  let plain = { i: -1, opt: {} as MoveOpt };
+  let plainScore = -Infinity;
   s.tokens[c].forEach((p, i) => {
     for (const ch of moveChoices(s, c, i, v)) {
       const np = ch.to;
@@ -281,8 +284,16 @@ export function chooseMove(s: GameState, c: Color, v: number): { i: number; opt:
         bestScore = sc;
         best = { i, opt: { use: ch.use, extra: ch.extra } };
       }
+      if (!ch.extra && sc > plainScore) {
+        plainScore = sc;
+        plain = { i, opt: { use: ch.use, extra: false } };
+      }
     }
   });
+  // Never round again: make the best other move, or with none, let the throw go
+  // (moving isn't compulsory), so the piece waits near home for the exact throw,
+  // as a player would. (Standing in for an offline player, the computer sent their piece round again.)
+  if (best.opt.extra) return plain;
   return best;
 }
 

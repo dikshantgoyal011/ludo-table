@@ -19,18 +19,47 @@ const PROBE_TIMEOUT = 9_000;
  */
 const loadPeer = () => import(/* webpackPrefetch: true */ "peerjs");
 
+/**
+ * For testing only: localStorage "ludo.netChaos" = {"delay": [min, max], "drop": p}
+ * makes this device's connection slow (every message late by min-max ms, still
+ * in order, like a slow relay) and lossy (a share p of messages never arrive).
+ * Off unless set.
+ */
+const CHAOS: { delay?: [number, number]; drop?: number } | null = (() => {
+  try {
+    const v = typeof localStorage !== "undefined" ? JSON.parse(localStorage.getItem("ludo.netChaos") || "null") : null;
+    return v && typeof v === "object" ? v : null;
+  } catch {
+    return null;
+  }
+})();
+/** `send`, through the test chaos when it's on. */
+function chaotic(send: (m: NetMessage) => void) {
+  if (!CHAOS) return send;
+  let due = 0;
+  return (m: NetMessage) => {
+    if (Math.random() < (CHAOS.drop || 0)) return;
+    const [a, b] = CHAOS.delay || [0, 0];
+    due = Math.max(due, Date.now() + a + Math.random() * (b - a));
+    setTimeout(() => send(m), due - Date.now());
+  };
+}
+
 class Link implements PeerLink {
   pid?: string;
-  constructor(readonly conn: DataConnection) {}
-  get open() {
-    return this.conn.open;
-  }
-  send(msg: NetMessage) {
+  private out = chaotic((msg) => {
     try {
       if (this.conn.open) this.conn.send(msg);
     } catch {
       /* closed meanwhile */
     }
+  });
+  constructor(readonly conn: DataConnection) {}
+  get open() {
+    return this.conn.open;
+  }
+  send(msg: NetMessage) {
+    this.out(msg);
   }
 }
 
@@ -259,16 +288,21 @@ export class PeerRoomTransport implements RoomTransport {
     else this.sendToHost(msg);
   }
 
-  sendToHost(msg: NetMessage) {
-    if (this.hostConn && this.hostConn.open) {
-      try {
-        this.hostConn.send(msg);
-        return true;
-      } catch {
-        return false;
-      }
+  private toHost = chaotic((msg) => {
+    try {
+      if (this.hostConn?.open) this.hostConn.send(msg);
+    } catch {
+      /* closed meanwhile */
     }
-    return false;
+  });
+  sendToHost(msg: NetMessage) {
+    if (!this.hostConn || !this.hostConn.open) return false;
+    try {
+      this.toHost(msg);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   guestCount() {

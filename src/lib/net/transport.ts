@@ -34,17 +34,26 @@ export type NetMessage =
   | ({ type: "chat" } & ChatMessage)
   | { type: "chatHistory"; msgs: ChatMessage[] }
   | { type: "typing"; id: string; on: boolean }
-  /** "I'm still here", both ways. The host answers a guest's ping right away. */
-  | { type: "ping"; id: string }
+  /**
+   * "I'm still here", both ways. The host answers a guest's ping right away, and
+   * says which game and version it has (`gid`, `v`): a guest that's behind asks for it.
+   */
+  | { type: "ping"; id: string; v?: number; gid?: string }
+  /** Guest to host: send me the game as it is now (I missed something). */
+  | { type: "sync"; id: string }
   /** Guest to host: take my seat back from the computer. */
   | { type: "takeBack"; id: string }
   /**
    * Guest to host: I rolled v / I picked token i. The host is the one place
    * the game changes, so two devices can never change it at the same moment.
+   * `seq`: the roll number this is (a roll) or is for (a move), `stage`: moves
+   * already made with that roll. The host takes each exactly once, so a guest
+   * can send it again until it's confirmed, and a late copy can never land on
+   * another roll. One that doesn't fit gets the game back instead.
    */
-  | { type: "roll"; id: string; c: Color; v: number }
+  | { type: "roll"; id: string; c: Color; v: number; seq?: number }
   // i = -1: Pachisi skip. use: which throw in hand; extra: round again (Pachisi).
-  | { type: "move"; id: string; c: Color; i: number; use?: number; extra?: boolean }
+  | { type: "move"; id: string; c: Color; i: number; use?: number; extra?: boolean; seq?: number; stage?: number }
   /**
    * "My dice is spinning and will show v" (roll number `seq`), sent the moment
    * the player taps it, so everyone's dice spins together instead of one

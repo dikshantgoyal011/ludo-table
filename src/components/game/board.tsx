@@ -68,7 +68,9 @@ export function Board() {
   const pickChoices = pickView ? game.choicesFor(pickView.c, pickView.i) : [];
   const tapToken = (t: TokenView) => {
     const choices = game.choicesFor(t.c, t.i);
-    if (choices.length > 1) setPick({ c: t.c, i: t.i, seq, hand });
+    // More than one way, or the only way is round again (Pachisi: the throw can't take it home):
+    // ask, rather than send the piece round again on a tap.
+    if (choices.length > 1 || choices.some((ch) => ch.extra)) setPick({ c: t.c, i: t.i, seq, hand });
     else {
       setPick(null);
       game.move(t.c, t.i, choices[0] ? { use: choices[0].use, extra: choices[0].extra } : {});
@@ -140,7 +142,7 @@ export function Board() {
             ))}
           </g>
         </svg>
-        {pickView && pickChoices.length > 1 && (
+        {pickView && (pickChoices.length > 1 || pickChoices.some((ch) => ch.extra)) && (
           <MoveChooser
             t={pickView}
             size={size}
@@ -164,7 +166,7 @@ function choiceLabel(ch: MoveChoice, all: MoveChoice[]) {
   const twoWays = all.some((o) => o.use === ch.use && !!o.extra !== !!ch.extra);
   const way = ch.extra ? "Round again" : "Head home";
   const by = ch.use === GRACE_STEP ? "Grace · 1 square" : `Move ${ch.use}`;
-  if (!throws) return twoWays ? way : by;
+  if (!throws) return twoWays || ch.extra ? way : by;
   return twoWays ? `${by} · ${way.toLowerCase()}` : by;
 }
 
@@ -192,6 +194,10 @@ function MoveChooser({ t, size, angle, choices, onPick }: { t: TokenView; size: 
           align === "left" ? "-left-3" : align === "right" ? "-right-3" : "left-1/2 -translate-x-1/2",
         )}
       >
+        {/* Going round again is the only way with this throw: say why there's no "Head home". */}
+        {choices.every((ch) => ch.extra) && (
+          <span className="max-w-44 px-1.5 pt-0.5 pb-1 text-center text-xs leading-snug font-semibold text-[#23302c]">Home needs an exact throw. Tap elsewhere to keep it here.</span>
+        )}
         {choices.map((ch) => (
           <button
             key={`${ch.use}${!!ch.extra}`}

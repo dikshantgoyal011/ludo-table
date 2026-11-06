@@ -68,9 +68,15 @@ type GameEvent = { type: "roll"; value: number; color: Color } | { type: "confet
  * it belongs to; `stage`: moves already made with that roll (Pachisi plays
  * several throws one after another). A move of token -1 is a skip (Pachisi).
  */
-type Pending =
-  | { kind: "roll"; c: Color; v: number; seq: number; at: number }
-  | { kind: "move"; c: Color; i: number; opt: MoveOpt; seq: number; stage: number; at: number };
+type Pending = (
+  | { kind: "roll"; c: Color; v: number; seq: number }
+  | { kind: "move"; c: Color; i: number; opt: MoveOpt; seq: number; stage: number }
+) & {
+  /** When it was made, and last sent to the host (it's sent again until the host has it). */
+  at: number;
+  sentAt: number;
+  msg: NetMessage;
+};
 
 /** Moves made with the roll in hand so far (a game whose roll has one move: 0 until it's made). */
 const stageOf = (s: GameState) => {
@@ -100,13 +106,33 @@ const RESEARCH_MS = 8_000;
 /** Everyone in voice chat says so again this often. */
 const VOICE_REPEAT_MS = 5_000;
 
-/** Unconfirmed actions older than this are dropped (the message must have been lost). */
-const PENDING_TIMEOUT = 4_000;
+/**
+ * Guest: my roll or move the host hasn't confirmed yet is sent again this often
+ * (the host takes each exactly once, so a copy is harmless), and only given up
+ * after a long time. Dropping it after a few seconds, on a slow connection, undid
+ * the move on screen; the original then arrived anyway and the game jumped.
+ */
+const RESEND_MS = 1_500;
+const PENDING_GIVE_UP_MS = 30_000;
+/** Guest: unconfirmed this long, the connection line says the move is on its way. */
+const PENDING_SLOW_MS = 3_000;
+/** Guest: after asking the host for the game, wait this long before asking again. */
+const SYNC_GAP_MS = 2_000;
+/** The app came back (from the background, or the screen was off): the others get this long to be heard from again. */
+const WAKE_GRACE_MS = 6_000;
+/** A gap this long between heartbeats means this device was asleep / in the background. */
+const TICK_GAP_MS = 3_000;
+/** Opening a room: nothing at all after this long, start again (a connection that never answers). */
+const OPEN_WATCHDOG_MS = 15_000;
+/** Friends wait longer for each other than strangers do before the computer stands in. */
+const FRIENDS_OFFLINE_ALLOWANCE = 40_000;
 
 /** A number someone could really have rolled / thrown in this game. */
 const validRoll = (s: GameState, v: number) => rulesFor(s).validRoll(v, s);
 
 function applyPending(s: GameState, a: Pending) {
+  // (The computer took the seat over meanwhile: my own action no longer counts.)
+  if (s.seats[a.c]?.bot) return false;
   if (a.kind === "roll") return rulesFor(s).applyRoll(s, a.c, a.v);
   if (s.phase !== "playing" || s.turn !== a.c || !s.roll || (s.last?.seq || 0) !== a.seq) return false;
   return applyChoice(s, a.c, a.i, a.opt);
@@ -125,6 +151,23 @@ function applyChoice(s: GameState, c: Color, i: number, opt: MoveOpt) {
 function confirmedBy(s: GameState, a: Pending) {
   const seq = s.last?.seq || 0;
   return a.kind === "roll" ? seq >= a.seq : seq > a.seq || (seq === a.seq && (!s.roll || stageOf(s) > a.stage));
+}
+
+/** A piece of the app's code that couldn't be loaded (the app was open across an update). */
+const isChunkError = (e: unknown) => {
+  const t = `${(e as Error)?.name || ""} ${(e as Error)?.message || ""}`;
+  return /ChunkLoadError|Loading chunk|Failed to fetch dynamically imported module|Importing a module script failed/i.test(t);
+};
+/** Load the page again for the new version, at most once a minute (never in a loop). */
+function reloadOnce() {
+  try {
+    const at = Number(sessionStorage.getItem("ludo.reloadedAt") || 0);
+    if (Date.now() - at < 60_000) return;
+    sessionStorage.setItem("ludo.reloadedAt", String(Date.now()));
+  } catch {
+    /* private mode: still worth one try */
+  }
+  window.location.reload();
 }
 
 const reduceMotion = () =>
@@ -242,6 +285,12 @@ export class GameController {
   private typingSentAt = 0;
   /** My colour while a game is on; changing the colour setting waits for the next game. */
   private lockedColor: Color | null = null;
+  /** When the heartbeat last ran (a long gap: this device was asleep or in the background). */
+  private lastTick = 0;
+  /** Guest: the connection line is saying my move is on its way. */
+  private slowShown = false;
+  /** When I last asked to take my seat back from the computer. */
+  private takeBackAt = 0;
 
   constructor(
     private services: Services,
@@ -293,6 +342,12 @@ export class GameController {
     this.version++;
     this.listeners.forEach((fn) => fn());
     this.tickBots();
+    // For tests only: a page that sets window.__ludoTrace = [] gets a record of every change shown.
+    const trace = (globalThis as { __ludoTrace?: unknown[] }).__ludoTrace;
+    if (trace && this.loaded) {
+      const s = this.state;
+      trace.push({ t: Date.now(), seq: s.last?.seq || 0, stage: stageOf(s), turn: s.turn, phase: s.phase, v: s.v || 0, tokens: JSON.stringify(s.tokens), pending: this.pending.length });
+    }
   }
   /** Public refresh (e.g. after a setting changes). */
   refresh() {
@@ -436,10 +491,15 @@ export class GameController {
     const hostGone = this.isNet() && this.loaded && !this.isHost && seat.id === this.hostId && Date.now() - this.hostHeardAt > AWAY_GRACE;
     return hostGone ? { away: true, since: this.hostHeardAt } : { away: false, since: 0 };
   }
+  /** How long someone can be offline before the computer plays for them (friends wait longer for each other). */
+  private offlineAllowance() {
+    return this.mode === "friends" ? FRIENDS_OFFLINE_ALLOWANCE : OFFLINE_ALLOWANCE;
+  }
   /** Offline time left before the computer plays for this player (ms). */
   offlineLeft(seat: Seat) {
     const a = this.awayInfo(seat);
-    return a.away ? Math.max(0, OFFLINE_ALLOWANCE - (Date.now() - a.since)) : OFFLINE_ALLOWANCE;
+    const allowance = this.offlineAllowance();
+    return a.away ? Math.max(0, allowance - (Date.now() - a.since)) : allowance;
   }
   /** Is the computer playing my seat because I was away? */
   myTakeover() {
@@ -502,8 +562,10 @@ export class GameController {
         // Show it now and ask the host to record it; its answer confirms it.
         const seq = (this.state.last?.seq || 0) + 1;
         this.ownRollSeq = seq;
-        this.transport?.sendToHost({ type: "roll", id: this.myId, c, v });
-        if (this.predict({ kind: "roll", c, v, seq, at: Date.now() })) this.seenSeq = seq;
+        const msg: NetMessage = { type: "roll", id: this.myId, c, v, seq };
+        this.transport?.sendToHost(msg);
+        const now = Date.now();
+        if (this.predict({ kind: "roll", c, v, seq, at: now, sentAt: now, msg })) this.seenSeq = seq;
       } else
         this.commit((s) => {
           if (!rulesFor(s).applyRoll(s, c, v)) return false;
@@ -514,16 +576,79 @@ export class GameController {
     this.emit();
   }
 
-  /** Host: a guest rolled. Record it, then show their dice landing here too. */
-  private hostRoll(link: PeerLink, c: Color, v: number) {
+  /**
+   * Host: a guest rolled. Record it, then show their dice landing here too.
+   * `seq`: the roll number it is. Each is taken once. One that doesn't fit (a
+   * copy sent again, one the game is past, or one that came before the guest's
+   * move it follows) isn't taken: the guest gets the game as it is, keeps on top
+   * of it whatever of its own still fits (by the same rules), and sends the rest
+   * again, so nothing on its screen goes back.
+   */
+  private hostRoll(link: PeerLink, c: Color, v: number, seq?: number) {
     const s = this.state;
     const seat = s.seats[c];
+    const next = (s.last?.seq || 0) + 1;
     // Checked against the game only, never this screen's animations: a guest's
     // roll or move that arrives while its dice still spins here must not be lost.
-    if (!seat || seat.id !== link.pid || seat.bot || !validRoll(s, v)) return;
-    if (s.phase !== "playing" || s.turn !== c || s.roll) return;
+    const fits =
+      !!seat && seat.id === link.pid && !seat.bot && validRoll(s, v) && s.phase === "playing" && s.turn === c && !s.roll && (seq === undefined || seq === next);
+    if (!fits) {
+      if (seq !== undefined) link.send({ type: "state", state: s });
+      return;
+    }
     this.commit((n) => rulesFor(n).applyRoll(n, c, v), true);
     this.onRemoteState();
+  }
+
+  /** Host: a guest moved (i = -1: let the roll go). Taken once, and only for the roll and stage it was made for. */
+  private hostMove(link: PeerLink, m: Extract<NetMessage, { type: "move" }>) {
+    const s = this.state;
+    const seat = s.seats[m.c];
+    const use = Number(m.use);
+    const opt: MoveOpt = { ...(use > 0 ? { use } : {}), extra: !!m.extra };
+    const same = m.seq === undefined || (m.seq === (s.last?.seq || 0) && (m.stage === undefined || m.stage === stageOf(s)));
+    const ok =
+      !!seat && seat.id === link.pid && !seat.bot && same && s.phase === "playing" && s.turn === m.c && !!s.roll && (() => applyChoice(clone(s), m.c, Number(m.i), opt))();
+    if (!ok) {
+      // (As with rolls: the guest gets the game as it is and sorts out its own moves by the same rules.)
+      if (m.seq !== undefined) link.send({ type: "state", state: s });
+      return;
+    }
+    this.doMove(m.c, Number(m.i), opt);
+  }
+
+  /**
+   * Guest: the host's game is older than mine (it took the table over from me, or
+   * missed my copy, while I was away). Offer mine: the host keeps the newer one.
+   * Without this the two kept turning each other's game down.
+   */
+  private offeredAt = 0;
+  private offerState() {
+    if (this.isHost || !this.online || !this.loaded) return;
+    const now = Date.now();
+    if (now - this.offeredAt < SYNC_GAP_MS) return;
+    this.offeredAt = now;
+    this.transport?.sendToHost({ type: "state", state: this.state });
+  }
+
+  /** Guest: send again whatever the host hasn't confirmed yet (it takes each once, so copies are harmless). */
+  private resendPending(force = false) {
+    if (!this.pending.length || this.isHost) return;
+    const now = Date.now();
+    for (const a of this.pending) {
+      if (!force && now - a.sentAt < RESEND_MS) continue;
+      if (this.transport?.sendToHost(a.msg)) a.sentAt = now;
+    }
+  }
+
+  /** Guest: ask the host for the game as it is now (rate-limited). */
+  private syncAskedAt = 0;
+  private requestSync() {
+    if (this.isHost || !this.online) return;
+    const now = Date.now();
+    if (now - this.syncAskedAt < SYNC_GAP_MS) return;
+    this.syncAskedAt = now;
+    this.transport?.sendToHost({ type: "sync", id: this.myId });
   }
 
   /** Has someone's dice spun here for a roll that hasn't reached this device's game yet? */
@@ -563,12 +688,13 @@ export class GameController {
     return true;
   }
 
-  /** Guest: the host never answered (lost message); go back to what it last sent. */
+  /** Guest: the host never answered for a long time; go back to what it last sent (and ask it for the latest). */
   private dropPending() {
     const prev = this.state;
     const back = this.hostState;
     this.pending = [];
     this.hostState = null;
+    this.requestSync();
     if (!back) return;
     this.state = back;
     this.onStateChange(prev, back, true);
@@ -578,8 +704,11 @@ export class GameController {
   private doMove(c: Color, i: number, opt: MoveOpt = {}) {
     if (this.guest) {
       const seq = this.state.last?.seq || 0;
-      this.transport?.sendToHost({ type: "move", id: this.myId, c, i, use: opt.use, extra: !!opt.extra });
-      this.predict({ kind: "move", c, i, opt, seq, stage: stageOf(this.state), at: Date.now() });
+      const stage = stageOf(this.state);
+      const msg: NetMessage = { type: "move", id: this.myId, c, i, use: opt.use, extra: !!opt.extra, seq, stage };
+      this.transport?.sendToHost(msg);
+      const now = Date.now();
+      this.predict({ kind: "move", c, i, opt, seq, stage, at: now, sentAt: now, msg });
       return;
     }
     this.commit((s) => {
@@ -744,30 +873,68 @@ export class GameController {
   }
 
   // ============================================================ player actions
+  /**
+   * Guest, in the lobby: what I've asked for (to be at the table, ready, agreeing
+   * to the rules of version vv, the game to start). Sent again until the host's
+   * game shows it, so a message lost on a bad connection can't leave the lobby
+   * waiting for ever. (The host takes each the same however often it comes.)
+   */
+  private lobbyWant: { join?: boolean; ready?: boolean; agree?: number | null; start?: boolean } = {};
+  private lobbySentAt = 0;
   join = () => {
+    this.lobbyWant.join = true;
     if (this.isHost || !this.online) this.hostJoin(this.myId, this.myNick(), this.myLooks());
     else this.transport?.sendToHost({ type: "join", id: this.myId, nick: this.myNick(), ...this.myLooks() });
   };
   leave = () => {
+    this.lobbyWant = { join: false };
     if (this.isHost || !this.online) this.hostLeave(this.myId);
     else this.transport?.sendToHost({ type: "leave", id: this.myId });
   };
   start = () => {
     if (!this.canRunTable()) return;
     if (this.isHost || !this.isNet()) this.startGame();
-    else this.transport?.sendToHost({ type: "start" });
+    else {
+      this.lobbyWant.start = true;
+      this.transport?.sendToHost({ type: "start" });
+    }
   };
   /** Friends lobby: mark myself ready to start (or not). */
   setReady = (on: boolean) => {
+    this.lobbyWant.ready = on;
     if (this.isHost || !this.online) this.hostReady(this.myId, on);
     else this.transport?.sendToHost({ type: "ready", id: this.myId, on });
   };
   /** Friends lobby (Pachisi): agree to the variations on show (or not). */
   agree = (on: boolean) => {
     const vv = this.state.variationsV || 0;
+    this.lobbyWant.agree = on ? vv : null;
     if (this.isHost || !this.online) this.hostAgree(this.myId, on, vv);
     else this.transport?.sendToHost({ type: "agree", id: this.myId, on, vv });
   };
+  /** Guest, in the lobby: send again what the host's game doesn't show yet. */
+  private resendLobby(now: number) {
+    const s = this.state;
+    if (this.isHost || !this.online || !this.loaded || s.phase !== "lobby") {
+      if (s.phase !== "lobby") this.lobbyWant = {};
+      return;
+    }
+    if (now - this.lobbySentAt < RESEND_MS) return;
+    this.lobbySentAt = now;
+    const t = this.transport;
+    const me = this.myId;
+    const w = this.lobbyWant;
+    if (w.join && !this.joined(s)) t?.sendToHost({ type: "join", id: me, nick: this.myNick(), ...this.myLooks() });
+    if (w.join === false && this.joined(s)) t?.sendToHost({ type: "leave", id: me });
+    if (!this.joined(s)) return;
+    if (w.ready !== undefined && !!s.ready?.includes(me) !== w.ready) t?.sendToHost({ type: "ready", id: me, on: w.ready });
+    // (Agreeing counts only for the rules as they were: once they change, I agree again myself.)
+    if (w.agree !== undefined) {
+      const agreed = !!s.agreed?.includes(me);
+      if (w.agree === null ? agreed : !agreed && w.agree === (s.variationsV || 0)) t?.sendToHost({ type: "agree", id: me, on: w.agree !== null, vv: w.agree ?? 0 });
+    }
+    if (w.start) t?.sendToHost({ type: "start" });
+  }
   /** Friends lobby (Pachisi), the room's creator: play with these variations. */
   setVariations = (v: PachisiVariations) => {
     if (!this.canRunTable()) return;
@@ -846,6 +1013,60 @@ export class GameController {
     if (this.isHost) this.hostTakeBack(this.myId);
     else this.transport?.sendToHost({ type: "takeBack", id: this.myId });
   };
+  /**
+   * I'm here, looking at the game, and connected, but the computer is playing my
+   * seat (my connection dropped for a while): take it back by myself. Before,
+   * the computer kept playing until the player found and tapped "Bot on".
+   */
+  private autoTakeBack() {
+    if (!this.isNet() || !this.online || !this.myTakeover()) return;
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    const now = Date.now();
+    if (now - this.takeBackAt < 3_000) return;
+    this.takeBackAt = now;
+    this.takeBack();
+  }
+
+  /**
+   * This device came back: from the background, the screen going off, or the
+   * network returning. Its timers were stopped meanwhile, so nobody counts as
+   * silent for that time: everyone gets a fresh moment to be heard from, and the
+   * game catches up at once (the host sends it, a guest asks for it and sends
+   * its own unconfirmed moves again).
+   */
+  private wake() {
+    if (!this.isNet() || !this.loaded) return;
+    const now = Date.now();
+    if (this.isHost) {
+      for (const id in this.lastSeen) this.lastSeen[id] = Math.max(this.lastSeen[id], now);
+      this.lastPresenceCheck = now;
+      if (this.online) {
+        this.transport?.broadcast(this.hostPing());
+        this.broadcast();
+      }
+    } else {
+      if (this.hostHeardAt) this.hostHeardAt = Math.max(this.hostHeardAt, now - HOST_SILENT_MS + WAKE_GRACE_MS);
+      if (this.online) {
+        this.transport?.sendToHost({ type: "ping", id: this.myId });
+        this.syncAskedAt = 0;
+        this.requestSync();
+        this.resendPending(true);
+      }
+    }
+    this.autoTakeBack();
+  }
+
+  /** Guest: while a move of mine waits for the host a few seconds, the connection line says so. */
+  private noteSlow(now: number) {
+    if (this.isHost || !this.online) return;
+    const slow = this.pending.length > 0 && now - this.pending[0].at > PENDING_SLOW_MS;
+    if (slow === this.slowShown) return;
+    this.slowShown = slow;
+    if (slow) this.setNet("bad", "Slow connection · your move is on its way…");
+    else this.netSummary();
+    this.emit();
+  }
+
   private hostTakeBack(id: string) {
     this.commit((s) => {
       // Every seat of theirs (in Pachisi one person can play two colours).
@@ -1145,6 +1366,7 @@ export class GameController {
     this.voiceMembers.clear();
     this.pending = [];
     this.hostState = null;
+    this.lobbyWant = {};
     this.ownRollSeq = 0;
     this.preRolledSeq = 0;
     this.preRolledColor = null;
@@ -1628,19 +1850,38 @@ export class GameController {
    */
   private ensureHeartbeat() {
     if (this.heartbeat || typeof window === "undefined") return;
+    // Back from the background / the screen coming on / the network returning: catch up straight away.
+    const onWake = () => {
+      if (document.visibilityState === "visible") this.wake();
+    };
+    document.addEventListener("visibilitychange", onWake);
+    window.addEventListener("pageshow", onWake);
+    window.addEventListener("online", () => this.wake());
+    // An app left open across an update asks for code that's no longer there: load the new version once.
+    window.addEventListener("unhandledrejection", (e) => isChunkError(e.reason) && reloadOnce());
     this.heartbeat = setInterval(() => {
       if (!this.loaded || !this.isNet()) return;
       const s = this.state;
       const now = Date.now();
+      // A long gap since the last tick: this device was asleep or in the background (timers stop).
+      // Nobody is "silent" because of that: give everyone a fresh moment, and catch up at once.
+      const gap = this.lastTick && now - this.lastTick > TICK_GAP_MS;
+      this.lastTick = now;
+      if (gap) this.wake();
       if (this.online) {
-        if (this.isHost) this.transport?.broadcast({ type: "ping", id: this.myId });
+        if (this.isHost) this.transport?.broadcast(this.hostPing());
         else {
           this.transport?.sendToHost({ type: "ping", id: this.myId });
           // The host's page was closed (its connection may still look open for a long time).
           if (this.hostHeardAt && now - this.hostHeardAt > HOST_SILENT_MS) this.onHostSilent?.();
         }
       }
-      if (this.pending.length && now - this.pending[0].at > PENDING_TIMEOUT) this.dropPending();
+      if (this.pending.length) {
+        if (now - this.pending[0].at > PENDING_GIVE_UP_MS) this.dropPending();
+        else this.resendPending();
+      }
+      this.resendLobby(now);
+      this.noteSlow(now);
       // Rejoined, and nobody else from the game turned up: everyone had gone.
       if (this.rejoinUntil && now > this.rejoinUntil) {
         this.rejoinFailed("That game has ended. Everyone else had left the table.");
@@ -1694,6 +1935,11 @@ export class GameController {
     const now = Date.now();
     this.lastSeen[this.myId] = now;
     const s0 = this.state;
+    // After a gap in these checks (this phone asleep, the app in the background)
+    // everyone looks silent, but it was this device that wasn't listening: they
+    // all get a fresh grace period. (Before, coming back to the app marked
+    // everyone offline at once, and the computer took over their seats.)
+    if (now - this.lastPresenceCheck > WATCH_GAP_MS) for (const id in this.lastSeen) this.lastSeen[id] = Math.max(this.lastSeen[id], now);
     // Someone we haven't heard from since becoming host gets the grace period from now.
     seated(s0).forEach((c) => (this.lastSeen[s0.seats[c]!.id] ??= now));
     const skip = (s: GameState, c: Color) => s.winners.includes(c) || !!s.seats[c]?.out;
@@ -1767,6 +2013,23 @@ export class GameController {
   private broadcast() {
     this.transport?.broadcast({ type: "state", state: this.state });
   }
+  /** Host: "I'm here", with the game and version I have. */
+  private hostPing(): NetMessage {
+    return { type: "ping", id: this.myId, v: this.state.v || 0, gid: this.state.gid || "" };
+  }
+  /**
+   * Guest: the host's ping says which game and version it has. If mine (without
+   * my own unconfirmed actions) is older or another game, I missed an update: ask for it.
+   */
+  private checkBehind(m: Extract<NetMessage, { type: "ping" }>) {
+    if (m.v === undefined || !this.loaded) return;
+    const base = this.hostState || this.state;
+    if ((m.gid || "") !== (base.gid || "") || m.v > (base.v || 0)) this.requestSync();
+    // The host is behind me (it took the table over with an older copy): offer mine.
+    else if (m.v < (base.v || 0)) this.offerState();
+    // Still waiting on the host for a move of mine: send it again.
+    this.resendPending();
+  }
 
   /**
    * A state arrived from the network. `fromGuest`: a guest offered its saved
@@ -1777,7 +2040,14 @@ export class GameController {
     if (!validState(incoming)) return false;
     const sameGame = (incoming.gid || "") === (this.state.gid || "");
     if (this.loaded && fromGuest && !sameGame) return false;
-    if (this.loaded && sameGame && (incoming.v || 0) < (this.state.v || 0)) return false;
+    // A guest's copy only if it's newer than the host's (the same version: the host's own stands;
+    // the guest's moves on top of it come as moves). From the host: anything not older.
+    const older = (incoming.v || 0) < (this.state.v || 0) || (fromGuest && (incoming.v || 0) === (this.state.v || 0));
+    if (this.loaded && sameGame && older) {
+      // The host is behind me (it took the table over with an older copy): offer mine.
+      if (!fromGuest && !this.isHost && (incoming.v || 0) < (this.state.v || 0)) this.offerState();
+      return false;
+    }
     if (!sameGame) {
       this.pending = [];
       this.hostState = null;
@@ -1814,6 +2084,8 @@ export class GameController {
     if (prev) this.onStateChange(prev, this.state, true);
     if (first) this.onFirstState();
     this.onRemoteState();
+    // The computer was standing in for me while my connection was down, and I'm here: play myself again.
+    if (!fromGuest) this.autoTakeBack();
     return true;
   }
 
@@ -1917,10 +2189,15 @@ export class GameController {
       } else {
         this.setNet("bad", "Reconnecting…");
         this.emit();
-        retry(2500, () => (this.loaded ? this.state : null));
+        retry(1200, () => (this.loaded ? this.state : null));
       }
     };
     this.onHostSilent = () => lost("host-left");
+    // Nothing at all after a while (the connection server never answered, or a
+    // host that's listed but gone): start again instead of "Connecting…" for ever.
+    setTimeout(() => {
+      if (alive() && !this.online) lost("network");
+    }, OPEN_WATCHDOG_MS);
     try {
       await t.open(code, {
         hosting: () => {
@@ -1933,6 +2210,9 @@ export class GameController {
           if (this.rejoinGid !== null && this.mode === "online") this.rejoinUntil = Date.now() + REJOIN_WAIT_MS;
           if (prevHost && prevHost !== this.myId && prevHostHeard) this.lastSeen[prevHost] = prevHostHeard;
           let s = carry || (this.mode === "friends" && this.services.saves.loadRoom(code)) || freshState();
+          // My own moves the old host never confirmed are in the game I carry: it's the real one now.
+          this.pending = [];
+          this.hostState = null;
           // A new friends room belongs to whoever opened it first.
           if (this.mode === "friends" && !s.owner) s = { ...s, owner: this.myId };
           if (this.mode === "online" && !s.capacity) s = { ...s, capacity: this.wantCount };
@@ -1976,7 +2256,14 @@ export class GameController {
           this.online = true;
           this.hostHeardAt = Date.now();
           t.sendToHost({ type: "hello", id: this.myId });
-          if (carry) t.sendToHost({ type: "state", state: carry });
+          // Offer the game as I have it: the host keeps whichever is newer. (A host that
+          // went quiet, say its app in the background, can find a guest has taken the
+          // table over with an older copy; without this, the two kept turning each
+          // other's game down and the game stopped.)
+          const mine = this.loaded ? this.state : carry;
+          if (mine) t.sendToHost({ type: "state", state: mine });
+          // Moves of mine the old connection never got through: send them now.
+          this.resendPending(true);
           this.joinVoice();
           this.netSummary();
           this.emit();
@@ -1984,8 +2271,10 @@ export class GameController {
         hostMessage: (m) => {
           if (!alive()) return;
           this.hostHeardAt = Date.now();
-          if (m.type === "ping") this.hostId = String(m.id || "");
-          else if (m.type === "state") this.accept(m.state);
+          if (m.type === "ping") {
+            this.hostId = String(m.id || "");
+            this.checkBehind(m);
+          } else if (m.type === "state") this.accept(m.state);
           else if (m.type === "dice" && m.id !== this.myId) this.showRemoteDice(m.c, Number(m.v), Number(m.seq));
           else if (m.type === "chat") this.addChat(m);
           else if (m.type === "chatHistory" && Array.isArray(m.msgs)) m.msgs.slice(-40).forEach((x) => this.addChat(x, true));
@@ -1994,8 +2283,13 @@ export class GameController {
         },
         lost,
       });
-    } catch {
+    } catch (e) {
       if (!alive()) return;
+      // The app was open across an update and its connection code is gone: load the new version.
+      if (isChunkError(e)) {
+        reloadOnce();
+        return;
+      }
       this.banner = "Online play needs an internet connection. Check it and reload the page.";
       this.emit();
     }
@@ -2008,7 +2302,7 @@ export class GameController {
       if (!link.pid && m.id) link.pid = String(m.id);
       if (link.pid) this.lastSeen[link.pid] = Date.now();
       // Answer straight away (not on a timer), so guests hear from us even if this tab is in the background.
-      link.send({ type: "ping", id: this.myId });
+      link.send(this.hostPing());
     } else if (m.type === "hello") {
       link.pid = String(m.id || "");
       this.lastSeen[link.pid] = Date.now();
@@ -2034,16 +2328,14 @@ export class GameController {
       this.noteTyping(id, !!m.on);
       this.transport?.broadcast({ type: "typing", id, on: !!m.on }, link);
     } else if (m.type === "takeBack" && link.pid && m.id === link.pid) this.hostTakeBack(link.pid);
-    else if (m.type === "roll" && link.pid && m.id === link.pid) this.hostRoll(link, m.c, Number(m.v));
+    else if (m.type === "roll" && link.pid && m.id === link.pid) this.hostRoll(link, m.c, Number(m.v), m.seq === undefined ? undefined : Number(m.seq));
+    else if (m.type === "sync") link.send({ type: "state", state: this.state });
     else if (m.type === "dice" && link.pid && m.id === link.pid) {
       const seat = this.state.seats[m.c];
       if (seat?.id === link.pid && !seat.bot && this.showRemoteDice(m.c, Number(m.v), Number(m.seq))) this.transport?.broadcast(m, link);
     }
-    else if (m.type === "move" && link.pid && m.id === link.pid) {
-      const seat = this.state.seats[m.c];
-      const use = Number(m.use);
-      if (seat?.id === link.pid && !seat.bot) this.doMove(m.c, Number(m.i), { ...(use > 0 ? { use } : {}), extra: !!m.extra });
-    } else if (m.type === "voice" && link.pid && m.id === link.pid)
+    else if (m.type === "move" && link.pid && m.id === link.pid) this.hostMove(link, m);
+    else if (m.type === "voice" && link.pid && m.id === link.pid)
       this.hostVoice({ id: link.pid, peerId: String(m.peerId || ""), on: !!m.on, muted: !!m.muted, gen: Math.max(0, Math.floor(Number(m.gen) || 0)) });
     else if (m.type === "state") {
       // Send the result to everyone, the sender included: if the host changed

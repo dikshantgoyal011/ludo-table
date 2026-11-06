@@ -15,7 +15,7 @@ export const ONLINE_TURN_LIMIT = 15_000;
 export const MISS_PENALTY = 2_000;
 /** Online: this many missed turns and the player is out of the game. */
 export const MAX_MISSES = 5;
-/** Online/friends: once a player is offline, the computer plays for them after this long. */
+/** Online: once a player is offline, the computer plays for them after this long (friends wait longer, see the controller). */
 export const OFFLINE_ALLOWANCE = 15_000;
 /**
  * Online, once at most one player is still connected: anyone offline this
@@ -23,12 +23,12 @@ export const OFFLINE_ALLOWANCE = 15_000;
  * has left the game for good. If only one player is left, they win.
  */
 export const ABANDON_MS = 90_000;
-/** Online/friends: a player we haven't heard from for this long counts as offline. */
-export const AWAY_GRACE = 5_000;
+/** Online/friends: a player we haven't heard from for this long counts as offline. (Mobile connections stall for a few seconds now and then.) */
+export const AWAY_GRACE = 6_000;
 /** Online/friends: every device says "I'm here" this often. */
 export const PING_MS = 1_000;
 /** Guests: if the host has been silent this long, it's gone; take over the table. */
-export const HOST_SILENT_MS = 6_000;
+export const HOST_SILENT_MS = 9_000;
 /** How long a "typing…" hint lasts without a fresh signal. */
 export const TYPING_TTL = 4_000;
 /** Online: once a table is full it starts after this short countdown. */
