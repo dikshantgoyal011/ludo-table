@@ -8,6 +8,7 @@ import { useGame, useSettings } from "@/hooks/use-game";
 import type { TokenView } from "@/lib/game/controller";
 import { COLORS } from "@/lib/game/constants";
 import { GRACE_STEP } from "@/lib/game/pachisi/throws";
+import { X_BOTH } from "@/lib/game/parchis/rules";
 import type { Color, GameId, MoveChoice } from "@/lib/game/types";
 import { themeOf } from "@/lib/theme/themes";
 import { cn } from "@/lib/utils";
@@ -148,6 +149,7 @@ export function Board() {
             size={size}
             angle={game.rot.target}
             choices={pickChoices}
+            game={game.state.game || "ludo"}
             onPick={(ch) => {
               setPick(null);
               game.move(pickView.c, pickView.i, { use: ch.use, extra: ch.extra });
@@ -160,12 +162,12 @@ export function Board() {
 }
 
 /** What a choice does, in a word or two. */
-function choiceLabel(ch: MoveChoice, all: MoveChoice[]) {
+function choiceLabel(ch: MoveChoice, all: MoveChoice[], game: GameId) {
   const throws = new Set(all.map((o) => o.use)).size > 1;
   // This throw can take it home or round again.
   const twoWays = all.some((o) => o.use === ch.use && !!o.extra !== !!ch.extra);
   const way = ch.extra ? "Round again" : "Head home";
-  const by = ch.use === GRACE_STEP ? "Grace · 1 square" : `Move ${ch.use}`;
+  const by = game === "pachisi" && ch.use === GRACE_STEP ? "Grace · 1 square" : game === "parchis" && ch.use === X_BOTH ? "Both dice · come out" : `Move ${ch.use}`;
   if (!throws) return twoWays || ch.extra ? way : by;
   return twoWays ? `${by} · ${way.toLowerCase()}` : by;
 }
@@ -174,7 +176,7 @@ function choiceLabel(ch: MoveChoice, all: MoveChoice[]) {
  * Next to a token: how to move it. Kept upright and on the board however the
  * board is turned (it opens below tokens near the top, and inwards near the sides).
  */
-function MoveChooser({ t, size, angle, choices, onPick }: { t: TokenView; size: number; angle: number; choices: MoveChoice[]; onPick: (ch: MoveChoice) => void }) {
+function MoveChooser({ t, size, angle, choices, game, onPick }: { t: TokenView; size: number; angle: number; choices: MoveChoice[]; game: GameId; onPick: (ch: MoveChoice) => void }) {
   const r = (angle * Math.PI) / 180;
   const dx = t.x - size / 2;
   const dy = t.y - size / 2;
@@ -206,7 +208,7 @@ function MoveChooser({ t, size, angle, choices, onPick }: { t: TokenView; size: 
             onClick={() => onPick(ch)}
             className="h-9 rounded-lg bg-primary px-3 text-sm font-bold whitespace-nowrap text-primary-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95"
           >
-            {choiceLabel(ch, choices)}
+            {choiceLabel(ch, choices, game)}
           </button>
         ))}
       </div>

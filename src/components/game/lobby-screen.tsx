@@ -2,7 +2,7 @@
 
 // Before an online or friends game: everyone gathers here, and the board only
 // shows once the game has begun. Friends rooms: everyone marks themselves ready
-// (and, in Pachisi, agrees to the rules) before the creator can start.
+// (and, in Pachisi and Parchís, agrees to the rules) before the creator can start.
 import { useEffect, useRef, useState } from "react";
 import { Check, Copy, Crown, MessageCircle, Mic, MicOff, UserPlus, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,9 @@ import { useGame, useProfile, useSettings } from "@/hooks/use-game";
 import { defaultAvatar } from "@/lib/avatars";
 import { countryName, flagUrl } from "@/lib/country";
 import { COLORS, NICK_MAX } from "@/lib/game/constants";
-import { playsInPairs, variationCount } from "@/lib/game/pachisi/variations";
+import { cleanVariations, playsInPairs } from "@/lib/game/pachisi/variations";
+import { cleanParchisVariations, parchisPairs } from "@/lib/game/parchis/variations";
+import { countOn, hasVariations, noVariations, plainRules } from "@/lib/game/variations";
 import type { Player } from "@/lib/game/types";
 import { variantById } from "@/lib/game/variants";
 import { themeOf } from "@/lib/theme/themes";
@@ -19,7 +21,7 @@ import { cn } from "@/lib/utils";
 import { Avatar } from "./avatar";
 import { InviteDialog } from "./invite-dialog";
 import { ColorPicker } from "./pickers";
-import { SidesPicker, VariationsList } from "./variations";
+import { SavePreferences, SidesPicker, VariationsList } from "./variations";
 
 const list = (names: string[]) => (names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`);
 
@@ -51,17 +53,18 @@ export function LobbyScreen() {
       </div>
     );
 
-  const pachisi = s.game === "pachisi";
+  // Pachisi, Parchís: the rules (variations) get a card of their own.
+  const rules = hasVariations(s.game);
   return (
-    <div className={cn("mx-auto flex w-full flex-col gap-3", pachisi ? "max-w-xl lg:max-w-5xl" : "max-w-xl")}>
+    <div className={cn("mx-auto flex w-full flex-col gap-3", rules ? "max-w-xl lg:max-w-5xl" : "max-w-xl")}>
       {game.banner && <div className="rounded-xl border border-primary/40 bg-primary/10 px-3 py-2 text-sm break-words">{game.banner}</div>}
-      <div className={cn("grid grid-cols-1 gap-3", pachisi && "lg:grid-cols-2 lg:items-start")}>
+      <div className={cn("grid grid-cols-1 gap-3", rules && "lg:grid-cols-2 lg:items-start")}>
         <div className="flex min-w-0 flex-col gap-3">
           {game.mode === "friends" ? <RoomCard /> : <TableCard />}
           <PlayersCard />
           <YouCard />
         </div>
-        {pachisi && <RulesCard />}
+        {rules && <RulesCard />}
       </div>
       <ActionBar />
     </div>
@@ -159,15 +162,23 @@ function PlayersCard() {
   const cap = friends ? 4 : game.capacity();
   const owner = friends ? game.roomOwnerId() : "";
   const vars = game.variations();
-  // Pachisi: who plays with whom, by the order people joined.
+  // Pachisi (Parchís in pairs): who plays with whom, by the order people joined.
   const nick = (k: number) => s.players[k]?.nick || `Player ${k + 1}`;
-  const sides = !pachisi || n < 2
-    ? ""
-    : !playsInPairs(vars, n)
-      ? "Everyone plays for themselves."
-      : n === 2
-        ? `${nick(0)} plays Red & Yellow, ${nick(1)} plays Green & Blue.`
-        : `Partners: ${nick(0)} & ${nick(2)} against ${nick(1)} & ${nick(3)}.`;
+  const partners = `Partners: ${nick(0)} & ${nick(2)} against ${nick(1)} & ${nick(3)}.`;
+  const sides =
+    s.game === "parchis"
+      ? cleanParchisVariations(vars).pairs
+        ? parchisPairs(cleanParchisVariations(vars), n)
+          ? partners
+          : "Pairs need four players: until then, everyone plays solo."
+        : ""
+      : !pachisi || n < 2
+        ? ""
+        : !playsInPairs(cleanVariations(vars), n)
+          ? "Everyone plays solo."
+          : n === 2
+            ? `${nick(0)} plays Red & Yellow, ${nick(1)} plays Green & Blue.`
+            : partners;
   return (
     <Panel title={`Players ${n}/${cap}`} aside={game.online && <VoiceRow />}>
       <ol className="flex flex-col gap-1.5" aria-label="Players">
@@ -180,7 +191,7 @@ function PlayersCard() {
               you={p.id === game.myId}
               host={p.id === owner}
               ready={!friends || p.id === owner || !!s.ready?.includes(p.id)}
-              agreed={!pachisi || !friends ? null : p.id === owner || !!s.agreed?.includes(p.id)}
+              agreed={!hasVariations(s.game) || !friends ? null : p.id === owner || !!s.agreed?.includes(p.id)}
               friends={friends}
               ring={slot ? th.pieces[game.displayColor(slot)] : "rgb(var(--c-muted))"}
             />
@@ -244,21 +255,27 @@ function Badge({ tone, children }: { tone: "gold" | "green" | "grey"; children: 
   );
 }
 
-/** Pachisi: the rules everyone plays by. In a friends room the creator picks them and everyone agrees. */
+/** Pachisi, Parchís: the rules everyone plays by. In a friends room the creator picks them and everyone agrees. */
 function RulesCard() {
   const game = useGame();
   const s = game.state;
+  const g = s.game || "ludo";
   const friends = game.mode === "friends";
   const iRun = friends && game.canRunTable();
   const vars = game.variations();
   const n = s.players.length;
-  const on = variationCount(vars);
+  const on = countOn(g, vars);
   const iAgreed = game.haveAgreed();
+  const plain = plainRules(g).toLowerCase();
+  const [profile, saveProfile] = useProfile();
+  const saved = hasVariations(g) && profile.saveVariations[g];
+  const cap = game.capacity();
   return (
-    <Panel title="Rules" aside={<span className="text-xs font-semibold text-muted-foreground">{on ? `${on} variation${on > 1 ? "s" : ""} on` : "Traditional"}</span>}>
+    <Panel title="Rules" aside={<span className="text-xs font-semibold text-muted-foreground">{on ? `${on} variation${on > 1 ? "s" : ""} on` : plainRules(g).split(" ")[0]}</span>}>
       {!friends ? (
         <p className="text-sm text-muted-foreground">
-          Online games use the traditional rules, without variations{n === 3 || game.capacity() === 3 ? "." : ", playing as partners."}
+          Online games use the {plain}, without variations
+          {g !== "pachisi" || cap === 3 ? "." : cleanVariations(vars).alone ? ", playing Solo." : cap === 2 ? ", two colors each." : ", playing 2 vs 2."}
         </p>
       ) : (
         <>
@@ -267,8 +284,15 @@ function RulesCard() {
               ? "Choose how you play. Everyone has to agree before the game can start; any change asks everyone again."
               : `${game.roomOwnerName()} chooses how you play. Look it over, then agree.`}
           </p>
-          <SidesPicker value={vars} players={n >= 2 ? n : 4} onChange={iRun ? (next) => game.setVariations(next) : undefined} />
-          <VariationsList value={vars} onChange={iRun ? (next) => game.setVariations(next) : undefined} />
+          {g === "pachisi" && <SidesPicker value={cleanVariations(vars)} players={n >= 2 ? n : 4} onChange={iRun ? (next) => game.setVariations(next) : undefined} />}
+          <VariationsList game={g} value={vars} onChange={iRun ? (next) => game.setVariations(next) : undefined} />
+          {iRun && hasVariations(g) && (
+            <SavePreferences
+              game={g}
+              on={saved}
+              onChange={(on) => saveProfile({ saveVariations: { ...profile.saveVariations, [g]: on }, variations: { ...profile.variations, [g]: on ? vars : noVariations(g) } })}
+            />
+          )}
           {game.joined() && !iRun && iAgreed && (
             <Button variant="outline" className="self-start" onClick={() => game.agree(false)}>
               <Check className="size-4" /> You agreed · take it back
@@ -323,7 +347,7 @@ function ActionBar() {
   const game = useGame();
   const s = game.state;
   const friends = game.mode === "friends";
-  const pachisi = s.game === "pachisi";
+  const rules = hasVariations(s.game);
   const joined = game.joined();
   const n = s.players.length;
   const cap = friends ? 4 : game.capacity();
@@ -354,7 +378,7 @@ function ActionBar() {
         <Button size="lg" className={cn(big, "disabled:bg-foreground/10 disabled:text-muted-foreground disabled:opacity-100")} disabled={!game.canStart()} onClick={game.start}>
           Start game
         </Button>
-      ) : pachisi && !iAgreed ? (
+      ) : rules && !iAgreed ? (
         <Button size="lg" className={big} onClick={() => game.agree(true)}>
           I agree to these rules
         </Button>

@@ -3,10 +3,11 @@
 // GameController.commit).
 //
 // The traditional rules (mastersofgames.com, "The rules of Pachisi"):
-// - Four players as partners, partners opposite: red with yellow, green with
-//   blue. With two players, each plays both colours of one side. A side wins
-//   when all eight of its pieces are home. Turns go round anti-clockwise.
-//   (Players can also each play for themselves: always so with three.)
+// - Traditionally four play as partners, partners opposite: red with yellow,
+//   green with blue (2 vs 2). With two players, each plays both colours of one
+//   side. A side wins when all eight of its pieces are home. Turns go round
+//   anti-clockwise. Here everyone plays solo unless 2 vs 2 is picked (always
+//   solo with three).
 // - Throw the cowries and move one piece by the throw. A grace (6, 10 or 25)
 //   may bring a piece out of the Charkoni instead, and gives another throw.
 // - The first piece of each colour can come out with any throw; after that,

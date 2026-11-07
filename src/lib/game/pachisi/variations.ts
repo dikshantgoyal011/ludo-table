@@ -1,12 +1,12 @@
 // Pachisi variations: rules that differ from place to place (mastersofgames.com,
 // "The rules of Pachisi", Variations). All off is the traditional game, which is
-// also what online tables always play.
+// also what online tables always play (Solo or 2 vs 2, as each player picks).
 
-export interface PachisiVariations {
+export type PachisiVariations = {
   /**
-   * Everyone plays for themselves, no partners. (Traditionally four play as two
-   * sides of partners, and two players each play both colours of a side. Three
-   * players always play for themselves.)
+   * Solo: everyone plays for themselves, no partners (the default). Otherwise
+   * four play 2 vs 2, partners opposite, and two players each play both colours
+   * of a side, as traditionally. Three players always play solo.
    */
   alone: boolean;
   /** Seven cowries instead of six (0 up 7, 1 up 10, 5 up 25, 6 up 35, 7 up 14). */
@@ -23,12 +23,12 @@ export interface PachisiVariations {
   graceApart: boolean;
   /** Throw first (again and again on graces), then move one piece for each throw. */
   throwFirst: boolean;
-}
+};
 
 export type VariationId = keyof PachisiVariations;
 
 export const NO_VARIATIONS: PachisiVariations = {
-  alone: false,
+  alone: true,
   sevenShells: false,
   twoGraces: false,
   graceHome: false,
@@ -38,29 +38,27 @@ export const NO_VARIATIONS: PachisiVariations = {
   throwFirst: false,
 };
 
-/** Shown on the variations screen and in the friends lobby, in this order. (Partners or not is chosen on its own: see SidesPicker.) */
-export const VARIATION_INFO: { id: Exclude<VariationId, "alone">; title: string; text: string }[] = [
-  { id: "throwFirst", title: "Throw first, then move", text: "Keep throwing while you get graces. Then move one piece for each throw: one piece several times, or several pieces." },
-  { id: "graceApart", title: "Grace played separately", text: "A 6, 10 or 25 only moves a piece that's already out. The grace is an extra move of its own: one piece one square, or a new piece onto the first square. (Your very first piece can still come out with any throw.)" },
-  { id: "twoGraces", title: "Only 10 and 25 are graces", text: "A 6 is an ordinary throw: it doesn't bring a piece out or give another throw." },
-  { id: "sevenShells", title: "Seven cowries", text: "None up 7, one up 10, 2 to 4 up as counted, five up 25, six up 35, all seven up 14. 10, 25 and 35 are graces; 7 and 14 give another throw." },
-  { id: "graceHome", title: "Home only with a grace", text: "A piece can only finish in the Charkoni with a grace throw of exactly the right number." },
-  { id: "blockades", title: "Pairs block the way", text: "Two or more pieces of one side on a square can't be passed by the other side." },
-  { id: "threeGraces", title: "Three graces in a row", text: "The third grace in a row doesn't count, and that player misses their next turn." },
+/**
+ * Shown on the variations screen and in the friends lobby, in this order.
+ * `lesson`: its page in How to play. (Solo or 2 vs 2 is chosen on its own: see SidesPicker.)
+ */
+export const VARIATION_INFO: { id: Exclude<VariationId, "alone">; title: string; text: string; lesson: string }[] = [
+  { id: "throwFirst", title: "Throw first, then move", text: "Keep throwing while you get 6, 10 or 25. Then use each throw to move.", lesson: "p-throw-first" },
+  { id: "graceApart", title: "Bonus step", text: "A 6, 10 or 25 moves a piece that's already out, plus a bonus: one piece 1 square, or a new piece out.", lesson: "p-grace-apart" },
+  { id: "twoGraces", title: "6 is a normal throw", text: "Only 10 and 25 bring a piece out and give another throw.", lesson: "p-two-graces" },
+  { id: "sevenShells", title: "Seven shells", text: "Throw 7 cowries instead of 6. Big throws: 25, 35 and 14.", lesson: "p-seven" },
+  { id: "graceHome", title: "Finish with 6, 10 or 25", text: "A piece can only reach the center with one of those throws.", lesson: "p-grace-home" },
+  { id: "blockades", title: "Pairs block the way", text: "Two of your pieces on one square: nobody else can pass.", lesson: "p-blockades" },
+  { id: "threeGraces", title: "No three in a row", text: "A third 6, 10 or 25 in a row doesn't count, and you miss your next turn.", lesson: "p-three-graces" },
 ];
 
-/** Any value from storage or the network, as a full set of variations (unknown parts off). */
+/** Any value from storage or the network, as a full set of variations (unknown parts off; solo unless it says otherwise). */
 export function cleanVariations(v: unknown): PachisiVariations {
   const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
   const out = { ...NO_VARIATIONS };
-  for (const k of Object.keys(out) as VariationId[]) out[k] = o[k] === true;
+  for (const k of Object.keys(out) as VariationId[]) out[k] = k === "alone" ? o[k] !== false : o[k] === true;
   return out;
 }
 
-/** How many of the listed variations are on (partners or not doesn't count). */
-export const variationCount = (v: PachisiVariations) => VARIATION_INFO.filter((x) => v[x.id]).length;
-
-/** Do these players play as partners? Only four (two sides of two) or two (a side each); three always play alone. */
+/** Do these players play as partners? Only four (2 vs 2) or two (a side each); three always play solo. */
 export const playsInPairs = (v: PachisiVariations, players: number) => !v.alone && (players === 2 || players === 4);
-
-export const sameVariations = (a: PachisiVariations, b: PachisiVariations) => (Object.keys(a) as VariationId[]).every((k) => a[k] === b[k]);

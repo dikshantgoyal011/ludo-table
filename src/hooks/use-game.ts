@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { GameController } from "@/lib/game/controller";
-import { NO_VARIATIONS } from "@/lib/game/pachisi/variations";
+import { noVariations } from "@/lib/game/variations";
 import { getServices } from "@/lib/services";
 import type { Profile } from "@/lib/services/types";
 import { DEFAULT_SETTINGS, type Settings } from "@/lib/settings/settings";
@@ -30,7 +30,8 @@ const SERVER_PROFILE: Profile = {
   onlineCount: 2,
   cpuCount: 2,
   localSetup: { count: 2, rows: [] },
-  pachisiVariations: { ...NO_VARIATIONS },
+  variations: { pachisi: noVariations("pachisi"), parchis: noVariations("parchis") },
+  saveVariations: { pachisi: false, parchis: false },
 };
 
 export function useProfile(): [Profile, (patch: Partial<Profile>) => void] {

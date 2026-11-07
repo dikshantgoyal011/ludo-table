@@ -71,7 +71,16 @@ export function WinDialog() {
         <div className="mt-2 flex w-full flex-col gap-2">
           {final ? (
             game.canRunTable() ? (
-              <Button size="lg" onClick={() => game.playAgain()}>
+              <Button
+                size="lg"
+                onClick={() => {
+                  // (Rules not saved as my preferences: choose them again first.)
+                  const choose = game.againPath();
+                  if (!choose) return game.playAgain();
+                  game.closeWinner();
+                  router.push(choose);
+                }}
+              >
                 {game.mode === "online" ? "Find another game" : "Play again"}
               </Button>
             ) : (

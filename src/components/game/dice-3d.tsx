@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useGame } from "@/hooks/use-game";
 import { DICE_ROLL_MS } from "@/lib/game/constants";
+import { diceOf } from "@/lib/game/parchis/rules";
 import { cn } from "@/lib/utils";
 
 // A real 3D cube. Opposite faces add up to 7, like a real dice.
@@ -191,10 +192,43 @@ export function DiceView({
   );
 }
 
-/** The game's dice, for whoever's turn it is. */
+// Parchís with two dice: the second one's orientation.
+const gameSpinB = newSpin();
+
+/** The game's dice, for whoever's turn it is (Parchís with two dice: both). */
 export function Dice3D() {
   const game = useGame();
   const canRoll = game.canRollNow();
+  const two = game.state.game === "parchis" && !!game.variations().twoDice;
+  const roll = game.diceRoll;
+  // One roll for each dice, made once per roll (a new object would start the tumble again).
+  const rolls = useMemo(() => {
+    if (!two || !roll) return [null, null];
+    const [a, b] = diceOf(roll.value);
+    return [{ ...roll, value: a }, { ...roll, value: b }];
+  }, [two, roll]);
+  if (two) {
+    const [a, b] = diceOf(game.dieFace >= 11 ? game.dieFace : 11);
+    // A dice already played this roll goes dim (doubles: one at a time).
+    const left = game.state.roll && !game.rolling ? [...game.hand()] : null;
+    const used = [a, b].map((d) => {
+      if (!left) return false;
+      const k = left.indexOf(d);
+      if (k < 0) return true;
+      left.splice(k, 1);
+      return false;
+    });
+    const label = canRoll ? "Roll the dice" : `Dice showing ${a} and ${b}`;
+    return (
+      <span className="dice-pair">
+        {[a, b].map((face, k) => (
+          <span key={k} className={cn("dice-pair-one", used[k] && "dice-used")}>
+            <DiceView spin={k ? gameSpinB : gameSpin} face={face} roll={rolls[k]} rolling={game.rolling} ready={canRoll} onClick={() => game.roll()} label={k ? "Second dice" : label} />
+          </span>
+        ))}
+      </span>
+    );
+  }
   return (
     <DiceView
       spin={gameSpin}

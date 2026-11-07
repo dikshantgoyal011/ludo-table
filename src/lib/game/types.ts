@@ -1,13 +1,12 @@
 // Shared game types. Everything here is plain data so a game state can be
 // saved, sent over the network or (later) stored by a backend unchanged.
-import type { PachisiVariations } from "./pachisi/variations";
 
 export type Color = "red" | "green" | "yellow" | "blue";
 
 /** How the game is being played. */
 export type Mode = "online" | "computer" | "local" | "friends";
 
-/** Which game: Ludo, Pachisi (cross board, cowrie shells) or Parchís (Spain's: one dice, bonus counts, barriers). */
+/** Which game: Ludo, Pachisi (cross board, cowrie shells) or Parchís (Spain's: bonus counts, barriers). */
 export type GameId = "ludo" | "pachisi" | "parchis";
 
 export type Phase = "lobby" | "playing" | "done";
@@ -97,7 +96,7 @@ export interface GameState {
   luck?: Partial<Record<Color, LuckStats>>;
   /** Version, bumped on every change; newer always wins on the network. */
   v?: number;
-  /** Partners: colours that play as one side and win together (Pachisi). Absent: everyone plays for themselves. */
+  /** Partners: colours that play as one side and win together (Pachisi). Absent: everyone plays solo. */
   teams?: Color[][];
   /** The order turns go round in (absent: COLORS order). */
   order?: Color[];
@@ -105,10 +104,10 @@ export interface GameState {
   skip?: Partial<Record<Color, number>>;
   /** Friends lobby: ids of the players who are ready to start. */
   ready?: string[];
-  /** Friends lobby (Pachisi): ids of the players who agreed to the variations, as of `variationsV`. */
+  /** Friends lobby (Pachisi, Parchís): ids of the players who agreed to the variations, as of `variationsV`. */
   agreed?: string[];
-  /** Pachisi: the variations this table plays (absent: none, the traditional rules). */
-  variations?: PachisiVariations;
+  /** Pachisi, Parchís: the variations this table plays, which are on (absent: none, the traditional rules). See variations.ts. */
+  variations?: Record<string, boolean>;
   /** Bumped whenever the variations change, so an agreement is always to the rules on show. */
   variationsV?: number;
   /** Pachisi: the throws of the turn being played. */
@@ -125,6 +124,10 @@ export interface ParchisTurn {
   c: Color | null;
   /** Moves still to make: the dice (a 6 counting 7 once all pieces are out), then any bonus counts (20 for a capture, 10 for a piece home). */
   hand: number[];
+  /** Two dice: the two this roll showed. */
+  dice?: number[];
+  /** Two dice, doubles: the barrier opened with them (piece i left it, piece j stayed and can't close it again with the other dice). */
+  broke?: { i: number; j: number } | null;
   /** Another roll is owed once these are made (the roll was a 6). */
   again: boolean;
   /** Moves made since the last roll (devices use it to tell their own moves apart). */

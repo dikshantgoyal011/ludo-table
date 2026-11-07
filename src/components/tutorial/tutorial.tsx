@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { COLORS, DICE_ROLL_MS } from "@/lib/game/constants";
 import { rulesFor } from "@/lib/game/rules";
 import { P_LAP_FROM, P_LAP_TO, ROUTE } from "@/lib/game/pachisi/board";
+import { SEVEN_SHELLS, SIX_SHELLS } from "@/lib/game/pachisi/throws";
 import { SALIDA, squareOf as xSquareOf } from "@/lib/game/parchis/board";
 import { variantById } from "@/lib/game/variants";
 import { ParchisBoardPreview, ParchisToken } from "@/components/game/parchis-board";
@@ -24,17 +25,22 @@ import { cn } from "@/lib/utils";
 
 type Tokens = Partial<Record<Color, number[]>>;
 type Action =
-  | { roll: number; by: Color }
+  // roll2: the second dice (Parchís with two dice).
+  | { roll: number; roll2?: number; by: Color }
   | { move: [Color, number, number] }
   | { cut: [Color, number] }
   | { wait: number };
 interface Lesson {
+  /** For opening How to play right at this lesson (a variation's "See how it plays"). */
+  id?: string;
   title: string;
   text: string;
   tokens: Tokens;
   steps: Action[];
   /** Lesson about the throw itself: show the cowrie values table. */
   shells?: boolean;
+  /** Pachisi with seven cowries (a variation). */
+  seven?: boolean;
 }
 
 /** Pachisi: the position colour `c` has on the square where colour `of` stands at position p. */
@@ -117,8 +123,8 @@ const LESSONS: Record<GameId, Lesson[]> = {
       steps: [{ wait: 600 }, { roll: 2, by: "red" }, { move: ["red", 0, 11] }, { wait: 1800 }],
     },
     {
-      title: "Play with a partner",
-      text: "Traditionally you play in pairs: partners sit opposite (Red with Yellow, Green with Blue), never cut each other, and a side wins when all eight of its pieces are home. With two players, each plays both colors of a side. You can also play everyone for themselves.",
+      title: "Solo or 2 vs 2",
+      text: "You play solo unless you pick 2 vs 2. Then partners sit opposite (Red with Yellow, Green with Blue), never cut each other, and a team wins when all eight of its pieces are home. With two players, you can each play two colors.",
       tokens: { red: [14, -1, -1, -1], yellow: [sameSquare("yellow", "red", 18), -1, -1, -1] },
       steps: [{ wait: 600 }, { roll: 4, by: "red" }, { move: ["red", 0, 18] }, { wait: 1800 }],
     },
@@ -133,6 +139,58 @@ const LESSONS: Record<GameId, Lesson[]> = {
       text: "Come back up the middle of your arm, the piece lying on its side. You need the exact number to reach the center (one mouth-up is always 10, never 1). First home wins: all four pieces, or with partners all eight of your side's.",
       tokens: { red: [72, 83, 83, -1] },
       steps: [{ wait: 600 }, { roll: 6, by: "red" }, { move: ["red", 0, 78] }, { roll: 5, by: "red" }, { move: ["red", 0, 83] }, { wait: 1400 }],
+    },
+    // The variations (off unless the table turns them on).
+    {
+      id: "p-throw-first",
+      title: "Variation: throw first, then move",
+      text: "Keep throwing while you get 6, 10 or 25. When you stop, use each throw to move: here 10, then 6, then 3.",
+      tokens: { red: [5, -1, -1, -1] },
+      steps: [{ wait: 500 }, { roll: 10, by: "red" }, { roll: 6, by: "red" }, { roll: 3, by: "red" }, { move: ["red", 0, 15] }, { move: ["red", 0, 21] }, { move: ["red", 0, 24] }, { wait: 1400 }],
+    },
+    {
+      id: "p-grace-apart",
+      title: "Variation: bonus step",
+      text: "A 6, 10 or 25 moves a piece that's already out. Then you get a bonus step: move a piece 1 square, or bring a new piece out, like here.",
+      tokens: { red: [5, -1, -1, -1] },
+      steps: [{ wait: 600 }, { roll: 10, by: "red" }, { move: ["red", 0, 15] }, { wait: 400 }, { move: ["red", 1, 0] }, { wait: 1400 }],
+    },
+    {
+      id: "p-two-graces",
+      title: "Variation: 6 is a normal throw",
+      text: "A 6 just moves 6 squares. Only 10 and 25 bring a piece out and give you another throw.",
+      tokens: { red: [4, -1, -1, -1] },
+      steps: [{ wait: 600 }, { roll: 6, by: "red" }, { move: ["red", 0, 10] }, { wait: 1600 }],
+    },
+    {
+      id: "p-seven",
+      title: "Variation: seven shells",
+      text: "Throw seven cowries instead of six. The table shows what each throw is worth. 10, 25 and 35 bring a piece out; 7 and 14 also give another throw.",
+      tokens: { red: [-1, -1, -1, -1] },
+      steps: [{ wait: 500 }, { roll: 7, by: "red" }, { wait: 700 }, { roll: 35, by: "red" }, { wait: 700 }, { roll: 14, by: "red" }, { wait: 1200 }],
+      shells: true,
+      seven: true,
+    },
+    {
+      id: "p-grace-home",
+      title: "Variation: finish with 6, 10 or 25",
+      text: "A piece can only reach the center with a 6, 10 or 25 of exactly the right number. This one is 10 away, so a 10 takes it home.",
+      tokens: { red: [73, 83, 83, -1] },
+      steps: [{ wait: 600 }, { roll: 10, by: "red" }, { move: ["red", 0, 83] }, { wait: 1600 }],
+    },
+    {
+      id: "p-blockades",
+      title: "Variation: pairs block the way",
+      text: "Two of your pieces on one square make a block: the other side can't pass it. Green has to stop right behind.",
+      tokens: { red: [14, 14, -1, -1], green: [sameSquare("green", "red", 11), -1, -1, -1] },
+      steps: [{ wait: 600 }, { roll: 2, by: "green" }, { move: ["green", 0, sameSquare("green", "red", 13)] }, { wait: 1800 }],
+    },
+    {
+      id: "p-three-graces",
+      title: "Variation: no three in a row",
+      text: "Throw 6, 10 or 25 three times in a row and the third one doesn't count. You also miss your next turn.",
+      tokens: { red: [20, -1, -1, -1] },
+      steps: [{ wait: 600 }, { roll: 25, by: "red" }, { move: ["red", 0, 45] }, { roll: 10, by: "red" }, { move: ["red", 0, 55] }, { roll: 6, by: "red" }, { wait: 1800 }],
     },
   ],
   parchis: [
@@ -178,6 +236,41 @@ const LESSONS: Record<GameId, Lesson[]> = {
       tokens: { red: [67, 30, -1, -1] },
       steps: [{ wait: 600 }, { roll: 4, by: "red" }, { move: ["red", 0, 71] }, { wait: 500 }, { move: ["red", 1, 40] }, { wait: 1400 }],
     },
+    // The variations (off unless the table turns them on).
+    {
+      id: "x-two-dice",
+      title: "Variation: two dice",
+      text: "Roll two dice and use each one: one piece with each, or one piece with both. A 5 on a dice, or two dice adding up to 5 (like 2 and 3), brings a piece out.",
+      tokens: { red: [-1, 10, -1, -1] },
+      steps: [{ wait: 600 }, { roll: 2, roll2: 3, by: "red" }, { move: ["red", 0, 0] }, { wait: 700 }, { roll: 4, roll2: 2, by: "red" }, { move: ["red", 1, 14] }, { move: ["red", 0, 2] }, { wait: 1400 }],
+    },
+    {
+      title: "Variation: doubles roll again",
+      text: "Doubles give you another roll. If you have a barrier, doubles must open it. With two dice, a 6 is just a 6.",
+      tokens: { red: [12, 12, 30, -1] },
+      steps: [{ wait: 600 }, { roll: 3, roll2: 3, by: "red" }, { move: ["red", 0, 15] }, { move: ["red", 2, 33] }, { wait: 1600 }],
+    },
+    {
+      id: "x-start-out",
+      title: "Variation: a piece out from the start",
+      text: "Everyone begins with one piece already out on their salida, so the game gets going from the first roll.",
+      tokens: { red: [0, -1, -1, -1], yellow: [0, -1, -1, -1] },
+      steps: [{ wait: 600 }, { roll: 4, by: "red" }, { move: ["red", 0, 4] }, { wait: 1400 }],
+    },
+    {
+      id: "x-mixed",
+      title: "Variation: mixed barriers",
+      text: "Two pieces of any colors on a safe square make a barrier. Nobody can pass until one of them moves on.",
+      tokens: { red: [7, -1, -1, -1], yellow: [sameSquareX("yellow", "red", 7), -1, -1, -1], green: [sameSquareX("green", "red", 4), -1, -1, -1] },
+      steps: [{ wait: 600 }, { roll: 2, by: "green" }, { move: ["green", 0, sameSquareX("green", "red", 6)] }, { wait: 1800 }],
+    },
+    {
+      id: "x-pairs",
+      title: "Variation: play in pairs",
+      text: "With four players, you team up with the player opposite: Red with Yellow, Green with Blue. When one of you brings all four pieces in, you both win.",
+      tokens: { red: [67, 71, 71, 71], yellow: [sameSquareX("yellow", "red", 20), -1, -1, -1] },
+      steps: [{ wait: 600 }, { roll: 4, by: "red" }, { move: ["red", 0, 71] }, { wait: 1800 }],
+    },
   ],
 };
 
@@ -191,8 +284,11 @@ function Scene({ game, lesson }: { game: GameId; lesson: Lesson }) {
   const [pos, setPos] = useState<Tokens>(lesson.tokens);
   const [walking, setWalking] = useState("");
   const [pulse, setPulse] = useState("");
-  const [roll, setRoll] = useState<{ v: number; by: Color; r: DiceRoll | null; rolling: boolean }>({ v: 3, by: "red", r: null, rolling: false });
+  const [roll, setRoll] = useState<{ v: number; v2?: number; by: Color; r: DiceRoll | null; r2?: DiceRoll | null; rolling: boolean }>({ v: 3, by: "red", r: null, rolling: false });
   const spin = useRef(newSpin()).current;
+  const spin2 = useRef(newSpin()).current;
+  // Parchís with two dice: the lesson shows both.
+  const twoDice = lesson.steps.some((a) => "roll2" in a);
 
   useEffect(() => {
     let alive = true;
@@ -211,7 +307,8 @@ function Scene({ game, lesson }: { game: GameId; lesson: Lesson }) {
           if ("wait" in a) await wait(a.wait);
           else if ("roll" in a) {
             id++;
-            setRoll({ v: a.roll, by: a.by, r: { id, value: a.roll, at: Date.now() }, rolling: true });
+            const at = Date.now();
+            setRoll({ v: a.roll, v2: a.roll2, by: a.by, r: { id, value: a.roll, at }, r2: a.roll2 ? { id, value: a.roll2, at } : null, rolling: true });
             await wait(DICE_ROLL_MS + 100);
             setRoll((r) => ({ ...r, rolling: false }));
             await wait(450);
@@ -298,33 +395,30 @@ function Scene({ game, lesson }: { game: GameId; lesson: Lesson }) {
       <div className="flex min-h-12 items-center gap-3 text-sm font-bold">
         <span className="flex items-center gap-1.5">
           <span className="h-3 w-3 rounded-full ring-2 ring-white/30" style={{ background: th.pieces[roll.by] }} />
-          {roll.r ? (roll.rolling ? (pachisi ? "Throwing…" : "Rolling…") : pachisi ? `Threw ${roll.v}` : `Rolled ${roll.v}`) : "Your turn"}
+          {roll.r ? (roll.rolling ? (pachisi ? "Throwing…" : "Rolling…") : pachisi ? `Threw ${roll.v}` : roll.v2 ? `Rolled ${roll.v} and ${roll.v2}` : `Rolled ${roll.v}`) : "Your turn"}
         </span>
         {pachisi ? (
-          <CowrieView value={roll.v} roll={roll.r} rolling={roll.rolling} shell={28} label="Cowrie shells" />
+          <CowrieView value={roll.v} roll={roll.r} rolling={roll.rolling} shell={lesson.seven ? 25 : 28} set={lesson.seven ? SEVEN_SHELLS : SIX_SHELLS} label="Cowrie shells" />
         ) : (
-          <DiceView spin={spin} face={roll.v} roll={roll.r} rolling={roll.rolling} size={40} label="Dice" />
+          <>
+            <DiceView spin={spin} face={roll.v} roll={roll.r} rolling={roll.rolling} size={40} label="Dice" />
+            {twoDice && <DiceView spin={spin2} face={roll.v2 || 3} roll={roll.r2 || null} rolling={roll.rolling} size={40} label="Second dice" />}
+          </>
         )}
       </div>
     </div>
   );
 }
 
-/** The cowrie values, as a small table: how many mouth-up, and the move. */
-function ShellTable() {
-  const rows: [number, number][] = [
-    [0, 25],
-    [1, 10],
-    [2, 2],
-    [3, 3],
-    [4, 4],
-    [5, 5],
-    [6, 6],
-  ];
+/** The cowrie values, as a small table: how many mouth-up, and the move (the graces stand out). */
+function ShellTable({ seven = false }: { seven?: boolean }) {
+  const set = seven ? SEVEN_SHELLS : SIX_SHELLS;
+  const rows = set.move.map((v, up) => [up, v] as [number, number]);
+  const grace = (v: number) => (seven ? v === 10 || v === 25 || v === 35 : v === 6 || v === 10 || v === 25);
   return (
-    <div className="grid w-full grid-cols-7 gap-1 rounded-xl bg-background/60 p-2 text-center">
+    <div className={cn("grid w-full gap-1 rounded-xl bg-background/60 p-2 text-center", seven ? "grid-cols-8" : "grid-cols-7")}>
       {rows.map(([up, v]) => (
-        <div key={up} className={cn("flex flex-col items-center gap-0.5 rounded-lg py-1", (v === 6 || v === 10 || v === 25) && "bg-primary/20 ring-1 ring-primary/50")}>
+        <div key={up} className={cn("flex flex-col items-center gap-0.5 rounded-lg py-1", grace(v) && "bg-primary/20 ring-1 ring-primary/50")}>
           <span className="text-[10px] font-semibold text-muted-foreground">{up} up</span>
           <Shell up={up > 0} className="h-5 w-4" />
           <span className="text-sm font-extrabold tabular-nums">{v}</span>
@@ -336,9 +430,10 @@ function ShellTable() {
 
 /** How to play, for the game in uiStore.tutorial. */
 export function TutorialDialog() {
-  const { tutorial } = useUi();
+  const { tutorial, tutorialAt } = useUi();
   const [step, setStep] = useState(0);
-  useEffect(() => setStep(0), [tutorial]);
+  // (Opened from a variation: start at its lesson.)
+  useEffect(() => setStep(tutorial && tutorialAt ? Math.max(0, LESSONS[tutorial].findIndex((l) => l.id === tutorialAt)) : 0), [tutorial, tutorialAt]);
   if (!tutorial) return null;
   const lessons = LESSONS[tutorial];
   const lesson = lessons[step];
@@ -352,7 +447,7 @@ export function TutorialDialog() {
         </span>
         <DialogTitle className="text-2xl leading-tight font-extrabold">{lesson.title}</DialogTitle>
         <DialogDescription className="min-h-[3.75rem] text-sm leading-snug text-muted-foreground">{lesson.text}</DialogDescription>
-        {lesson.shells && <ShellTable />}
+        {lesson.shells && <ShellTable seven={lesson.seven} />}
         <Scene key={`${tutorial}${step}`} game={tutorial} lesson={lesson} />
         <div className="flex gap-1.5" aria-hidden="true">
           {lessons.map((_, k) => (

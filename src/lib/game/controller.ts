@@ -30,7 +30,8 @@ import {
   STEP_MS,
   TYPING_TTL,
 } from "./constants";
-import { cleanVariations, NO_VARIATIONS, type PachisiVariations } from "./pachisi/variations";
+import { cleanVariations } from "./pachisi/variations";
+import { cleanFor, hasVariations, noVariations, type Variations } from "./variations";
 import { addLog, clone, finishOf, freshState, freshTokens, leaveGame, missTurn, movable, rulesFor, seatName, seated, seatsFor, teamOf, validState } from "./rules";
 import type { ChatMessage, Color, GameId, GameState, Looks, Mode, MoveOpt, Seat } from "./types";
 
@@ -346,7 +347,7 @@ export class GameController {
     const trace = (globalThis as { __ludoTrace?: unknown[] }).__ludoTrace;
     if (trace && this.loaded) {
       const s = this.state;
-      trace.push({ t: Date.now(), seq: s.last?.seq || 0, stage: stageOf(s), turn: s.turn, phase: s.phase, v: s.v || 0, tokens: JSON.stringify(s.tokens), pending: this.pending.length });
+      trace.push({ t: Date.now(), seq: s.last?.seq || 0, stage: stageOf(s), turn: s.turn, phase: s.phase, v: s.v || 0, tokens: JSON.stringify(s.tokens), pending: this.pending.length, host: this.isHost });
     }
   }
   /** Public refresh (e.g. after a setting changes). */
@@ -694,8 +695,7 @@ export class GameController {
     const back = this.hostState;
     this.pending = [];
     this.hostState = null;
-    this.requestSync();
-    if (!back) return;
+    this.requestSync();    if (!back) return;
     this.state = back;
     this.onStateChange(prev, back, true);
     this.emit();
@@ -800,7 +800,7 @@ export class GameController {
 
   /**
    * Friends room: who still has to get ready, or agree to the variations
-   * (Pachisi), before the game can start. The creator starts it, so they're always ready.
+   * (Pachisi, Parchís), before the game can start. The creator starts it, so they're always ready.
    */
   waitingFor(s = this.state): { notReady: string[]; notAgreed: string[] } {
     if (this.mode !== "friends") return { notReady: [], notAgreed: [] };
@@ -808,7 +808,7 @@ export class GameController {
     const others = s.players.filter((p) => p.id !== owner);
     return {
       notReady: others.filter((p) => !s.ready?.includes(p.id)).map((p) => p.nick),
-      notAgreed: s.game === "pachisi" ? others.filter((p) => !s.agreed?.includes(p.id)).map((p) => p.nick) : [],
+      notAgreed: hasVariations(s.game) ? others.filter((p) => !s.agreed?.includes(p.id)).map((p) => p.nick) : [],
     };
   }
   /** Can the game at this table start now? */
@@ -826,8 +826,11 @@ export class GameController {
       Object.assign(s, { phase: "playing", tokens: freshTokens(), winners: [], roll: null, sixes: 0, turn: seated(s)[0], last: null, startAt: null, luck: {}, gid: newGameId() });
       delete s.ready;
       delete s.agreed;
-      // Online tables always play the traditional rules.
-      if (this.mode === "online") delete s.variations;
+      // Online tables always play the traditional rules (Pachisi: Solo or 2 vs 2, as the table was set up).
+      if (this.mode === "online") {
+        if (s.game === "pachisi") s.variations = { ...noVariations("pachisi"), alone: cleanVariations(s.variations).alone };
+        else delete s.variations;
+      }
       this.setupGame(s);
     });
   }
@@ -861,10 +864,10 @@ export class GameController {
   /** Friends lobby, host: the room's creator changed the variations. Everyone has to agree again. */
   private hostVariations(id: string, v: unknown) {
     if (id !== this.roomOwnerId()) return;
-    const next = cleanVariations(v);
     this.commit((s) => {
-      if (s.phase !== "lobby" || s.game !== "pachisi") return false;
-      if (JSON.stringify(cleanVariations(s.variations)) === JSON.stringify(next)) return false;
+      if (s.phase !== "lobby" || !hasVariations(s.game)) return false;
+      const next = cleanFor(s.game, v);
+      if (JSON.stringify(cleanFor(s.game, s.variations)) === JSON.stringify(next)) return false;
       s.variations = next;
       s.variationsV = (s.variationsV || 0) + 1;
       s.agreed = [];
@@ -935,16 +938,20 @@ export class GameController {
     }
     if (w.start) t?.sendToHost({ type: "start" });
   }
-  /** Friends lobby (Pachisi), the room's creator: play with these variations. */
-  setVariations = (v: PachisiVariations) => {
+  /** Friends lobby (Pachisi, Parchís), the room's creator: play with these variations. */
+  setVariations = (v: Variations) => {
     if (!this.canRunTable()) return;
-    this.services.profile.save({ pachisiVariations: v });
+    const game = this.state.game;
+    // Kept for next time only if I saved my preferences for this game.
+    const p = this.services.profile.get();
+    if (hasVariations(game) && p.saveVariations[game]) this.services.profile.save({ variations: { ...p.variations, [game]: cleanFor(game, v) } });
     if (this.isHost || !this.online) this.hostVariations(this.myId, v);
     else this.transport?.sendToHost({ type: "variations", id: this.myId, variations: v });
   };
   /** The variations this table plays (none: the traditional rules). */
-  variations(): PachisiVariations {
-    return this.state.variations ? cleanVariations(this.state.variations) : { ...NO_VARIATIONS };
+  variations(): Variations {
+    const g = this.state.game;
+    return this.state.variations ? cleanFor(g, this.state.variations) : noVariations(g);
   }
   amReady() {
     return this.mode !== "friends" || this.roomOwnerId() === this.myId || !!this.state.ready?.includes(this.myId);
@@ -977,6 +984,9 @@ export class GameController {
       if (game) s.game = game;
       if (owner) s.owner = owner;
       if (variations) Object.assign(s, { variations, variationsV: variationsV || 0 });
+      // Friends: the next game's rules start again from the creator's saved preferences (or the
+      // standard rules), to be chosen and agreed again in the lobby.
+      if (this.mode === "friends" && hasVariations(game)) Object.assign(s, { variations: cleanFor(game, this.services.profile.get().variations[game]), variationsV: (variationsV || 0) + 1 });
       s.log = [{ c: "", t: "New game." }];
       if (this.isNet()) s.seats = seatsFor(players);
       else {
@@ -1156,22 +1166,22 @@ export class GameController {
     return true;
   }
 
-  /** Vs computer. `variations`: Pachisi's, chosen before the game. */
-  startComputer(count: number, game: GameId = "ludo", variations?: PachisiVariations) {
+  /** Vs computer. `variations`: the game's own (Pachisi, Parchís), chosen before the game. */
+  startComputer(count: number, game: GameId = "ludo", variations?: Variations) {
     this.leaveCurrent();
     const human = this.pref;
     const hi = CI[human];
     const offsets = ({ 2: [0, 2], 3: [0, 1, 2], 4: [0, 1, 2, 3] } as Record<number, number[]>)[count] || [0, 2];
     const s = freshState();
     if (game !== "ludo") s.game = game;
-    if (game === "pachisi" && variations) s.variations = cleanVariations(variations);
+    if (hasVariations(game) && variations) s.variations = cleanFor(game, variations);
     let bot = 0;
     // Computer players come from around the Ludo-playing world: a different flag each.
     const lands = BOT_COUNTRIES.filter((cc) => cc !== this.myLooks().cc).sort(() => Math.random() - 0.5);
     offsets.forEach((o) => {
       const slot = COLORS[(hi + o) % 4];
-      // Pachisi with four: the computer opposite me is my partner.
-      const partner = game === "pachisi" && count === 4 && o === 2 && !variations?.alone;
+      // Partners with four (Pachisi; Parchís in pairs): the computer opposite me is my partner.
+      const partner = count === 4 && o === 2 && (game === "pachisi" ? !variations?.alone : game === "parchis" && !!variations?.pairs);
       s.seats[slot] = o === 0 ? { id: "me", nick: this.myNick(), ...this.myLooks() } : { id: "bot" + ++bot, nick: partner ? "Partner" : `Computer ${bot}`, bot: true, cc: lands[bot - 1] };
     });
     s.phase = "playing";
@@ -1184,11 +1194,11 @@ export class GameController {
     this.startOffline(s, true); // my corner animates to the bottom-left
   }
 
-  startLocal(rows: { name: string; color: Color }[], game: GameId = "ludo", variations?: PachisiVariations) {
+  startLocal(rows: { name: string; color: Color }[], game: GameId = "ludo", variations?: Variations) {
     this.leaveCurrent();
     const s = freshState();
     if (game !== "ludo") s.game = game;
-    if (game === "pachisi" && variations) s.variations = cleanVariations(variations);
+    if (hasVariations(game) && variations) s.variations = cleanFor(game, variations);
     // Everyone is at this phone: they share its country.
     const cc = this.myLooks().cc;
     rows.forEach((r, k) => {
@@ -1211,12 +1221,15 @@ export class GameController {
       .filter((p, k, all) => all.findIndex((o) => o.id === p.id) === k);
   }
 
-  /** Public matchmaking: only tables for exactly `count` players. */
-  startOnline(count = this.wantCount, game: GameId = this.wantGame) {
+  /** Pachisi online: looking for a 2 vs 2 table (or, with two players, a side each), not a solo one. */
+  wantPairs = false;
+  /** Public matchmaking: only tables for exactly `count` players (Pachisi: and the same Solo or 2 vs 2). */
+  startOnline(count = this.wantCount, game: GameId = this.wantGame, pairs = this.wantPairs) {
     this.leaveCurrent();
     this.mode = "online";
     this.wantCount = count;
     this.wantGame = game;
+    this.wantPairs = game === "pachisi" && pairs && count !== 3;
     this.autoJoin = true;
     this.searching = true;
     this.findGame(0);
@@ -1232,8 +1245,8 @@ export class GameController {
     this.searchN = n;
     this.searching = true;
     this.autoJoin = true;
-    // Each game has its own public tables (Pachisi players only meet Pachisi players).
-    void this.openRoom(`pub${PUBLIC_PREFIX[this.wantGame]}${this.wantCount}x${n}`);
+    // Each game has its own public tables (Pachisi players only meet Pachisi players, 2 vs 2 only 2 vs 2).
+    void this.openRoom(`pub${PUBLIC_PREFIX[this.wantGame]}${this.wantPairs ? "t" : ""}${this.wantCount}x${n}`);
   }
 
   /** Friends room `code`; `game` is used if this device sets the room up (a new room). */
@@ -1321,6 +1334,7 @@ export class GameController {
     const carry = this.services.saves.loadRoom(a.room);
     // "Find another game" after this one looks for the same game.
     this.wantGame = carry?.game || (a.room.startsWith("pubp") ? "pachisi" : a.room.startsWith("pubx") ? "parchis" : "ludo");
+    this.wantPairs = a.room.startsWith("pubpt");
     // Check, once connected, that it's still this game and I'm still in it.
     this.rejoinGid = carry?.gid ?? a.gid ?? "";
     if (carry) {
@@ -1614,6 +1628,16 @@ export class GameController {
     this.emit();
   }
   /** Winner popup "Play again" */
+  /**
+   * Vs computer / this device, a game with variations whose rules aren't saved as
+   * my preferences: "Play again" goes back to choosing them (the page to open).
+   * Null: play again straight away.
+   */
+  againPath(): string | null {
+    const g = this.state.game;
+    if (this.isNet() || !hasVariations(g) || this.services.profile.get().saveVariations[g]) return null;
+    return `/play/${this.mode}?game=${g}`;
+  }
   playAgain() {
     this.winOpen = false;
     if (this.mode === "online") this.startOnline(this.wantCount);
@@ -2068,8 +2092,7 @@ export class GameController {
       this.pending = keep;
       if (keep.length) shown = s;
     }
-    this.hostState = this.pending.length ? incoming : null;
-    this.state = shown;
+    this.hostState = this.pending.length ? incoming : null;    this.state = shown;
     this.loaded = true;
     // Rejoining: the table's game must still be mine, still on, with me still in it.
     if (this.rejoinGid !== null && !fromGuest && !this.isHost) {
@@ -2094,7 +2117,8 @@ export class GameController {
     if (this.searching) {
       const s = this.state;
       const cap = s.capacity || 0;
-      const fits = s.phase === "lobby" && cap === this.wantCount && (s.game || "ludo") === this.wantGame && (s.players.length < cap || this.joined(s));
+      const sides = s.game !== "pachisi" || cleanVariations(s.variations).alone === !this.wantPairs;
+      const fits = s.phase === "lobby" && cap === this.wantCount && (s.game || "ludo") === this.wantGame && sides && (s.players.length < cap || this.joined(s));
       if (!fits) {
         const n = this.searchN + 1;
         this.teardown();
@@ -2209,18 +2233,26 @@ export class GameController {
           // others a moment (they may be reconnecting) before calling it over.
           if (this.rejoinGid !== null && this.mode === "online") this.rejoinUntil = Date.now() + REJOIN_WAIT_MS;
           if (prevHost && prevHost !== this.myId && prevHostHeard) this.lastSeen[prevHost] = prevHostHeard;
-          let s = carry || (this.mode === "friends" && this.services.saves.loadRoom(code)) || freshState();
-          // My own moves the old host never confirmed are in the game I carry: it's the real one now.
-          this.pending = [];
+          // The game as this screen shows it: my own moves the old host never confirmed are in it, and
+          // it's the real one now. (Not the copy carried in when this connection began: a roll made
+          // while it was connecting was in the game on screen, and taking over without it undid it.)
+          let s = (carry && this.loaded ? this.state : carry) || (this.mode === "friends" && this.services.saves.loadRoom(code)) || freshState();
+          // (A newer version than the copy the others have, so mine wins when they offer theirs.)
+          if (this.pending.length && s === this.state) s = { ...s, v: (s.v || 0) + 1 };          this.pending = [];
           this.hostState = null;
           // A new friends room belongs to whoever opened it first.
           if (this.mode === "friends" && !s.owner) s = { ...s, owner: this.myId };
-          if (this.mode === "online" && !s.capacity) s = { ...s, capacity: this.wantCount };
+          if (this.mode === "online" && !s.capacity) {
+            s = { ...s, capacity: this.wantCount };
+            // A Pachisi table is Solo or 2 vs 2 (and only finds players who picked the same).
+            if (this.wantGame === "pachisi") s = { ...s, variations: { ...noVariations("pachisi"), alone: !this.wantPairs } };
+          }
           // A brand-new table plays the game it was set up for.
           if (!carry && s.phase === "lobby" && !s.players.length && !s.game && this.wantGame !== "ludo") {
             s = { ...s, game: this.wantGame };
-            // A new Pachisi friends room starts with the variations its creator last chose.
-            if (this.mode === "friends" && this.wantGame === "pachisi") s = { ...s, variations: cleanVariations(this.services.profile.get().pachisiVariations), variationsV: 0 };
+            // A new Pachisi / Parchís friends room starts with the variations its creator last chose.
+            const g = this.wantGame;
+            if (this.mode === "friends" && hasVariations(g)) s = { ...s, variations: cleanFor(g, this.services.profile.get().variations[g]), variationsV: 0 };
           }
           this.state = s;
           const first = !this.loaded;

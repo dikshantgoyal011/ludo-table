@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useGame } from "@/hooks/use-game";
 import { DICE_ROLL_MS } from "@/lib/game/constants";
 import { GRACE_STEP, mouthsUp, shellsOf, SIX_SHELLS, type ShellSet } from "@/lib/game/pachisi/throws";
+import { cleanVariations } from "@/lib/game/pachisi/variations";
 import type { Color } from "@/lib/game/types";
 import { cn } from "@/lib/utils";
 import type { DiceRoll } from "./dice-3d";
@@ -148,7 +149,7 @@ export function CowrieView({
 export function TagCowries({ c, shell }: { c: Color; shell: number }) {
   const game = useGame();
   const s = game.state;
-  const set = shellsOf(game.variations());
+  const set = shellsOf(cleanVariations(game.variations()));
   const turn = game.dieColor() === c;
   const canRoll = turn && game.canRollNow();
   // Thrown this turn: the throw in play. Not yet: the shells as this player last left them.

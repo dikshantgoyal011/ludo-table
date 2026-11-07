@@ -135,7 +135,7 @@ export function PlayerTag({ corner }: { corner: number }) {
   const takeover = !!seat?.takeover && s.phase === "playing";
   const pachisi = s.game === "pachisi";
   // Parchís: a move the dice doesn't show (a 6 counting 7, or a bonus count of 20 / 10) waits in hand.
-  const pending = s.game === "parchis" && s.turn === c && !game.rolling ? game.hand()[0] : undefined;
+  const pending = s.game === "parchis" && s.turn === c && !game.rolling ? game.hand().find((u) => u >= 7) : undefined;
   const count = pending && pending >= 7 ? (pending >= 10 ? `Count ${pending}` : "Move 7") : "";
   // My own flag always comes from my settings (also in a game started before I picked one).
   const cc = seat ? (you ? game.myLooks().cc : seat.cc) : undefined;

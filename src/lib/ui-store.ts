@@ -7,9 +7,9 @@ import type { Color, GameId } from "@/lib/game/types";
 /**
  * leaveOpen: the game menu is open, from the Menu button or the phone's Back button.
  * profileOf: whose player profile is open (the colour of their seat).
- * tutorial: How to play is open, for this game.
+ * tutorial: How to play is open, for this game (at lesson `tutorialAt`, if given).
  */
-type UiState = { settingsOpen: boolean; leaveOpen: false | "menu" | "back"; profileOf: Color | null; tutorial: GameId | null };
+type UiState = { settingsOpen: boolean; leaveOpen: false | "menu" | "back"; profileOf: Color | null; tutorial: GameId | null; tutorialAt?: string };
 
 let ui: UiState = { settingsOpen: false, leaveOpen: false, profileOf: null, tutorial: null };
 const listeners = new Set<() => void>();
@@ -29,7 +29,7 @@ export const uiStore = {
 };
 
 /** Open How to play for a game. (Here, not in tutorial.tsx: opening it mustn't load the whole tutorial up front.) */
-export const openTutorial = (game: GameId) => uiStore.set({ tutorial: game });
+export const openTutorial = (game: GameId, at?: string) => uiStore.set({ tutorial: game, tutorialAt: at });
 
 const SERVER: UiState = { settingsOpen: false, leaveOpen: false, profileOf: null, tutorial: null };
 export function useUi() {

@@ -717,6 +717,43 @@ html.in-game .board-fit > .board-size {
     --die: 46px;
   }
 }
+/* Parchís with two dice: both in the dice's own spot, one up-left, one down-right, as if just thrown. */
+.dice-pair {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.dice-pair .dice {
+  --die: 24px;
+}
+@media (min-width: 400px) {
+  .dice-pair .dice {
+    --die: 26px;
+  }
+}
+@media (min-width: 640px) {
+  .dice-pair .dice {
+    --die: 28px;
+  }
+}
+.dice-pair-one {
+  position: absolute;
+  left: -4px;
+  top: -2px;
+  transition: opacity 0.25s ease, filter 0.25s ease;
+}
+.dice-pair-one + .dice-pair-one {
+  left: auto;
+  top: auto;
+  right: -4px;
+  bottom: -2px;
+}
+/* A dice already played this roll. */
+.dice-pair-one.dice-used {
+  opacity: 0.45;
+  filter: grayscale(0.6);
+}
 .dice-hop {
   position: absolute;
   inset: 0;

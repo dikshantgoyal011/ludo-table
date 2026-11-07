@@ -79,6 +79,9 @@ export function TurnCard() {
     else action = (
       <Button
         onClick={() => {
+          // (Rules not saved as my preferences: choose them again first.)
+          const choose = game.againPath();
+          if (choose) return router.push(choose);
           game.playAgain();
           if (game.mode === "online") router.push("/game");
         }}

@@ -24,10 +24,11 @@ import {
   roomPath,
 } from "@/lib/game/constants";
 import type { Color, GameId, Mode } from "@/lib/game/types";
-import { variationCount } from "@/lib/game/pachisi/variations";
+import { cleanVariations } from "@/lib/game/pachisi/variations";
 import { isGameId, rulesFor } from "@/lib/game/rules";
+import { countOn, hasVariations, plainRules, type Variations } from "@/lib/game/variations";
 import { variantById } from "@/lib/game/variants";
-import { SidesPicker, VariationsDialog, variationsSummary } from "@/components/game/variations";
+import { clearRulesChoice, SidesPicker, useRulesChoice, VariationsDialog, variationsSummary } from "@/components/game/variations";
 import type { Profile } from "@/lib/services/types";
 import { cn } from "@/lib/utils";
 import { GameStrip } from "./game-picker";
@@ -91,15 +92,20 @@ export function SetupScreen({ mode }: { mode: Mode }) {
   const counts = rulesFor(game).counts;
   const fit = (n: number) => (counts.includes(n) ? n : counts.includes(4) && n > 2 ? 4 : counts[0]);
   const [varsOpen, setVarsOpen] = useState(false);
-  const vars = profile.pachisiVariations;
-  // Pachisi: partners, or everyone for themselves.
+  // (Pachisi / Parchís: the rules for this game: my saved preferences, or the standard ones.)
+  const withVars = hasVariations(game);
+  const rules = useRulesChoice(game);
+  const vars: Variations = rules.value;
+  const saveVars = rules.set;
+  const n = countOn(game, vars);
+  // Pachisi: Solo or 2 vs 2.
   const sidesField = (players: number) =>
     pachisi && (
       <Field label="How you play">
-        <SidesPicker value={vars} players={players} onChange={(pachisiVariations) => save({ pachisiVariations })} />
+        <SidesPicker value={cleanVariations(vars)} players={players} onChange={saveVars} />
       </Field>
     );
-  const rulesField = pachisi && (mode === "computer" || mode === "local") && (
+  const rulesField = withVars && (mode === "computer" || mode === "local") && (
     <Field label="Rules">
       <button
         type="button"
@@ -107,12 +113,15 @@ export function SetupScreen({ mode }: { mode: Mode }) {
         className="hover-lift flex w-full items-center gap-3 rounded-xl border border-border bg-background/50 px-3 py-2.5 text-left outline-none hover:border-primary/60 focus-visible:ring-2 focus-visible:ring-ring active:scale-[.99]"
       >
         <span className="min-w-0 flex-1 text-sm">
-          <span className="block font-bold">{variationCount(vars) ? `${variationCount(vars)} variation${variationCount(vars) > 1 ? "s" : ""} on` : "Traditional rules"}</span>
-          <span className="block text-xs text-muted-foreground">{variationCount(vars) ? variationsSummary(vars) : "No variations. Tap to choose some."}</span>
+          <span className="block font-bold">{n ? `${n} variation${n > 1 ? "s" : ""} on` : plainRules(game)}</span>
+          <span className="block text-xs text-muted-foreground">
+            {n ? variationsSummary(game, vars) : "No variations. Tap to choose some."}
+            {rules.saved && " · Saved"}
+          </span>
         </span>
         <span className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-sm font-bold text-primary-foreground">Variations</span>
       </button>
-      <VariationsDialog open={varsOpen} onClose={() => setVarsOpen(false)} value={vars} onChange={(pachisiVariations) => save({ pachisiVariations })} />
+      <VariationsDialog game={game} open={varsOpen} onClose={() => setVarsOpen(false)} value={vars} onChange={saveVars} saved={rules.saved} onSave={rules.setSaved} />
     </Field>
   );
 
@@ -210,20 +219,16 @@ export function SetupScreen({ mode }: { mode: Mode }) {
               />
               <p className="mt-1.5 text-xs text-muted-foreground">
                 You&apos;ll only be matched with people who also picked a{" "}
-                {fit(profile.onlineCount)}-player game.
-                {pachisi &&
-                  (fit(profile.onlineCount) === 2
-                    ? " Each of you plays both colors of one side."
-                    : fit(profile.onlineCount) === 4
-                      ? " You play 2 vs 2: the player opposite is your partner."
-                      : " Everyone plays for themselves.")}
+                {fit(profile.onlineCount)}-player game{pachisi && fit(profile.onlineCount) !== 3 ? `, ${cleanVariations(vars).alone ? "Solo" : fit(profile.onlineCount) === 2 ? "two colors each" : "2 vs 2"}` : ""}.
               </p>
             </Field>
+            {sidesField(fit(profile.onlineCount))}
             <Button
               size="lg"
               className="w-full"
               onClick={() => {
-                getController().startOnline(fit(profile.onlineCount), game);
+                getController().startOnline(fit(profile.onlineCount), game, !cleanVariations(vars).alone);
+                clearRulesChoice(game);
                 go("/game");
               }}
             >
@@ -232,7 +237,7 @@ export function SetupScreen({ mode }: { mode: Mode }) {
             <p className="text-xs text-muted-foreground">
               The game starts as soon as the table is full. You have 15 seconds a turn; miss 5 turns and you&apos;re out.
               If someone goes offline, the computer plays for them until they&apos;re back.
-              {pachisi && " Online games use the traditional rules, without variations."}
+              {withVars && ` Online games use the ${plainRules(game).toLowerCase()}, without variations.`}
             </p>
           </>
         )}
@@ -303,7 +308,8 @@ export function SetupScreen({ mode }: { mode: Mode }) {
               size="lg"
               className="w-full"
               onClick={() => {
-                getController().startComputer(fit(profile.cpuCount), game, pachisi ? profile.pachisiVariations : undefined);
+                getController().startComputer(fit(profile.cpuCount), game, withVars ? vars : undefined);
+                clearRulesChoice(game);
                 go("/game");
               }}
             >
@@ -320,7 +326,11 @@ export function SetupScreen({ mode }: { mode: Mode }) {
             counts={counts}
             rules={rulesField}
             sides={sidesField}
-            onStart={() => go("/game")}
+            vars={vars}
+            onStart={() => {
+              clearRulesChoice(game);
+              go("/game");
+            }}
           />
         )}
 
@@ -356,6 +366,7 @@ function LocalSetup({
   counts,
   rules,
   sides,
+  vars,
   onStart,
 }: {
   profile: Profile;
@@ -364,13 +375,15 @@ function LocalSetup({
   counts: number[];
   rules: React.ReactNode;
   sides: (players: number) => React.ReactNode;
+  /** The rules picked for this game (Pachisi, Parchís). */
+  vars: Variations;
   onStart: () => void;
 }) {
-  const pachisi = game === "pachisi";
+  const withVars = hasVariations(game);
   const saved = profile.localSetup;
   const count = counts.includes(saved.count) ? saved.count : counts[counts.length - 1];
-  // Pachisi as partners: two players each play a side (the colour picked and the one opposite).
-  const pairs = pachisi && !profile.pachisiVariations.alone;
+  // Pachisi, two colors each: two players each play a side (the colour picked and the one opposite).
+  const pairs = game === "pachisi" && !cleanVariations(vars).alone;
   const setup = fixLocalColors({ ...saved, count }, pairs);
   const update = (next: Profile["localSetup"]) => save({ localSetup: next });
   return (
@@ -429,7 +442,7 @@ function LocalSetup({
         onClick={() => {
           const fixed = fixLocalColors(setup, pairs);
           update(fixed);
-          getController().startLocal(fixed.rows.slice(0, fixed.count), game, pachisi ? profile.pachisiVariations : undefined);
+          getController().startLocal(fixed.rows.slice(0, fixed.count), game, withVars ? vars : undefined);
           onStart();
         }}
       >
