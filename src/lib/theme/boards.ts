@@ -18,28 +18,28 @@ export const isBoardChoice = (v: unknown): v is BoardChoice => v === "auto" || (
 
 /**
  * Pachisi board designs. A real Pachisi board is a cloth cut into a cross, so
- * every design is the cross alone except the Sandstone courtyard, which sets it
- * into a paved palace courtyard (as at Fatehpur Sikri) with its corner squares.
- * "authentic" is the traditional one-colour cloth: only a faint thread of each
- * player's colour marks the column they come home by. One design matches each
- * Ludo board design, so a theme dresses Pachisi too; "auto" follows the theme.
+ * every design is the cross alone except Modern, a square board with the
+ * corners filled in. "authentic" is the traditional one-colour cloth: only a
+ * faint thread of each player's colour marks the column they come home by.
+ * Each theme has its own (Theme.pachisiStyle); "auto" follows the theme.
  */
 export type PachisiStyle = "authentic" | "cloth" | BoardStyleId;
 export type PachisiChoice = PachisiStyle | "auto";
 export const PACHISI_STYLES: Record<PachisiStyle, { name: string; hint: string }> = {
   authentic: { name: "Traditional red cloth", hint: "One cloth, gold stitching" },
   cloth: { name: "Patchwork cloth", hint: "Patchwork cotton, mirror work" },
-  sandstone: { name: "Sandstone courtyard", hint: "Set in a palace courtyard" },
+  sandstone: { name: "Sandstone courtyard", hint: "Red stone, marble inlay" },
   royal: { name: "Royal Darbar", hint: "Ivory and gold, jewel inlay" },
   carved: { name: "Carved wood", hint: "A wooden cross, brass castles" },
-  modern: { name: "Modern", hint: "Clean, in the theme's colors" },
+  modern: { name: "Modern", hint: "A square board, theme colors" },
 };
 export const PACHISI_STYLE_IDS = Object.keys(PACHISI_STYLES) as PachisiStyle[];
 export const isPachisiChoice = (v: unknown): v is PachisiChoice => v === "auto" || (typeof v === "string" && v in PACHISI_STYLES);
 
 /**
  * Parchís board designs: the classic Spanish board (white squares, bright
- * houses), and one to match each Ludo board design. "auto" follows the theme.
+ * houses), and one to match each Ludo board design. Each theme has its own
+ * (Theme.parchisStyle); "auto" follows the theme.
  */
 export type ParchisStyle = "classic" | BoardStyleId;
 export type ParchisChoice = ParchisStyle | "auto";

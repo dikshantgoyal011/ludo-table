@@ -5,10 +5,11 @@
 // The traditional Spanish game (Spanish Wikipedia, "Parchís"), with one dice:
 // - Every piece starts in its house. A 5 brings one out onto its salida, and
 //   with a piece in the house and room on the salida it must. Coming out onto
-//   a salida where a rival shares the square with another piece captures it.
+//   a salida where a rival shares the square with another piece captures it
+//   (of two rivals there, the one that came last).
 // - A 6 rolls again. Once none of the player's pieces is in the house, a 6
-//   counts as 7. A third 6 in a row sends the piece moved with the last 6 back
-//   home (unless it's in its pasillo already), and the turn passes.
+//   counts as 7. A third 6 in a row sends the last piece moved back home
+//   (unless it's in its pasillo already), and the turn passes.
 // - Landing on a lone rival on an ordinary square captures it (back to its
 //   house), and the player counts 20 with any one piece. A piece reaching its
 //   meta lets the player count 10 with another. A count that no piece can make is lost.
@@ -75,8 +76,9 @@ function moveOf(s: GameState, c: Color, i: number, u: number): Move | null {
     if (u !== 5) return null;
     const here = piecesAt(s, keyOf(c, 0) as string);
     if (here.filter((x) => x.c === c).length >= 2) return null;
-    // A full salida: the piece coming out captures the rival there.
-    const rivals = here.filter((x) => x.c !== c);
+    // A full salida: the piece coming out captures the rival there (of two, the one that came last).
+    const came = (x: { c: Color; i: number }) => s.parchisAt?.[x.c]?.[x.i] ?? 0;
+    const rivals = here.filter((x) => x.c !== c).sort((a, b) => came(a) - came(b));
     return { i, to: 0, cap: here.length >= 2 ? rivals[rivals.length - 1] : null };
   }
   const to = p + u;
@@ -179,8 +181,10 @@ export function applyMove(s: GameState, c: Color, i: number, v: number, opt: Mov
   const k = t.hand.indexOf(u);
   if (k >= 0) t.hand.splice(k, 1);
   t.moved++;
-  // (s.sixes is only above 0 while this roll is a 6.)
-  if (isDie(u) && (s.sixes || 0) > 0) t.sixPiece = i;
+  const at = (s.parchisAt ??= {});
+  (at[c] ??= [0, 0, 0, 0])[i] = (s.last?.seq || 0) * 100 + t.moved;
+  // The last piece moved after a 6 (a bonus count too) is the one a third 6 sends home. (s.sixes is only above 0 while this roll is a 6.)
+  if ((s.sixes || 0) > 0) t.sixPiece = i;
   s.roll = null;
   const who = seatName(s, c);
   if (p === -1) addLog(s, c, `${who} brought a piece out.`);
@@ -217,7 +221,7 @@ export function applyRoll(s: GameState, c: Color, v: number): boolean {
     const p = k === null ? -1 : s.tokens[c][k];
     if (k !== null && p >= 0 && p <= X_LAST_SHARED) {
       s.tokens[c][k] = -1;
-      addLog(s, c, `Third 6 in a row: the piece moved with the last 6 goes back home.`);
+      addLog(s, c, "Third 6 in a row: the last piece moved goes back home.");
     } else addLog(s, c, "Third 6 in a row: it doesn't count.");
     t.hand = [];
     t.again = false;
@@ -303,6 +307,7 @@ function setup(s: GameState) {
   s.roll = null;
   s.sixes = 0;
   s.parchis = { c: s.turn, hand: [], again: false, moved: 0, sixPiece: null };
+  delete s.parchisAt;
   addLog(s, s.turn, `Everyone rolled the dice: ${seatName(s, s.turn)} rolled highest.`);
 }
 

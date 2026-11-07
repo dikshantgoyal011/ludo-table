@@ -168,7 +168,7 @@ const LESSONS: Record<GameId, Lesson[]> = {
     },
     {
       title: "A 6 rolls again",
-      text: "A 6 gives you another roll, and once none of your pieces is left in the house it counts as 7. But a third 6 in a row sends the piece you moved with the last 6 home.",
+      text: "A 6 gives you another roll, and once none of your pieces is left in the house it counts as 7. But a third 6 in a row sends the last piece you moved home.",
       tokens: { red: [10, 20, 30, 40] },
       steps: [{ wait: 600 }, { roll: 6, by: "red" }, { move: ["red", 0, 17] }, { wait: 1400 }],
     },

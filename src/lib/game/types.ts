@@ -115,6 +115,8 @@ export interface GameState {
   pachisi?: PachisiTurn;
   /** Parchís: the moves of the turn being played. */
   parchis?: ParchisTurn;
+  /** Parchís: when each piece came to where it stands (of two rivals on a salida, the one that came last is captured). */
+  parchisAt?: Partial<Record<Color, number[]>>;
 }
 
 /** Parchís: the turn in progress. */
@@ -127,7 +129,7 @@ export interface ParchisTurn {
   again: boolean;
   /** Moves made since the last roll (devices use it to tell their own moves apart). */
   moved: number;
-  /** The piece moved with the last 6 this turn (a third 6 sends it home). */
+  /** The last piece moved after a 6 this turn (a third 6 sends it home). */
   sixPiece: number | null;
 }
 

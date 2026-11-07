@@ -20,7 +20,7 @@ import { FrameCorners, frameStyle, TokenArt, TokenShadow } from "./ludo-board";
 export function useParchisStyle(): [ParchisStyle, Theme] {
   const [settings] = useSettings();
   const th = themeOf(settings.theme);
-  return [settings.parchisBoard === "auto" ? th.boardStyle : settings.parchisBoard, th];
+  return [settings.parchisBoard === "auto" ? th.parchisStyle : settings.parchisBoard, th];
 }
 
 interface Look {

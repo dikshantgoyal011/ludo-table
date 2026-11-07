@@ -8,19 +8,19 @@ import type { Color } from "@/lib/game/types";
 import type { PachisiStyle } from "@/lib/theme/boards";
 import { themeOf, type Theme } from "@/lib/theme/themes";
 import { isLight, type BoardLook } from "./board-look";
-import { FrameCorners, frameStyle } from "./ludo-board";
+import { frameStyle } from "./ludo-board";
 
 // The Pachisi board. A real one is a cloth cut into a cross: four arms of 3 x 8
 // squares round the Charkoni (centre). Every design here is that cross on its
-// own, except the Sandstone courtyard, which sets it into the paving of a
-// palace courtyard with its corner squares. Each design also has night colours
-// (the Dark theme). Only Pachisi uses this file.
+// own, except Modern, a square board with the corners between the arms filled
+// in. Each design also has night colours (the Dark theme). Only Pachisi uses
+// this file.
 
 /** The Pachisi board design in use: the one picked in Settings, or the one matching the theme. */
 export function usePachisiStyle(): [PachisiStyle, Theme] {
   const [settings] = useSettings();
   const th = themeOf(settings.theme);
-  return [settings.pachisiBoard === "auto" ? th.boardStyle : settings.pachisiBoard, th];
+  return [settings.pachisiBoard === "auto" ? th.pachisiStyle : settings.pachisiBoard, th];
 }
 
 /** How a design is dressed: which picture it draws, and the frame round it. */
@@ -31,23 +31,21 @@ interface Look {
   /** The cross alone (no square board round it). */
   cross: boolean;
   frame: React.CSSProperties;
-  corners?: "rosette" | "lotus";
   /** Are the squares light (ripples are then drawn dark)? */
   light: boolean;
 }
 
 export function pachisiLook(style: PachisiStyle, th: Theme): Look {
   const night = !!th.night;
-  const cross = style !== "sandstone";
+  const cross = style !== "modern";
   return {
     style,
     night,
     th,
     cross,
-    // The cross lies on the page itself; the courtyard has its own frame.
-    frame: cross ? {} : frameStyle("sandstone", th),
-    corners: cross ? undefined : "lotus",
-    light: !night && (style === "sandstone" || style === "royal" || style === "carved" || (style === "modern" && isLight(th.track))),
+    // The cross lies on the page itself; the square board has the theme's frame.
+    frame: cross ? {} : frameStyle("modern", th),
+    light: !night && (style === "royal" || style === "carved" || (style === "modern" && isLight(th.track))),
   };
 }
 
@@ -60,7 +58,6 @@ export function usePachisiLook(hex: (c: Color) => string, light: (c: Color) => s
     label: "Pachisi board",
     frame: look.frame,
     frameClass: look.cross ? "p-0" : "p-2 sm:p-3",
-    corners: look.corners ? <FrameCorners kind={look.corners} /> : undefined,
     surface: <PachisiSurface look={look} hex={hex} light={light} uid={uid} />,
     // Pawns aren't round: they turn back, so they stand upright however the board is turned.
     token: (fill, lying) => (
@@ -248,69 +245,84 @@ function Patchwork({ look, hex, uid }: SurfaceProps) {
 }
 
 /**
- * Sandstone courtyard: the cross laid in buff sandstone into the red sandstone
- * paving of a palace courtyard (as at Fatehpur Sikri), coloured marble panels
- * with a star in its corners, rosettes carved on the castles.
+ * Sandstone courtyard: the cross as it is laid into the floor of a palace
+ * courtyard (as at Fatehpur Sikri): slabs of red sandstone, each one carved
+ * and set in a grid of white marble, marble stars on the castles. Like the red
+ * cloth it is one warm red with no player colours on the squares; only each
+ * colour's column is inlaid in a slip of coloured stone, its arm's end in full.
  */
-function Courtyard({ look, hex, light, uid }: SurfaceProps) {
+function Courtyard({ look, hex, uid }: SurfaceProps) {
   const id = (n: string) => `${uid}-${n}`;
+  const url = (n: string) => `url(#${id(n)})`;
+  // (A brick red, warmer and lighter than the cloth's crimson; night: dark burnt stone.)
   const P = look.night
-    ? { pave: "#3a1a11", paveAlt: "#2e140c", joint: "#1a0905", stone: "#4a2c1e", stoneLine: "#24120a", inlay: "#c98a3a", gold: "#b8862e" }
-    : { pave: "#b3533a", paveAlt: "#a24831", joint: "#7a2e1c", stone: "#f2dcb3", stoneLine: "#9a4a2a", inlay: "#a8442c", gold: "#e0ad4a" };
-  const corner: Record<Color, Cell> = { red: [0, 0], green: [0, 11], yellow: [11, 11], blue: [11, 0] };
-  const tile = 19 / 8;
+    ? { stone: ["#5a2216", "#2c0e08"], marble: "#a8988a", vein: "#6a5a50", gold: "#b8862e", deep: "#1a0704" }
+    : { stone: ["#c4583a", "#8a311d"], marble: "#f7ecd8", vein: "#c9b9a0", gold: "#f2c46a", deep: "#4e1408" };
   return (
     <g>
       <defs>
-        <pattern id={id("pave")} width={tile * 2} height={tile * 2} patternUnits="userSpaceOnUse">
-          <rect width={tile * 2} height={tile * 2} fill={P.pave} />
-          <rect width={tile} height={tile} fill={P.paveAlt} />
-          <rect x={tile} y={tile} width={tile} height={tile} fill={P.paveAlt} />
-          <path d={`M0 0h${tile * 2}M0 ${tile}h${tile * 2}M0 0v${tile * 2}M${tile} 0v${tile * 2}`} stroke={P.joint} strokeWidth=".06" />
-        </pattern>
+        <CrossShadow id={id("shadow")} night={look.night} />
+        <radialGradient id={id("stone")} cx="50%" cy="42%" r="72%">
+          <stop offset="0" stopColor={P.stone[0]} />
+          <stop offset="1" stopColor={P.stone[1]} />
+        </radialGradient>
+        {/* Grit and the stone's bedding lines */}
         <pattern id={id("grit")} width="0.6" height="0.6" patternUnits="userSpaceOnUse">
-          <circle cx=".1" cy=".2" r=".02" fill="#000" fillOpacity=".12" />
-          <circle cx=".42" cy=".47" r=".018" fill="#fff" fillOpacity=".12" />
+          <circle cx=".1" cy=".2" r=".022" fill="#000" fillOpacity=".16" />
+          <circle cx=".42" cy=".47" r=".018" fill="#fff" fillOpacity=".14" />
+          <circle cx=".5" cy=".08" r=".012" fill="#fff" fillOpacity=".1" />
         </pattern>
+        <pattern id={id("bed")} width="19" height="1.7" patternUnits="userSpaceOnUse">
+          <path d="M0 .5C4 .35 8 .7 12 .5S17 .35 19 .5M0 1.25C5 1.15 9 1.4 13 1.2S17 1.1 19 1.25" fill="none" stroke="#fff" strokeOpacity={look.night ? 0.05 : 0.09} strokeWidth=".06" />
+        </pattern>
+        <linearGradient id={id("marble")} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#fff" stopOpacity={look.night ? 0.15 : 0.6} />
+          <stop offset="1" stopColor={P.marble} stopOpacity="0" />
+        </linearGradient>
       </defs>
-      <rect width={19} height={19} fill={`url(#${id("pave")})`} />
-      <rect width={19} height={19} fill={`url(#${id("grit")})`} />
-      {/* The corner squares: a marble panel in each colour, with a star */}
-      {COLORS.map((c) => {
-        const [r0, c0] = corner[c];
-        const cx = c0 + 4, cy = r0 + 4;
-        return (
-          <g key={c}>
-            <rect x={c0 + 0.8} y={r0 + 0.8} width={6.4} height={6.4} rx={0.4} fill={hex(c)} fillOpacity={look.night ? 0.32 : 0.28} stroke={P.gold} strokeWidth={0.1} />
-            <rect x={c0 + 1.15} y={r0 + 1.15} width={5.7} height={5.7} rx={0.3} fill="none" stroke={P.gold} strokeOpacity={0.6} strokeWidth={0.05} />
-            <polygon points={star8(cx, cy, 2.1, 0.5)} fill={light(c)} fillOpacity={0.5} stroke={hex(c)} strokeWidth={0.08} />
-            <polygon points={star8(cx, cy, 0.9, 0.5)} fill={hex(c)} fillOpacity={0.7} stroke={P.gold} strokeWidth={0.05} />
-          </g>
-        );
-      })}
-      {/* The cross, in buff sandstone */}
-      <path d={OUTLINE} fill={P.stone} />
-      <path d={OUTLINE} fill={`url(#${id("grit")})`} />
+      <path d={OUTLINE} fill={url("stone")} filter={url("shadow")} />
+      <path d={OUTLINE} fill={url("bed")} />
       {CELLS.map(([r, c]) => {
         const k = `${r},${c}`;
         const own = MIDDLE.get(k);
         return (
           <g key={k}>
-            {own && <rect x={c} y={r} width={1} height={1} fill={hex(own)} fillOpacity={ENDS.has(k) ? 1 : 0.85} />}
-            <rect x={c} y={r} width={1} height={1} fill="none" stroke={P.stoneLine} strokeOpacity={0.7} strokeWidth={0.045} />
-            {isCastle(k) && <polygon points={star8(c + 0.5, r + 0.5, 0.36)} fill={own ? "#fff6e0" : P.inlay} stroke={own ? P.inlay : P.stoneLine} strokeWidth={0.03} />}
+            {/* A carved slab: lit from the top left */}
+            <path d={`M${c + 0.05} ${r + 0.95}V${r + 0.05}H${c + 0.95}`} fill="none" stroke="#fff" strokeOpacity={look.night ? 0.08 : 0.22} strokeWidth={0.04} />
+            <path d={`M${c + 0.05} ${r + 0.95}H${c + 0.95}V${r + 0.05}`} fill="none" stroke={P.deep} strokeOpacity={0.4} strokeWidth={0.04} />
+            {/* Its own column: a tile of coloured stone set in marble (the arm's end: the whole slab) */}
+            {own && (ENDS.has(k)
+              ? <rect x={c} y={r} width={1} height={1} fill={hex(own)} />
+              : <rect x={c + 0.22} y={r + 0.22} width={0.56} height={0.56} rx={0.06} fill={hex(own)} fillOpacity={look.night ? 0.7 : 0.85} stroke={P.marble} strokeWidth={0.045} />)}
+            {isCastle(k) && (
+              <>
+                <polygon points={star8(c + 0.5, r + 0.5, 0.38, 0.5)} fill={P.marble} stroke={P.deep} strokeOpacity={0.5} strokeWidth={0.025} />
+                <circle cx={c + 0.5} cy={r + 0.5} r={0.09} fill={own ? hex(own) : P.stone[1]} />
+              </>
+            )}
           </g>
         );
       })}
-      {/* The Charkoni: a marble square, a carved lotus star */}
+      {/* The marble grid the slabs are set in */}
+      <path d={OUTLINE} fill={url("grit")} />
+      <path
+        d={CELLS.map(([r, c]) => `M${c} ${r}h1v1h-1z`).join("")}
+        fill="none" stroke={P.marble} strokeOpacity={look.night ? 0.55 : 0.85} strokeWidth={0.06}
+      />
+      {/* The Charkoni: a white marble square, the colours inlaid, a red stone lotus */}
+      <rect x={8} y={8} width={3} height={3} fill={P.marble} />
       {COLORS.map((c) => (
         <polygon key={c} points={TRIANGLE[c]} fill={hex(c)} />
       ))}
-      <path d="M8 8l3 3M11 8l-3 3" stroke={P.gold} strokeWidth={0.06} />
-      <polygon points={star8(9.5, 9.5, 0.55)} fill={P.stone} stroke={P.inlay} strokeWidth={0.04} />
-      <circle cx={9.5} cy={9.5} r={0.18} fill={P.gold} />
-      <path d={OUTLINE} fill="none" stroke={P.gold} strokeWidth={0.14} strokeLinejoin="round" />
-      <rect x={8} y={8} width={3} height={3} fill="none" stroke={P.gold} strokeWidth={0.08} />
+      <rect x={8} y={8} width={3} height={3} fill={url("marble")} fillOpacity={0.5} />
+      <path d="M8 8l3 3M11 8l-3 3" stroke={P.marble} strokeWidth={0.1} />
+      <polygon points={star8(9.5, 9.5, 0.6, 0.5)} fill={P.stone[0]} stroke={P.marble} strokeWidth={0.05} />
+      <circle cx={9.5} cy={9.5} r={0.2} fill={P.gold} stroke={P.deep} strokeWidth={0.03} />
+      <rect x={8} y={8} width={3} height={3} fill="none" stroke={P.gold} strokeWidth={0.07} />
+      {/* A marble kerb round the cross, a gold line inside it */}
+      <path d={OUTLINE} fill="none" stroke={P.marble} strokeWidth={0.2} strokeLinejoin="round" />
+      <path d={OUTLINE} fill="none" stroke={P.vein} strokeOpacity={0.6} strokeWidth={0.04} strokeLinejoin="round" />
+      <path d={OUTLINE} fill="none" stroke={P.gold} strokeWidth={0.04} strokeLinejoin="round" transform="translate(9.5 9.5) scale(.982) translate(-9.5 -9.5)" />
     </g>
   );
 }
@@ -445,30 +457,53 @@ function Carved({ look, hex, uid }: SurfaceProps) {
   );
 }
 
-/** Modern: flat, in the theme's own colours: rounded squares on the cross, nothing else. */
-function Modern({ look, hex, uid }: SurfaceProps) {
-  const id = (n: string) => `${uid}-${n}`;
+/**
+ * Modern: a square board in the theme's own colours, the one design with its
+ * corners filled in: a soft panel of each colour between the arms, the cross
+ * sunk into the board as a channel of rounded squares, each colour's column in
+ * its pale shade, castles marked with a star.
+ */
+function Modern({ look, hex, light }: SurfaceProps) {
   const th = look.th;
+  // Each colour's corner: the one on its left, seen from its seat (red west, green north, yellow east, blue south).
+  const corner: Record<Color, Cell> = { red: [0, 0], green: [0, 11], yellow: [11, 11], blue: [11, 0] };
   return (
     <g>
-      <defs>
-        <CrossShadow id={id("shadow")} night={look.night} />
-      </defs>
-      <path d={OUTLINE} fill={th.board} filter={`url(#${id("shadow")})`} />
-      {CELLS.map(([r, c]) => {
-        const k = `${r},${c}`;
-        const own = MIDDLE.get(k);
+      <rect width={19} height={19} rx={0.5} fill={th.board} />
+      {COLORS.map((c) => {
+        const [r0, c0] = corner[c];
+        const cx = c0 + 4, cy = r0 + 4;
         return (
-          <g key={k}>
-            <rect x={c + 0.07} y={r + 0.07} width={0.86} height={0.86} rx={0.16} fill={own ? hex(own) : th.track} fillOpacity={own && !ENDS.has(k) ? 0.85 : 1} />
-            {isCastle(k) && <path d={castleX(r, c, 0.2)} stroke={own ? "#fff" : th.stroke} strokeWidth={0.09} strokeLinecap="round" />}
+          <g key={c}>
+            <rect x={c0 + 0.45} y={r0 + 0.45} width={7.1} height={7.1} rx={1.1} fill={light(c)} />
+            <rect x={c0 + 1.25} y={r0 + 1.25} width={5.5} height={5.5} rx={0.8} fill="none" stroke={hex(c)} strokeOpacity={0.28} strokeWidth={0.09} />
+            <circle cx={cx} cy={cy} r={1.75} fill={hex(c)} />
+            <circle cx={cx} cy={cy} r={1.15} fill="none" stroke={th.board} strokeOpacity={0.9} strokeWidth={0.16} />
+            <polygon points={star8(cx, cy, 0.55, 0.5)} fill={th.board} fillOpacity={0.9} />
           </g>
         );
       })}
+      {/* The channel the cross sits in */}
+      <path d={OUTLINE} fill={look.night ? "#000" : th.stroke} fillOpacity={look.night ? 0.3 : 0.14} />
+      {CELLS.map(([r, c]) => {
+        const k = `${r},${c}`;
+        const own = MIDDLE.get(k);
+        const end = ENDS.has(k);
+        return (
+          <g key={k}>
+            <rect x={c + 0.08} y={r + 0.08} width={0.84} height={0.84} rx={0.18} fill={own ? (end ? hex(own) : light(own)) : th.track}
+              stroke={own ? hex(own) : th.stroke} strokeOpacity={own ? (end ? 0 : 0.45) : look.night ? 0.9 : 0.24} strokeWidth={0.04} />
+            {isCastle(k) && <polygon points={star8(c + 0.5, r + 0.5, 0.3, 0.5)} fill={end ? "#fff" : own ? hex(own) : th.star} />}
+          </g>
+        );
+      })}
+      {/* The Charkoni: four colour triangles with gaps between them */}
+      <rect x={8} y={8} width={3} height={3} fill={th.board} />
       {COLORS.map((c) => (
-        <polygon key={c} points={TRIANGLE[c]} fill={hex(c)} />
+        <polygon key={c} points={TRIANGLE[c]} fill={hex(c)} stroke={th.board} strokeWidth={0.12} strokeLinejoin="round" />
       ))}
-      <circle cx={9.5} cy={9.5} r={0.3} fill={th.track} />
+      <circle cx={9.5} cy={9.5} r={0.42} fill={th.board} />
+      <circle cx={9.5} cy={9.5} r={0.2} fill={th.track} stroke={th.stroke} strokeOpacity={0.4} strokeWidth={0.04} />
     </g>
   );
 }
