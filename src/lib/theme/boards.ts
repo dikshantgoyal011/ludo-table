@@ -52,3 +52,24 @@ export const PARCHIS_STYLES: Record<ParchisStyle, { name: string; hint: string }
 };
 export const PARCHIS_STYLE_IDS = Object.keys(PARCHIS_STYLES) as ParchisStyle[];
 export const isParchisChoice = (v: unknown): v is ParchisChoice => v === "auto" || (typeof v === "string" && v in PARCHIS_STYLES);
+
+/**
+ * Chaupar board designs: the same cross as Pachisi's, with no castles (Chaupar
+ * has none), each made the way a court or a household would have it: velvet
+ * worked in gold thread, Mughal marble inlay, a block-printed cotton, rosewood
+ * with bone inlay, a phulkari cloth (the embroidery of Punjab and Haryana, where
+ * one of the variations comes from), and Modern, a square board. Each theme has
+ * its own (Theme.chauparStyle); "auto" follows the theme.
+ */
+export type ChauparStyle = "velvet" | "marble" | "print" | "inlay" | "phulkari" | "modern";
+export type ChauparChoice = ChauparStyle | "auto";
+export const CHAUPAR_STYLES: Record<ChauparStyle, { name: string; hint: string }> = {
+  velvet: { name: "Velvet and gold", hint: "Velvet worked in gold thread" },
+  marble: { name: "Marble inlay", hint: "White marble, inlaid stones" },
+  print: { name: "Block print", hint: "Indigo printed cotton" },
+  inlay: { name: "Rosewood inlay", hint: "Dark wood, bone and brass" },
+  phulkari: { name: "Phulkari", hint: "Bright silk embroidery" },
+  modern: { name: "Modern", hint: "A square board, theme colors" },
+};
+export const CHAUPAR_STYLE_IDS = Object.keys(CHAUPAR_STYLES) as ChauparStyle[];
+export const isChauparChoice = (v: unknown): v is ChauparChoice => v === "auto" || (typeof v === "string" && v in CHAUPAR_STYLES);

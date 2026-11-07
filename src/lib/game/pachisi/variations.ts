@@ -13,7 +13,7 @@ export type PachisiVariations = {
   sevenShells: boolean;
   /** Only 10 and 25 are graces. */
   twoGraces: boolean;
-  /** A piece can only finish in the Charkoni with a grace throw. */
+  /** A piece can only finish in the Charkoni with a big throw (see homeThrow in throws.ts). */
   graceHome: boolean;
   /** Two or more pieces of one side on a square can't be passed by the other side. */
   blockades: boolean;
@@ -47,7 +47,7 @@ export const VARIATION_INFO: { id: Exclude<VariationId, "alone">; title: string;
   { id: "graceApart", title: "Bonus step", text: "A 6, 10 or 25 moves a piece that's already out, plus a bonus: one piece 1 square, or a new piece out.", lesson: "p-grace-apart" },
   { id: "twoGraces", title: "6 is a normal throw", text: "Only 10 and 25 bring a piece out and give another throw.", lesson: "p-two-graces" },
   { id: "sevenShells", title: "Seven shells", text: "Throw 7 cowries instead of 6. Big throws: 25, 35 and 14.", lesson: "p-seven" },
-  { id: "graceHome", title: "Finish with 6, 10 or 25", text: "A piece can only reach the center with one of those throws.", lesson: "p-grace-home" },
+  { id: "graceHome", title: "Finish with a big throw", text: "Only a 6, 10 or 25 takes a piece into the center, from anywhere on its way in. No exact number needed.", lesson: "p-grace-home" },
   { id: "blockades", title: "Pairs block the way", text: "Two of your pieces on one square: nobody else can pass.", lesson: "p-blockades" },
   { id: "threeGraces", title: "No three in a row", text: "A third 6, 10 or 25 in a row doesn't count, and you miss your next turn.", lesson: "p-three-graces" },
 ];

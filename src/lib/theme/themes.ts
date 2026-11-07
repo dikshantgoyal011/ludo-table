@@ -1,5 +1,5 @@
 import type { Color } from "@/lib/game/types";
-import type { BoardStyleId, PachisiStyle, ParchisStyle } from "./boards";
+import type { BoardStyleId, ChauparStyle, PachisiStyle, ParchisStyle } from "./boards";
 
 /** How the "Ludo Darbar" title is lettered in a theme (CSS variables --brand-*). */
 export interface BrandStyle {
@@ -20,9 +20,10 @@ export interface Theme {
   scheme: "dark" | "light";
   /** The board design this theme uses unless Settings picks another */
   boardStyle: BoardStyleId;
-  /** The Pachisi and Parchís designs it uses (every design is some theme's own). */
+  /** The Pachisi, Parchís and Chaupar designs it uses (every design is some theme's own). */
   pachisiStyle: PachisiStyle;
   parchisStyle: ParchisStyle;
+  chauparStyle: ChauparStyle;
   /** Every board design is drawn in its night colours (dark squares) with this theme. */
   night?: boolean;
   /** The "Ludo Darbar" title */
@@ -50,6 +51,7 @@ export const THEMES: Record<ThemeId, Theme> = {
     boardStyle: "sandstone",
     pachisiStyle: "sandstone",
     parchisStyle: "sandstone",
+    chauparStyle: "velvet",
     bg: "radial-gradient(900px 620px at 50% 0%, #8e1d2c, transparent 70%), linear-gradient(170deg, #64101e 0%, #3c0814 60%, #23040b 100%)",
     meta: "#3c0814",
     scheme: "dark",
@@ -75,6 +77,7 @@ export const THEMES: Record<ThemeId, Theme> = {
     boardStyle: "royal",
     pachisiStyle: "royal",
     parchisStyle: "royal",
+    chauparStyle: "marble",
     bg: "radial-gradient(900px 620px at 50% 0%, #135c41, transparent 70%), linear-gradient(170deg, #0b3d2c 0%, #072a1e 60%, #041a12 100%)",
     meta: "#072a1e",
     scheme: "dark",
@@ -100,6 +103,7 @@ export const THEMES: Record<ThemeId, Theme> = {
     // A cloth board on a card table; the café Parchís board.
     pachisiStyle: "authentic",
     parchisStyle: "classic",
+    chauparStyle: "print",
     bg: "radial-gradient(900px 600px at 30% 10%, #143630, transparent 70%), #0f2a24",
     meta: "#0f2a24",
     scheme: "dark",
@@ -125,6 +129,7 @@ export const THEMES: Record<ThemeId, Theme> = {
     boardStyle: "modern",
     pachisiStyle: "modern",
     parchisStyle: "modern",
+    chauparStyle: "modern",
     bg: "radial-gradient(900px 700px at 50% 0%, #3d4fd1, transparent 70%), linear-gradient(170deg, #2a1f8f 0%, #16247a 55%, #0b154f 100%)",
     meta: "#16247a",
     scheme: "dark",
@@ -149,6 +154,7 @@ export const THEMES: Record<ThemeId, Theme> = {
     boardStyle: "modern",
     pachisiStyle: "modern",
     parchisStyle: "modern",
+    chauparStyle: "modern",
     bg: "radial-gradient(900px 600px at 70% 0%, #1d2a52, transparent 70%), #0a0f1f",
     meta: "#0a0f1f",
     scheme: "dark",
@@ -174,6 +180,7 @@ export const THEMES: Record<ThemeId, Theme> = {
     boardStyle: "modern",
     pachisiStyle: "modern",
     parchisStyle: "modern",
+    chauparStyle: "modern",
     night: true,
     bg: "radial-gradient(900px 600px at 50% 0%, #23272f, transparent 70%), #0c0d10",
     meta: "#0c0d10",
@@ -199,6 +206,7 @@ export const THEMES: Record<ThemeId, Theme> = {
     boardStyle: "carved",
     pachisiStyle: "carved",
     parchisStyle: "carved",
+    chauparStyle: "inlay",
     bg: "radial-gradient(900px 600px at 30% 10%, #5a3720, transparent 70%), #2b1a10",
     meta: "#2b1a10",
     scheme: "dark",
@@ -224,6 +232,7 @@ export const THEMES: Record<ThemeId, Theme> = {
     // Bright patchwork, like a quilt.
     pachisiStyle: "cloth",
     parchisStyle: "modern",
+    chauparStyle: "phulkari",
     bg: "linear-gradient(160deg, #ffe3f1 0%, #ece6ff 55%, #dff3ff 100%)",
     meta: "#ffe3f1",
     scheme: "light",

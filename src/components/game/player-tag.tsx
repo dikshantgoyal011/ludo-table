@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { Avatar } from "./avatar";
 import { CowrieRow } from "./cowries";
 import { Dice3D } from "./dice-3d";
+import { PasaRow } from "./pasa";
 
 /** Three bouncing dots for "typing…". */
 export function TypingDots() {
@@ -134,6 +135,9 @@ export function PlayerTag({ corner }: { corner: number }) {
   const showTyping = !showBubble && !!seat && game.isTyping(seat.id);
   const takeover = !!seat?.takeover && s.phase === "playing";
   const pachisi = s.game === "pachisi";
+  const chaupar = s.game === "chaupar";
+  // Pachisi's cowries and Chaupar's long dice get a row of their own under the name.
+  const thrownRow = pachisi || chaupar;
   // Parchís: a move the dice doesn't show (a 6 counting 7, or a bonus count of 20 / 10) waits in hand.
   const pending = s.game === "parchis" && s.turn === c && !game.rolling ? game.hand().find((u) => u >= 7) : undefined;
   const count = pending && pending >= 7 ? (pending >= 10 ? `Count ${pending}` : "Move 7") : "";
@@ -147,8 +151,8 @@ export function PlayerTag({ corner }: { corner: number }) {
     <div
       className={cn(
         "relative flex min-w-0 items-center gap-2 rounded-xl py-1.5 transition-[background] duration-300",
-        // Pachisi: the cowries get a full row of their own under the name (they need room to be read).
-        pachisi && "flex-wrap gap-y-1.5",
+        // Pachisi, Chaupar: the cowries / long dice get a full row of their own under the name (they need room to be read).
+        thrownRow && "flex-wrap gap-y-1.5",
         right ? "flex-row-reverse pr-3 pl-1.5 text-right" : "pr-1.5 pl-3",
         isTurn ? "tag-spotlight" : "tag-edge",
         right && "tag-right",
@@ -206,9 +210,9 @@ export function PlayerTag({ corner }: { corner: number }) {
         </div>
       )}
 
-      {/* The player's picture; on their turn it turns into the dice (same spot, so nothing moves). Pachisi: always the picture. */}
+      {/* The player's picture; on their turn it turns into the dice (same spot, so nothing moves). Pachisi, Chaupar: always the picture. */}
       <div className="flex size-[38px] shrink-0 items-center justify-center min-[400px]:size-[42px] sm:size-[46px]">
-        {dieColor === c && !pachisi ? (
+        {dieColor === c && !thrownRow ? (
           <Dice3D />
         ) : seat ? (
           <span className="flex size-[34px] items-center justify-center min-[400px]:size-[38px] sm:size-[42px]">
@@ -349,6 +353,7 @@ export function PlayerTag({ corner }: { corner: number }) {
         Every tag keeps the row's space, so nothing jumps as the cowries go round the table.
       */}
       {pachisi && <CowrieRow c={c} isTurn={isTurn} right={right} />}
+      {chaupar && <PasaRow c={c} isTurn={isTurn} right={right} />}
     </div>
   );
 }

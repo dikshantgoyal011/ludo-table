@@ -1,6 +1,6 @@
 "use client";
 
-// Variations (Pachisi, Parchís): the list of switches (vs computer, this device,
+// Variations (Pachisi, Parchís, Chaupar): the list of switches (vs computer, this device,
 // and the friends lobby, where only the room's creator changes them), and a short summary.
 import { useEffect, useReducer } from "react";
 import { Check, GraduationCap } from "lucide-react";
@@ -8,9 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { useProfile } from "@/hooks/use-game";
-import type { PachisiVariations } from "@/lib/game/pachisi/variations";
 import type { GameId } from "@/lib/game/types";
-import { countOn, hasVariations, noVariations, plainRules, variationInfo, type Variations } from "@/lib/game/variations";
+import { countOn, hasVariations, noVariations, plainRules, playsSolo, variationInfo, type Variations } from "@/lib/game/variations";
 import { variantById } from "@/lib/game/variants";
 import { openTutorial } from "@/lib/ui-store";
 import { cn } from "@/lib/utils";
@@ -138,10 +137,10 @@ export function VariationsList({ game, value, onChange, className }: { game: Gam
 }
 
 /**
- * Pachisi: Solo, or 2 vs 2 (two players: two colors each). Three players
- * always play solo. Without `onChange` it only shows the choice.
+ * Pachisi, Chaupar: Solo, or 2 vs 2 (two players: two colors each). Three
+ * players always play solo. Without `onChange` it only shows the choice.
  */
-export function SidesPicker({ value, players, onChange }: { value: PachisiVariations; players: number; onChange?: (v: PachisiVariations) => void }) {
+export function SidesPicker({ value, players, onChange }: { value: Variations; players: number; onChange?: (v: Variations) => void }) {
   if (players === 3) return <p className="text-xs leading-snug text-muted-foreground">With three players, everyone plays solo.</p>;
   const options = [
     { alone: true, title: "Solo", text: players === 2 ? "One color each." : "Everyone plays on their own." },
@@ -150,7 +149,7 @@ export function SidesPicker({ value, players, onChange }: { value: PachisiVariat
   return (
     <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="How you play">
       {options.map((o) => {
-        const on = value.alone === o.alone;
+        const on = playsSolo(value) === o.alone;
         return (
           <button
             key={String(o.alone)}
@@ -181,6 +180,7 @@ export function SidesPicker({ value, players, onChange }: { value: PachisiVariat
 const ABOUT: Partial<Record<GameId, string>> = {
   pachisi: "Pachisi is played a little differently from place to place. Turn on any rules you like.",
   parchis: "Parchís is played a few different ways. Turn on any rules you like.",
+  chaupar: "Chaupar is played a little differently from place to place: the last three are how it's played in Haryana. Turn on any rules you like.",
 };
 
 /** The variations screen before a game vs the computer or on this device. */

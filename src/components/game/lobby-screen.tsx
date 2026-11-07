@@ -2,7 +2,7 @@
 
 // Before an online or friends game: everyone gathers here, and the board only
 // shows once the game has begun. Friends rooms: everyone marks themselves ready
-// (and, in Pachisi and Parchís, agrees to the rules) before the creator can start.
+// (and, in games with variations, agrees to the rules) before the creator can start.
 import { useEffect, useRef, useState } from "react";
 import { Check, Copy, Crown, MessageCircle, Mic, MicOff, UserPlus, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,9 +11,8 @@ import { useGame, useProfile, useSettings } from "@/hooks/use-game";
 import { defaultAvatar } from "@/lib/avatars";
 import { countryName, flagUrl } from "@/lib/country";
 import { COLORS, NICK_MAX } from "@/lib/game/constants";
-import { cleanVariations, playsInPairs } from "@/lib/game/pachisi/variations";
 import { cleanParchisVariations, parchisPairs } from "@/lib/game/parchis/variations";
-import { countOn, hasVariations, noVariations, plainRules } from "@/lib/game/variations";
+import { countOn, hasSides, hasVariations, noVariations, plainRules, playsSolo } from "@/lib/game/variations";
 import type { Player } from "@/lib/game/types";
 import { variantById } from "@/lib/game/variants";
 import { themeOf } from "@/lib/theme/themes";
@@ -53,7 +52,7 @@ export function LobbyScreen() {
       </div>
     );
 
-  // Pachisi, Parchís: the rules (variations) get a card of their own.
+  // Games with variations: the rules get a card of their own.
   const rules = hasVariations(s.game);
   return (
     <div className={cn("mx-auto flex w-full flex-col gap-3", rules ? "max-w-xl lg:max-w-5xl" : "max-w-xl")}>
@@ -157,12 +156,12 @@ function PlayersCard() {
   const th = themeOf(useSettings()[0].theme);
   const s = game.state;
   const friends = game.mode === "friends";
-  const pachisi = s.game === "pachisi";
+  const sided = hasSides(s.game);
   const n = s.players.length;
   const cap = friends ? 4 : game.capacity();
   const owner = friends ? game.roomOwnerId() : "";
   const vars = game.variations();
-  // Pachisi (Parchís in pairs): who plays with whom, by the order people joined.
+  // Pachisi, Chaupar (Parchís in pairs): who plays with whom, by the order people joined.
   const nick = (k: number) => s.players[k]?.nick || `Player ${k + 1}`;
   const partners = `Partners: ${nick(0)} & ${nick(2)} against ${nick(1)} & ${nick(3)}.`;
   const sides =
@@ -172,9 +171,9 @@ function PlayersCard() {
           ? partners
           : "Pairs need four players: until then, everyone plays solo."
         : ""
-      : !pachisi || n < 2
+      : !sided || n < 2
         ? ""
-        : !playsInPairs(cleanVariations(vars), n)
+        : playsSolo(vars) || n === 3
           ? "Everyone plays solo."
           : n === 2
             ? `${nick(0)} plays Red & Yellow, ${nick(1)} plays Green & Blue.`
@@ -255,7 +254,7 @@ function Badge({ tone, children }: { tone: "gold" | "green" | "grey"; children: 
   );
 }
 
-/** Pachisi, Parchís: the rules everyone plays by. In a friends room the creator picks them and everyone agrees. */
+/** Games with variations: the rules everyone plays by. In a friends room the creator picks them and everyone agrees. */
 function RulesCard() {
   const game = useGame();
   const s = game.state;
@@ -275,7 +274,7 @@ function RulesCard() {
       {!friends ? (
         <p className="text-sm text-muted-foreground">
           Online games use the {plain}, without variations
-          {g !== "pachisi" || cap === 3 ? "." : cleanVariations(vars).alone ? ", playing Solo." : cap === 2 ? ", two colors each." : ", playing 2 vs 2."}
+          {!hasSides(g) || cap === 3 ? "." : playsSolo(vars) ? ", playing Solo." : cap === 2 ? ", two colors each." : ", playing 2 vs 2."}
         </p>
       ) : (
         <>
@@ -284,7 +283,7 @@ function RulesCard() {
               ? "Choose how you play. Everyone has to agree before the game can start; any change asks everyone again."
               : `${game.roomOwnerName()} chooses how you play. Look it over, then agree.`}
           </p>
-          {g === "pachisi" && <SidesPicker value={cleanVariations(vars)} players={n >= 2 ? n : 4} onChange={iRun ? (next) => game.setVariations(next) : undefined} />}
+          {hasSides(g) && <SidesPicker value={vars} players={n >= 2 ? n : 4} onChange={iRun ? (next) => game.setVariations(next) : undefined} />}
           <VariationsList game={g} value={vars} onChange={iRun ? (next) => game.setVariations(next) : undefined} />
           {iRun && hasVariations(g) && (
             <SavePreferences

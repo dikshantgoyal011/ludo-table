@@ -5,10 +5,14 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { BoardPreview, TokenArt, useBoardStyle } from "@/components/game/ludo-board";
 import { CowrieView, Shell } from "@/components/game/cowries";
 import { DiceView, newSpin, type DiceRoll } from "@/components/game/dice-3d";
+import { ChauparBoardPreview, ChauparPawn } from "@/components/game/chaupar-board";
 import { PachisiPawn } from "@/components/game/pachisi-board";
+import { newPasaSpin, PasaView } from "@/components/game/pasa";
 import { PachisiBoardPreview } from "@/components/menu/game-preview";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { stackSquare } from "@/lib/game/chaupar/board";
+import { FACES_25, FACES_34, sayThrow, throwOf } from "@/lib/game/chaupar/dice";
 import { COLORS, DICE_ROLL_MS } from "@/lib/game/constants";
 import { rulesFor } from "@/lib/game/rules";
 import { P_LAP_FROM, P_LAP_TO, ROUTE } from "@/lib/game/pachisi/board";
@@ -25,9 +29,10 @@ import { cn } from "@/lib/utils";
 
 type Tokens = Partial<Record<Color, number[]>>;
 type Action =
-  // roll2: the second dice (Parchís with two dice).
+  // roll2: the second dice (Parchís with two dice). Chaupar: roll is all three long dice as one number (1, 2 and 6: 126).
   | { roll: number; roll2?: number; by: Color }
-  | { move: [Color, number, number] }
+  // (Chaupar: several pieces moving together, a super-piece.)
+  | { move: [Color, number | number[], number] }
   | { cut: [Color, number] }
   | { wait: number };
 interface Lesson {
@@ -41,6 +46,8 @@ interface Lesson {
   shells?: boolean;
   /** Pachisi with seven cowries (a variation). */
   seven?: boolean;
+  /** Chaupar with long dice marked 3 and 4 (a variation). */
+  threeFour?: boolean;
 }
 
 /** Pachisi: the position colour `c` has on the square where colour `of` stands at position p. */
@@ -173,9 +180,9 @@ const LESSONS: Record<GameId, Lesson[]> = {
     },
     {
       id: "p-grace-home",
-      title: "Variation: finish with 6, 10 or 25",
-      text: "A piece can only reach the center with a 6, 10 or 25 of exactly the right number. This one is 10 away, so a 10 takes it home.",
-      tokens: { red: [73, 83, 83, -1] },
+      title: "Variation: finish with a big throw",
+      text: "Only a 6, 10 or 25 takes a piece into the center (with seven shells: 7, 10, 14, 25 or 35), and it doesn't need the exact number. This one is 7 away: a 10 takes it home.",
+      tokens: { red: [76, 83, 83, -1] },
       steps: [{ wait: 600 }, { roll: 10, by: "red" }, { move: ["red", 0, 83] }, { wait: 1600 }],
     },
     {
@@ -272,6 +279,86 @@ const LESSONS: Record<GameId, Lesson[]> = {
       steps: [{ wait: 600 }, { roll: 4, by: "red" }, { move: ["red", 0, 71] }, { wait: 1800 }],
     },
   ],
+  chaupar: [
+    {
+      title: "Your pieces start on the board",
+      text: "No waiting to come out: two of your pieces start near the end of your own arm, two on the next arm. Go down your arm, counter-clockwise round the cross, and back up the middle to the center.",
+      tokens: { red: [5, 6, 22, 23], green: [5, 6, 22, 23], yellow: [5, 6, 22, 23], blue: [5, 6, 22, 23] },
+      steps: [{ wait: 1200 }, { roll: 625, by: "red" }, { move: ["red", 3, 29] }, { move: ["red", 2, 24] }, { move: ["red", 3, 34] }, { wait: 1400 }],
+    },
+    {
+      title: "Three long dice",
+      text: "Instead of a dice, throw three long dice, each marked 1, 2, 5 and 6. Then play each dice on its own: on three pieces, or one piece three times, like here (6, then 2, then 1).",
+      tokens: { red: [5, 6, 22, 23] },
+      steps: [{ wait: 600 }, { roll: 126, by: "red" }, { move: ["red", 3, 29] }, { move: ["red", 3, 31] }, { move: ["red", 3, 32] }, { wait: 1400 }],
+    },
+    {
+      title: "Join up into a super-piece",
+      text: "Land on your own piece and the two join into a super-piece that moves as one. A single piece can't capture it, or even land on it: only a piece just as big can.",
+      tokens: { red: [5, 6, 22, 23] },
+      steps: [{ wait: 600 }, { roll: 152, by: "red" }, { move: ["red", 0, 6] }, { wait: 500 }, { move: ["red", [0, 1], 11] }, { move: ["red", 2, 24] }, { wait: 1400 }],
+    },
+    {
+      title: "Capture anywhere",
+      text: "There are no safe squares: land on a rival round the cross and it goes back to the center, to come out again with any dice. Only your own column is safe. No throw gives another throw.",
+      tokens: { red: [20, -1, -1, -1], green: [sameSquare("green", "red", 25), -1, -1, -1] },
+      steps: [{ wait: 600 }, { roll: 512, by: "red" }, { move: ["red", 0, 25] }, { cut: ["green", 0] }, { wait: 1400 }],
+    },
+    {
+      title: "Every dice must be played",
+      text: "You can't skip: if a piece can use a dice, you have to move it. A dice is only lost when nothing can use it. Here the 6 and the 5 go too far, so only the 2 is played.",
+      tokens: { red: [80, 83, 83, 83] },
+      steps: [{ wait: 600 }, { roll: 652, by: "red" }, { move: ["red", 0, 82] }, { wait: 1800 }],
+    },
+    {
+      title: "Back up your arm to the center",
+      text: "Come back up the middle of your arm, the piece lying on its side. Getting home takes the exact count: here 6, 5 and 2 take it all the way in. First with all four home wins.",
+      tokens: { red: [70, 83, 83, 83] },
+      steps: [{ wait: 600 }, { roll: 652, by: "red" }, { move: ["red", 0, 76] }, { move: ["red", 0, 81] }, { move: ["red", 0, 83] }, { wait: 1400 }],
+    },
+    {
+      title: "Solo or 2 vs 2",
+      text: "You play solo unless you pick 2 vs 2. Then partners sit opposite (Red with Yellow, Green with Blue), never capture each other, and win together when all eight of their pieces are home. With two players, you can each play two colors.",
+      tokens: { red: [14, -1, -1, -1], yellow: [sameSquare("yellow", "red", 16), -1, -1, -1] },
+      steps: [{ wait: 600 }, { roll: 211, by: "red" }, { move: ["red", 0, 16] }, { wait: 1800 }],
+    },
+    {
+      title: "Partners go home in turn",
+      text: "In 2 vs 2, once one of you has a piece home, the other can't bring one in until all four of the first are home. Here Red finishes, and then Yellow can go in.",
+      tokens: { red: [80, 83, 83, 83], yellow: [81, 30, 40, 50] },
+      steps: [{ wait: 600 }, { roll: 215, by: "red" }, { move: ["red", 0, 82] }, { move: ["red", 0, 83] }, { wait: 500 }, { roll: 221, by: "yellow" }, { move: ["yellow", 0, 83] }, { wait: 1400 }],
+    },
+    // The variations (off unless the table turns them on).
+    {
+      id: "c-three-four",
+      title: "Variation: dice with 3 and 4",
+      text: "The long dice show 1, 3, 4 and 6 instead of 1, 2, 5 and 6. Everything else stays the same.",
+      tokens: { red: [5, 6, 22, 23] },
+      threeFour: true,
+      steps: [{ wait: 600 }, { roll: 346, by: "red" }, { move: ["red", 3, 26] }, { move: ["red", 3, 30] }, { move: ["red", 2, 28] }, { wait: 1400 }],
+    },
+    {
+      id: "c-capture-first",
+      title: "Variation: capture before going home",
+      text: "Your pieces can't go home until you've captured a rival piece. Until then, at the end of the round they go round again instead of up the middle, like this one.",
+      tokens: { red: [70, -1, -1, -1] },
+      steps: [{ wait: 600 }, { roll: 611, by: "red" }, { move: ["red", 0, 8] }, { wait: 1800 }],
+    },
+    {
+      id: "c-pairs",
+      title: "Variation: doubles move super-pieces",
+      text: "When two dice match, a super-piece moves by both together: with 6, 6 and 2 it moves 12. Then a single piece moves the third dice, the 2.",
+      tokens: { red: [10, 10, 30, 83] },
+      steps: [{ wait: 600 }, { roll: 662, by: "red" }, { move: ["red", [0, 1], 22] }, { move: ["red", 2, 32] }, { wait: 1600 }],
+    },
+    {
+      id: "c-share",
+      title: "Variation: move your partner's pieces",
+      text: "In 2 vs 2, you can move any of your team's eight pieces. Here Red plays a 5 with Yellow's piece and captures Green.",
+      tokens: { red: [5, -1, -1, -1], yellow: [sameSquare("yellow", "red", 20), -1, -1, -1], green: [sameSquare("green", "red", 25), -1, -1, -1] },
+      steps: [{ wait: 600 }, { roll: 512, by: "red" }, { move: ["yellow", 0, sameSquare("yellow", "red", 25)] }, { cut: ["green", 0] }, { wait: 1600 }],
+    },
+  ],
 };
 
 const reducedMotion = () => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -280,6 +367,8 @@ const reducedMotion = () => typeof window !== "undefined" && !!window.matchMedia
 function Scene({ game, lesson }: { game: GameId; lesson: Lesson }) {
   const pachisi = game === "pachisi";
   const parchis = game === "parchis";
+  const chaupar = game === "chaupar";
+  const pasaSpins = useRef([newPasaSpin(), newPasaSpin(), newPasaSpin()]).current;
   const [style, th] = useBoardStyle();
   const [pos, setPos] = useState<Tokens>(lesson.tokens);
   const [walking, setWalking] = useState("");
@@ -313,23 +402,28 @@ function Scene({ game, lesson }: { game: GameId; lesson: Lesson }) {
             setRoll((r) => ({ ...r, rolling: false }));
             await wait(450);
           } else if ("move" in a) {
-            const [c, i, to] = a.move;
-            const from = cur[c]![i];
+            const [c, which, to] = a.move;
+            // (Chaupar: a super-piece's pieces move together.)
+            const idx = Array.isArray(which) ? which : [which];
+            const from = cur[c]![idx[0]];
             // The token you'd tap ripples first, like in the game.
-            setPulse(c + i);
+            setPulse(c + idx[0]);
             await wait(900);
             setPulse("");
             // Out of the centre onto the first square: one glide. Further out, it walks from there.
             if (from === -1 && to === 0) {
-              cur[c]![i] = to;
+              idx.forEach((i) => (cur[c]![i] = to));
               setPos(JSON.parse(JSON.stringify(cur)));
               await wait(500);
             } else {
-              setWalking(c + i);
-              for (let p = from + 1; p <= to && alive; p++) {
-                cur[c]![i] = p;
+              setWalking(idx.map((i) => c + i).join(","));
+              // (Chaupar's route can carry on round the cross: its own steps.)
+              const path = chaupar ? rulesFor(game).steps(from, to) : Array.from({ length: Math.max(0, to - from) }, (_, k) => from + 1 + k);
+              for (const p of path) {
+                if (!alive) break;
+                idx.forEach((i) => (cur[c]![i] = p));
                 setPos(JSON.parse(JSON.stringify(cur)));
-                await wait(pachisi && to - from > 12 ? 95 : 170);
+                await wait((pachisi || chaupar) && path.length > 12 ? 95 : 170);
               }
               setWalking("");
             }
@@ -348,26 +442,31 @@ function Scene({ game, lesson }: { game: GameId; lesson: Lesson }) {
       alive = false;
       timers.forEach(clearTimeout);
     };
-  }, [lesson, pachisi]);
+  }, [lesson, pachisi, chaupar, game]);
 
-  // Tokens sharing a square sit side by side, as on the real board.
-  const groups: Record<string, { c: Color; i: number; x: number; y: number; lying?: boolean }[]> = {};
+  // Tokens sharing a square sit side by side, as on the real board (a Chaupar super-piece stands as a stack).
+  const groups: Record<string, { c: Color; i: number; p: number; x: number; y: number; lying?: boolean }[]> = {};
   for (const c of COLORS)
     (pos[c] || []).forEach((p, i) => {
       const b = rulesFor(game).point(c, i, p);
-      (groups[b.key] ||= []).push({ c, i, x: b.x, y: b.y, lying: b.lying });
+      (groups[b.key] ||= []).push({ c, i, p, x: b.x, y: b.y, lying: b.lying });
     });
-  const pieces: { key: string; c: Color; x: number; y: number; s: number; home: boolean; lying?: boolean }[] = [];
-  Object.values(groups).forEach((list) =>
+  const pieces: { key: string; c: Color; x: number; y: number; s: number; home: boolean; lying?: boolean; lift?: number; badge?: number }[] = [];
+  Object.values(groups).forEach((list) => {
+    if (chaupar) {
+      for (const t of stackSquare(list)) pieces.push({ key: t.c + t.i, c: t.c, lying: t.lying, x: t.x, y: t.y, s: t.scale, home: t.p === -1, lift: t.lift, badge: t.badge });
+      return;
+    }
     list.forEach((t, k) => {
       const n = list.length;
       const ang = (k / n) * Math.PI * 2 - Math.PI / 4;
       pieces.push({ key: t.c + t.i, c: t.c, lying: t.lying, x: t.x + (n > 1 ? Math.cos(ang) * 0.2 : 0), y: t.y + (n > 1 ? Math.sin(ang) * 0.2 : 0), s: n > 2 ? 0.62 : n > 1 ? 0.75 : 1, home: pos[t.c]![t.i] === -1 });
-    }),
-  );
+    });
+  });
   pieces.sort((a, b) => (a.key < b.key ? -1 : 1));
+  const walkers = walking ? walking.split(",") : [];
   const layer = pieces.map((t) => (
-    <g key={t.key} className={cn("token", walking === t.key && "stepping", t.home && "returning")} style={{ transform: `translate(${t.x}px,${t.y}px) scale(${t.s})` }}>
+    <g key={t.key} className={cn("token", walkers.includes(t.key) && "stepping", t.home && "returning")} style={{ transform: `translate(${t.x}px,${t.y}px) scale(${t.s})` }}>
       {pulse === t.key &&
         ["", " late"].map((k) => (
           <g key={k} className={"token-ripple" + k}>
@@ -375,14 +474,27 @@ function Scene({ game, lesson }: { game: GameId; lesson: Lesson }) {
             <circle r={0.42} fill="none" stroke="#24170f" strokeWidth={0.09} />
           </g>
         ))}
-      {pachisi ? <PachisiPawn fill={th.pieces[t.c]} lying={t.lying} /> : parchis ? <ParchisToken fill={th.pieces[t.c]} /> : <TokenArt style={style} fill={th.pieces[t.c]} />}
+      {chaupar ? (
+        <ChauparPawn fill={th.pieces[t.c]} lying={t.lying} lift={t.lift} badge={t.badge} />
+      ) : pachisi ? (
+        <PachisiPawn fill={th.pieces[t.c]} lying={t.lying} />
+      ) : parchis ? (
+        <ParchisToken fill={th.pieces[t.c]} />
+      ) : (
+        <TokenArt style={style} fill={th.pieces[t.c]} />
+      )}
     </g>
   ));
+  // Chaupar: the three long dice of the throw (before the first: at rest).
+  const faces = lesson.threeFour ? FACES_34 : FACES_25;
+  const sticks = roll.v >= 111 ? throwOf(roll.v) : [faces[0], faces[1], faces[3]];
 
   return (
     <div className="flex w-full flex-col items-center gap-2">
       <div className="w-full max-w-[300px]">
-        {pachisi ? (
+        {chaupar ? (
+          <ChauparBoardPreview>{layer}</ChauparBoardPreview>
+        ) : pachisi ? (
           <PachisiBoardPreview>{layer}</PachisiBoardPreview>
         ) : parchis ? (
           <ParchisBoardPreview>{layer}</ParchisBoardPreview>
@@ -395,9 +507,23 @@ function Scene({ game, lesson }: { game: GameId; lesson: Lesson }) {
       <div className="flex min-h-12 items-center gap-3 text-sm font-bold">
         <span className="flex items-center gap-1.5">
           <span className="h-3 w-3 rounded-full ring-2 ring-white/30" style={{ background: th.pieces[roll.by] }} />
-          {roll.r ? (roll.rolling ? (pachisi ? "Throwing…" : "Rolling…") : pachisi ? `Threw ${roll.v}` : roll.v2 ? `Rolled ${roll.v} and ${roll.v2}` : `Rolled ${roll.v}`) : "Your turn"}
+          {roll.r
+            ? roll.rolling
+              ? pachisi || chaupar
+                ? "Throwing…"
+                : "Rolling…"
+              : chaupar
+                ? `Threw ${sayThrow(sticks)}`
+                : pachisi
+                  ? `Threw ${roll.v}`
+                  : roll.v2
+                    ? `Rolled ${roll.v} and ${roll.v2}`
+                    : `Rolled ${roll.v}`
+            : "Your turn"}
         </span>
-        {pachisi ? (
+        {chaupar ? (
+          <PasaView dice={sticks} roll={roll.r} rolling={roll.rolling} faces={faces} spins={pasaSpins} label="Long dice" />
+        ) : pachisi ? (
           <CowrieView value={roll.v} roll={roll.r} rolling={roll.rolling} shell={lesson.seven ? 25 : 28} set={lesson.seven ? SEVEN_SHELLS : SIX_SHELLS} label="Cowrie shells" />
         ) : (
           <>

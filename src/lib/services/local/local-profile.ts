@@ -1,7 +1,7 @@
 import { isAvatar } from "@/lib/avatars";
 import { isCountry } from "@/lib/country";
 import { isColor, NICK_MAX } from "@/lib/game/constants";
-import { cleanFor, noVariations } from "@/lib/game/variations";
+import { cleanFor, noVariations, VARIED_GAMES, type VariedGame } from "@/lib/game/variations";
 import type { Profile, ProfileRepository } from "../types";
 import { Emitter, storage } from "../storage";
 
@@ -21,11 +21,11 @@ const DEFAULT_PROFILE: Profile = {
       { name: "", color: "blue" },
     ],
   },
-  variations: { pachisi: noVariations("pachisi"), parchis: noVariations("parchis") },
-  saveVariations: { pachisi: false, parchis: false },
+  variations: { pachisi: noVariations("pachisi"), parchis: noVariations("parchis"), chaupar: noVariations("chaupar") },
+  saveVariations: { pachisi: false, parchis: false, chaupar: false },
 };
 /** Where each game's variations are kept. */
-const VAR_KEYS = { pachisi: "ludo.pachisiVariations", parchis: "ludo.parchisVariations" } as const;
+const VAR_KEYS: Record<VariedGame, string> = { pachisi: "ludo.pachisiVariations", parchis: "ludo.parchisVariations", chaupar: "ludo.chauparVariations" };
 
 const okCount = (n: unknown, fallback: number) => (n === 2 || n === 3 || n === 4 ? n : fallback);
 
@@ -59,11 +59,10 @@ export class LocalProfileRepository implements ProfileRepository {
     }
     // Rules are only remembered when saved as my preferences.
     const saved = storage.getJSON<Record<string, unknown>>("ludo.saveVariations") || {};
-    p.saveVariations = { pachisi: saved.pachisi === true, parchis: saved.parchis === true };
-    p.variations = {
-      pachisi: p.saveVariations.pachisi ? cleanFor("pachisi", storage.getJSON(VAR_KEYS.pachisi)) : noVariations("pachisi"),
-      parchis: p.saveVariations.parchis ? cleanFor("parchis", storage.getJSON(VAR_KEYS.parchis)) : noVariations("parchis"),
-    };
+    for (const g of VARIED_GAMES) {
+      p.saveVariations[g] = saved[g] === true;
+      p.variations[g] = p.saveVariations[g] ? cleanFor(g, storage.getJSON(VAR_KEYS[g])) : noVariations(g);
+    }
   }
 
   get(): Profile {
@@ -82,7 +81,7 @@ export class LocalProfileRepository implements ProfileRepository {
     if (patch.cpuCount) storage.set("ludo.cpuCount", String(p.cpuCount));
     if (patch.onlineCount) storage.set("ludo.onlineCount", String(p.onlineCount));
     if (patch.localSetup) storage.setJSON("ludo.localSetup", p.localSetup);
-    if (patch.variations) for (const g of ["pachisi", "parchis"] as const) storage.setJSON(VAR_KEYS[g], p.variations[g]);
+    if (patch.variations) for (const g of VARIED_GAMES) storage.setJSON(VAR_KEYS[g], p.variations[g]);
     if (patch.saveVariations) storage.setJSON("ludo.saveVariations", p.saveVariations);
     this.emitter.emit();
   }

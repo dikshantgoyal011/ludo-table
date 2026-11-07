@@ -30,8 +30,8 @@ import {
   STEP_MS,
   TYPING_TTL,
 } from "./constants";
-import { cleanVariations } from "./pachisi/variations";
-import { cleanFor, hasVariations, noVariations, type Variations } from "./variations";
+import { stackSquare } from "./chaupar/board";
+import { cleanFor, hasSides, hasVariations, noVariations, playsSolo, type Variations } from "./variations";
 import { addLog, clone, finishOf, freshState, freshTokens, leaveGame, missTurn, movable, rulesFor, seatName, seated, seatsFor, teamOf, validState } from "./rules";
 import type { ChatMessage, Color, GameId, GameState, Looks, Mode, MoveOpt, Seat } from "./types";
 
@@ -50,6 +50,9 @@ export interface TokenView {
   hidden: boolean;
   /** Pachisi: lying on its side (on its way back up, or home). */
   lying?: boolean;
+  /** Chaupar, a super-piece: how far up the screen this piece of the stack sits, and on the top one how many are in it. */
+  lift?: number;
+  badge?: number;
 }
 
 /** How long a cut token takes to fly home (matches .token.returning in globals.css). */
@@ -88,7 +91,7 @@ const stageOf = (s: GameState) => {
 const newGameId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
 /** Each game has its own public tables (room names pub<prefix><count>x<n>): players only meet players of the same game. */
-const PUBLIC_PREFIX: Record<GameId, string> = { ludo: "", pachisi: "p", parchis: "x" };
+const PUBLIC_PREFIX: Record<GameId, string> = { ludo: "", pachisi: "p", parchis: "x", chaupar: "c" };
 
 /** "Continue your pass-and-play game" is offered for this long after the last move. */
 const LOCAL_RESUME_MS = 60 * 60_000;
@@ -449,7 +452,20 @@ export class GameController {
   /** The ways my token i can move with the roll in hand (more than one: let me pick). */
   choicesFor(c: Color, i: number) {
     const s = this.state;
-    return s.phase === "playing" && s.roll && s.turn === c ? rulesFor(s).moveChoices(s, c, i, s.roll) : [];
+    const ref = this.pieceRef(c, i);
+    return s.phase === "playing" && s.roll && ref ? rulesFor(s).moveChoices(s, ref.c, ref.i, s.roll) : [];
+  }
+  /**
+   * Token i of colour c, as the piece the player whose turn it is moves: their
+   * own (c is the turn), or in games where they also move a partner's pieces
+   * (Rulebook.handles) piece k * 4 + i. Null: not theirs to move.
+   */
+  private pieceRef(c: Color, i: number): { c: Color; i: number } | null {
+    const s = this.state;
+    const t = s.turn;
+    if (!t) return null;
+    const k = (rulesFor(s).handles?.(s, t) || [t]).indexOf(c);
+    return k < 0 ? null : { c: t, i: k * 4 + i };
   }
   /** Online/friends: only act while connected, or this device's game would drift from everyone else's. */
   private connected() {
@@ -826,9 +842,9 @@ export class GameController {
       Object.assign(s, { phase: "playing", tokens: freshTokens(), winners: [], roll: null, sixes: 0, turn: seated(s)[0], last: null, startAt: null, luck: {}, gid: newGameId() });
       delete s.ready;
       delete s.agreed;
-      // Online tables always play the traditional rules (Pachisi: Solo or 2 vs 2, as the table was set up).
+      // Online tables always play the standard rules (Pachisi, Chaupar: Solo or 2 vs 2, as the table was set up).
       if (this.mode === "online") {
-        if (s.game === "pachisi") s.variations = { ...noVariations("pachisi"), alone: cleanVariations(s.variations).alone };
+        if (hasSides(s.game)) s.variations = { ...noVariations(s.game), alone: playsSolo(s.variations) };
         else delete s.variations;
       }
       this.setupGame(s);
@@ -841,6 +857,7 @@ export class GameController {
     delete s.order;
     delete s.skip;
     delete s.pachisi;
+    delete s.chaupar;
     rulesFor(s).setup?.(s);
     s.log = [{ c: "" as const, t: `Game on! ${seatName(s, s.turn as Color)} goes first.` }, ...s.log].slice(0, 20);
   }
@@ -962,9 +979,11 @@ export class GameController {
   roll = () => {
     if (this.canRollNow() && this.state.turn) this.doRoll(this.state.turn);
   };
+  /** Move token i of colour c (a partner's too, in games where that's allowed: see pieceRef). */
   move = (c: Color, i: number, opt: MoveOpt = {}) => {
     const s = this.state;
-    if (s.phase === "playing" && s.turn === c && this.mine(s, c) && this.connected()) this.doMove(c, i, opt);
+    const ref = this.pieceRef(c, i);
+    if (ref && s.phase === "playing" && this.mine(s, ref.c) && this.connected()) this.doMove(ref.c, ref.i, opt);
   };
   /** Don't move with this roll (games that allow it: Pachisi). */
   pass = () => {
@@ -1166,7 +1185,7 @@ export class GameController {
     return true;
   }
 
-  /** Vs computer. `variations`: the game's own (Pachisi, Parchís), chosen before the game. */
+  /** Vs computer. `variations`: the game's own (Pachisi, Parchís, Chaupar), chosen before the game. */
   startComputer(count: number, game: GameId = "ludo", variations?: Variations) {
     this.leaveCurrent();
     const human = this.pref;
@@ -1180,8 +1199,8 @@ export class GameController {
     const lands = BOT_COUNTRIES.filter((cc) => cc !== this.myLooks().cc).sort(() => Math.random() - 0.5);
     offsets.forEach((o) => {
       const slot = COLORS[(hi + o) % 4];
-      // Partners with four (Pachisi; Parchís in pairs): the computer opposite me is my partner.
-      const partner = count === 4 && o === 2 && (game === "pachisi" ? !variations?.alone : game === "parchis" && !!variations?.pairs);
+      // Partners with four (Pachisi, Chaupar 2 vs 2; Parchís in pairs): the computer opposite me is my partner.
+      const partner = count === 4 && o === 2 && (hasSides(game) ? !playsSolo(variations) : game === "parchis" && !!variations?.pairs);
       s.seats[slot] = o === 0 ? { id: "me", nick: this.myNick(), ...this.myLooks() } : { id: "bot" + ++bot, nick: partner ? "Partner" : `Computer ${bot}`, bot: true, cc: lands[bot - 1] };
     });
     s.phase = "playing";
@@ -1221,15 +1240,15 @@ export class GameController {
       .filter((p, k, all) => all.findIndex((o) => o.id === p.id) === k);
   }
 
-  /** Pachisi online: looking for a 2 vs 2 table (or, with two players, a side each), not a solo one. */
+  /** Pachisi / Chaupar online: looking for a 2 vs 2 table (or, with two players, a side each), not a solo one. */
   wantPairs = false;
-  /** Public matchmaking: only tables for exactly `count` players (Pachisi: and the same Solo or 2 vs 2). */
+  /** Public matchmaking: only tables for exactly `count` players (Pachisi, Chaupar: and the same Solo or 2 vs 2). */
   startOnline(count = this.wantCount, game: GameId = this.wantGame, pairs = this.wantPairs) {
     this.leaveCurrent();
     this.mode = "online";
     this.wantCount = count;
     this.wantGame = game;
-    this.wantPairs = game === "pachisi" && pairs && count !== 3;
+    this.wantPairs = hasSides(game) && pairs && count !== 3;
     this.autoJoin = true;
     this.searching = true;
     this.findGame(0);
@@ -1333,8 +1352,8 @@ export class GameController {
     // Show the last known board straight away; the table's live state replaces it once connected.
     const carry = this.services.saves.loadRoom(a.room);
     // "Find another game" after this one looks for the same game.
-    this.wantGame = carry?.game || (a.room.startsWith("pubp") ? "pachisi" : a.room.startsWith("pubx") ? "parchis" : "ludo");
-    this.wantPairs = a.room.startsWith("pubpt");
+    this.wantGame = carry?.game || (a.room.startsWith("pubp") ? "pachisi" : a.room.startsWith("pubx") ? "parchis" : a.room.startsWith("pubc") ? "chaupar" : "ludo");
+    this.wantPairs = a.room.startsWith("pubpt") || a.room.startsWith("pubct");
     // Check, once connected, that it's still this game and I'm still in it.
     this.rejoinGid = carry?.gid ?? a.gid ?? "";
     if (carry) {
@@ -1401,37 +1420,48 @@ export class GameController {
   tokenViews(): TokenView[] {
     const s = this.state;
     const rules = rulesFor(s);
-    const groups: Record<string, { c: Color; i: number; x: number; y: number; lying?: boolean }[]> = {};
+    const groups: Record<string, { c: Color; i: number; p: number; x: number; y: number; lying?: boolean }[]> = {};
     for (const c of COLORS)
       s.tokens[c].forEach((p0, i) => {
         const p = this.animPos[c + i] !== undefined ? this.animPos[c + i] : p0;
         const b = rules.point(c, i, p);
-        (groups[b.key] = groups[b.key] || []).push({ c, i, x: b.x, y: b.y, lying: b.lying });
+        (groups[b.key] = groups[b.key] || []).push({ c, i, p, x: b.x, y: b.y, lying: b.lying });
       });
     const turn = s.turn;
+    // (Piece k * 4 + i of the turn is piece i of the k-th colour it moves: a partner's, in some games.)
+    const hands = turn ? rules.handles?.(s, turn) || [turn] : [];
     const moveSet = new Set<string>(
-      s.phase === "playing" && s.roll && turn && this.mine(s, turn) ? movable(s, turn, s.roll).map((i) => turn + String(i)) : [],
+      s.phase === "playing" && s.roll && turn && this.mine(s, turn) ? movable(s, turn, s.roll).map((k) => hands[Math.floor(k / 4)] + String(k % 4)) : [],
     );
     const out: TokenView[] = [];
     for (const key in groups) {
       const list = groups[key];
       const n = list.length;
-      list.forEach((t, k) => {
-        let { x, y } = t;
-        let scale = 1;
-        if (n > 1) {
-          scale = n > 2 ? 0.62 : 0.75;
-          const off = n > 2 ? 0.22 : 0.2;
-          const ang = (k / n) * Math.PI * 2 - Math.PI / 4;
-          x += Math.cos(ang) * off;
-          y += Math.sin(ang) * off;
-        }
+      // Chaupar: a super-piece (pieces of one colour on one position) stands as a stack.
+      const placed: ((typeof list)[number] & { scale: number; lift: number; badge?: number })[] = rules.melds
+        ? stackSquare(list)
+        : list.map((t, k) => {
+            let { x, y } = t;
+            let scale = 1;
+            if (n > 1) {
+              scale = n > 2 ? 0.62 : 0.75;
+              const off = n > 2 ? 0.22 : 0.2;
+              const ang = (k / n) * Math.PI * 2 - Math.PI / 4;
+              x += Math.cos(ang) * off;
+              y += Math.sin(ang) * off;
+            }
+            return { ...t, x, y, scale, lift: 0, badge: undefined };
+          });
+      placed.forEach((t) => {
+        const { x, y, scale } = t;
         out.push({
           c: t.c,
           i: t.i,
           x,
           y,
           scale,
+          ...(t.lift ? { lift: t.lift } : {}),
+          ...(t.badge ? { badge: t.badge } : {}),
           movable: moveSet.has(t.c + t.i),
           // Quick one-square hops while walking; coming out of the yard is a longer glide.
           stepping: this.settings.steps && this.animPos[t.c + t.i] !== undefined && !this.comingOut.has(t.c + t.i),
@@ -2117,7 +2147,7 @@ export class GameController {
     if (this.searching) {
       const s = this.state;
       const cap = s.capacity || 0;
-      const sides = s.game !== "pachisi" || cleanVariations(s.variations).alone === !this.wantPairs;
+      const sides = !hasSides(s.game) || playsSolo(s.variations) === !this.wantPairs;
       const fits = s.phase === "lobby" && cap === this.wantCount && (s.game || "ludo") === this.wantGame && sides && (s.players.length < cap || this.joined(s));
       if (!fits) {
         const n = this.searchN + 1;
@@ -2244,13 +2274,13 @@ export class GameController {
           if (this.mode === "friends" && !s.owner) s = { ...s, owner: this.myId };
           if (this.mode === "online" && !s.capacity) {
             s = { ...s, capacity: this.wantCount };
-            // A Pachisi table is Solo or 2 vs 2 (and only finds players who picked the same).
-            if (this.wantGame === "pachisi") s = { ...s, variations: { ...noVariations("pachisi"), alone: !this.wantPairs } };
+            // A Pachisi / Chaupar table is Solo or 2 vs 2 (and only finds players who picked the same).
+            if (hasSides(this.wantGame)) s = { ...s, variations: { ...noVariations(this.wantGame), alone: !this.wantPairs } };
           }
           // A brand-new table plays the game it was set up for.
           if (!carry && s.phase === "lobby" && !s.players.length && !s.game && this.wantGame !== "ludo") {
             s = { ...s, game: this.wantGame };
-            // A new Pachisi / Parchís friends room starts with the variations its creator last chose.
+            // A new friends room for a game with variations starts with the ones its creator saved.
             const g = this.wantGame;
             if (this.mode === "friends" && hasVariations(g)) s = { ...s, variations: cleanFor(g, this.services.profile.get().variations[g]), variationsV: 0 };
           }

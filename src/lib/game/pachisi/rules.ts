@@ -35,7 +35,7 @@ import {
   squareOf,
 } from "./board";
 import { cowrieWeights, recordThrow, throwCowries } from "./cowries";
-import { GRACE_STEP, isGrace, shellsOf, throwsAgain } from "./throws";
+import { GRACE_STEP, homeThrow, isGrace, shellsOf, throwsAgain } from "./throws";
 import { cleanVariations, playsInPairs, type PachisiVariations } from "./variations";
 
 /** Partners sit opposite each other. */
@@ -77,8 +77,9 @@ function blockedFor(s: GameState, c: Color, sq: string) {
 /** Can a piece `d` squares from home still get there, with the throws these rules have? */
 function canStillFinish(v: PachisiVariations, d: number): boolean {
   const steps = [...shellsOf(v).move, ...(v.graceApart ? [GRACE_STEP] : [])];
-  const finishes = (x: number) => !v.graceHome || isGrace(v, x) || x === GRACE_STEP;
-  return steps.some((x) => (x === d ? finishes(x) : x < d && canStillFinish(v, d - x)));
+  const finishes = (x: number) => !v.graceHome || homeThrow(v, x) || x === GRACE_STEP;
+  // (Finishing with a big throw: any big enough one takes it home.)
+  return steps.some((x) => (x === d ? finishes(x) : (v.graceHome && homeThrow(v, x) && x > d) || (x < d && canStillFinish(v, d - x))));
 }
 
 /** May c's piece go from p to `to` with the throw u? */
@@ -86,7 +87,7 @@ function allowed(s: GameState, v: PachisiVariations, c: Color, p: number, to: nu
   // No landing on a castle the other side holds.
   const sq = squareOf(c, to);
   if (sq && CASTLES.has(sq) && enemiesAt(s, c, sq).length) return false;
-  if (to === P_FINISH && v.graceHome && !isGrace(v, u) && u !== GRACE_STEP) return false;
+  if (to === P_FINISH && v.graceHome && !homeThrow(v, u) && u !== GRACE_STEP) return false;
   // Never stop up the middle where no throw could ever take it home (it would be stuck for good).
   if (to > P_LAP_TO && to < P_FINISH && !canStillFinish(v, P_FINISH - to)) return false;
   if (v.blockades)
@@ -115,7 +116,10 @@ export function moveChoices(s: GameState, c: Color, i: number, v: number): MoveC
       if (!first && !(vars.graceApart ? u === GRACE_STEP : isGrace(vars, u))) continue;
     }
     for (const extra of passesRoundEnd(p, u) ? [false, true] : [false]) {
-      const to = pachisiAdvance(p, u, extra);
+      let to = pachisiAdvance(p, u, extra);
+      // Finishing with a big throw (a variation): it takes a piece on its way home all the way in, no exact count needed.
+      const homeward = (p > P_LAP_TO && p < P_FINISH) || passesRoundEnd(p, u);
+      if (to === null && !extra && vars.graceHome && homeThrow(vars, u) && homeward) to = P_FINISH;
       if (to === null || !allowed(s, vars, c, p, to, u)) continue;
       out.push({ to, extra, use: u });
     }

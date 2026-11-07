@@ -6,8 +6,8 @@ export type Color = "red" | "green" | "yellow" | "blue";
 /** How the game is being played. */
 export type Mode = "online" | "computer" | "local" | "friends";
 
-/** Which game: Ludo, Pachisi (cross board, cowrie shells) or Parchís (Spain's: bonus counts, barriers). */
-export type GameId = "ludo" | "pachisi" | "parchis";
+/** Which game: Ludo, Pachisi (cross board, cowrie shells), Parchís (Spain's: bonus counts, barriers) or Chaupar (the cross board, three long dice). */
+export type GameId = "ludo" | "pachisi" | "parchis" | "chaupar";
 
 export type Phase = "lobby" | "playing" | "done";
 
@@ -96,7 +96,7 @@ export interface GameState {
   luck?: Partial<Record<Color, LuckStats>>;
   /** Version, bumped on every change; newer always wins on the network. */
   v?: number;
-  /** Partners: colours that play as one side and win together (Pachisi). Absent: everyone plays solo. */
+  /** Partners: colours that play as one side and win together (Pachisi, Chaupar, Parchís in pairs). Absent: everyone plays solo. */
   teams?: Color[][];
   /** The order turns go round in (absent: COLORS order). */
   order?: Color[];
@@ -104,9 +104,9 @@ export interface GameState {
   skip?: Partial<Record<Color, number>>;
   /** Friends lobby: ids of the players who are ready to start. */
   ready?: string[];
-  /** Friends lobby (Pachisi, Parchís): ids of the players who agreed to the variations, as of `variationsV`. */
+  /** Friends lobby (games with variations): ids of the players who agreed to the variations, as of `variationsV`. */
   agreed?: string[];
-  /** Pachisi, Parchís: the variations this table plays, which are on (absent: none, the traditional rules). See variations.ts. */
+  /** Pachisi, Parchís, Chaupar: the variations this table plays, which are on (absent: none, the traditional rules). See variations.ts. */
   variations?: Record<string, boolean>;
   /** Bumped whenever the variations change, so an agreement is always to the rules on show. */
   variationsV?: number;
@@ -116,6 +116,24 @@ export interface GameState {
   parchis?: ParchisTurn;
   /** Parchís: when each piece came to where it stands (of two rivals on a salida, the one that came last is captured). */
   parchisAt?: Partial<Record<Color, number[]>>;
+  /** Chaupar: the dice of the turn being played. */
+  chaupar?: ChauparTurn;
+}
+
+/** Chaupar: the turn in progress. */
+export interface ChauparTurn {
+  /** Whose turn this is about (anything for another colour is stale). */
+  c: Color | null;
+  /** The dice still to play, each moving a piece (with "doubles move super-pieces", a pair can move one together). */
+  hand: number[];
+  /** The three dice this throw showed. */
+  dice: number[];
+  /** Moves made since the last throw (devices use it to tell their own moves apart). */
+  moved: number;
+  /** Colours that have captured a rival piece this game (kept from turn to turn). */
+  cut: Color[];
+  /** A super-piece has moved with a pair this throw (the third dice is then a single piece's). */
+  paired?: boolean;
 }
 
 /** Parchís: the turn in progress. */
@@ -209,6 +227,13 @@ export interface Rulebook {
   point(c: Color, i: number, p: number): Point;
   /** How far c has got (to rank players who haven't finished). */
   progress(s: GameState, c: Color): number;
+  /**
+   * The colours whose pieces c moves on its turn, its own first (absent: just
+   * c). Piece number k * 4 + i is piece i of the k-th (Chaupar: a partner's).
+   */
+  handles?(s: GameState, c: Color): Color[];
+  /** Pieces of one colour on one square are joined into one (Chaupar): they're drawn as a stack. */
+  melds?: boolean;
 }
 
 export interface ChatMessage {

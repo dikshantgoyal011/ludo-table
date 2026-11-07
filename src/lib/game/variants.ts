@@ -14,7 +14,7 @@ export interface Variant {
   /** Playable now */
   ready: boolean;
   /** Board drawn on the cards and in the animated preview */
-  board: "cross" | "cloth" | "grid5" | "grid7" | "plane";
+  board: "cross" | "cloth" | "velvet" | "grid5" | "grid7" | "plane";
   /** What players throw */
   thrown: "dice" | "cowries" | "sticks" | "two-dice";
   /** Card colours: background, accent */
@@ -53,10 +53,15 @@ export const VARIANTS: Variant[] = [
     id: "chaupar",
     name: "Chaupar",
     origin: "Royal courts of India",
-    hint: "Same cross board as Pachisi, thrown with long four-sided stick dice.",
-    points: ["The same cross-shaped board as Pachisi", "Long four-sided stick dice instead of cowries", "A favorite of India's royal courts"],
-    ready: false,
-    board: "cloth",
+    hint: "Pachisi's older, more skilful cousin, the game of India's royal courts: three long dice, pieces that join into super-pieces, and no safe squares.",
+    points: [
+      "Throw three long dice (1, 2, 5, 6) and use each one to move",
+      "Pieces start on the board; land on your own to join into a super-piece",
+      "No safe squares: capture rivals anywhere round the cross",
+      "Home by the exact count. Play solo, or 2 vs 2",
+    ],
+    ready: true,
+    board: "velvet",
     thrown: "sticks",
     tint: ["#3a1d5c", "#e9b65a"],
   },

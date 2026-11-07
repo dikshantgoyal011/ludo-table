@@ -1,4 +1,4 @@
-import type { BoardChoice, PachisiChoice, ParchisChoice } from "@/lib/theme/boards";
+import type { BoardChoice, ChauparChoice, PachisiChoice, ParchisChoice } from "@/lib/theme/boards";
 import type { ThemeId } from "@/lib/theme/themes";
 
 export const SOUND_KEYS = [
@@ -22,6 +22,8 @@ export interface Settings {
   pachisiBoard: PachisiChoice;
   /** Parchís board design; "auto" matches the theme */
   parchisBoard: ParchisChoice;
+  /** Chaupar board design; "auto" matches the theme */
+  chauparBoard: ChauparChoice;
   /** true: tokens hop square by square; false: glide to the square */
   steps: boolean;
   sound: { all: boolean } & Record<SoundName, boolean>;
@@ -32,6 +34,7 @@ export const DEFAULT_SETTINGS: Settings = {
   board: "auto",
   pachisiBoard: "auto",
   parchisBoard: "auto",
+  chauparBoard: "auto",
   steps: true,
   sound: { all: true, dice: true, move: true, out: true, capture: true, home: true, turn: true, chat: true, win: true },
 };

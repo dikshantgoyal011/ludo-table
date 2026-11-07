@@ -37,3 +37,11 @@ export function isGrace(v: PachisiVariations, x: number) {
 }
 /** Throws that give another throw: the graces, and with seven shells 7 and 14 too. */
 export const throwsAgain = (v: PachisiVariations, x: number) => isGrace(v, x) || (v.sevenShells && (x === 7 || x === 14));
+/**
+ * "Finish with a big throw" (a variation): the throws that can take a piece home,
+ * from anywhere on its way in (no exact count needed: the home stretch is only 8
+ * squares, and needing exactly a 6, or with seven shells a 7, left pieces waiting
+ * so long that games never ended). Six shells: 6, 10 and 25, even when 6 is a
+ * normal throw; seven shells: 7, 10, 14, 25 and 35.
+ */
+export const homeThrow = (v: PachisiVariations, x: number) => (v.sevenShells ? [7, 10, 14, 25, 35] : [6, 10, 25]).includes(x);

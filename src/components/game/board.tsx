@@ -7,12 +7,14 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useGame, useSettings } from "@/hooks/use-game";
 import type { TokenView } from "@/lib/game/controller";
 import { COLORS } from "@/lib/game/constants";
+import { C_PAIR, distOf } from "@/lib/game/chaupar/rules";
 import { GRACE_STEP } from "@/lib/game/pachisi/throws";
 import { X_BOTH } from "@/lib/game/parchis/rules";
 import type { Color, GameId, MoveChoice } from "@/lib/game/types";
 import { themeOf } from "@/lib/theme/themes";
 import { cn } from "@/lib/utils";
 import { svgId, type BoardLook } from "./board-look";
+import { StackLift, useChauparLook } from "./chaupar-board";
 import { useLudoLook } from "./ludo-board";
 import { usePachisiLook } from "./pachisi-board";
 import { useParchisLook } from "./parchis-board";
@@ -55,6 +57,7 @@ export function Board() {
     ludo: useLudoLook(colorKey, uid, game.rot.target),
     pachisi: usePachisiLook(hex, light, uid),
     parchis: useParchisLook(hex, light, uid),
+    chaupar: useChauparLook(hex, light, uid),
   };
   const look = looks[game.state.game || "ludo"];
   const size = look.size;
@@ -104,7 +107,10 @@ export function Board() {
                 className={"token" + (t.movable ? " movable" : "") + (t.stepping ? " stepping" : "") + (t.returning ? " returning" : "")}
                 style={{ transform: `translate(${t.x}px,${t.y}px) scale(${t.scale})`, display: t.hidden ? "none" : undefined }}
               >
-                {look.token(hex(t.c), t.lying)}
+                {/* (Chaupar: a super-piece's pawns stand in a stack.) */}
+                <StackLift lift={t.lift} badge={t.badge}>
+                  {look.token(hex(t.c), t.lying)}
+                </StackLift>
               </g>
             ))}
           </g>
@@ -167,7 +173,14 @@ function choiceLabel(ch: MoveChoice, all: MoveChoice[], game: GameId) {
   // This throw can take it home or round again.
   const twoWays = all.some((o) => o.use === ch.use && !!o.extra !== !!ch.extra);
   const way = ch.extra ? "Round again" : "Head home";
-  const by = game === "pachisi" && ch.use === GRACE_STEP ? "Grace · 1 square" : game === "parchis" && ch.use === X_BOTH ? "Both dice · come out" : `Move ${ch.use}`;
+  const by =
+    game === "pachisi" && ch.use === GRACE_STEP
+      ? "Grace · 1 square"
+      : game === "parchis" && ch.use === X_BOTH
+        ? "Both dice · come out"
+        : game === "chaupar" && (ch.use || 0) > C_PAIR
+          ? `Both ${(ch.use as number) - C_PAIR}s · move ${distOf(ch.use as number)}`
+          : `Move ${ch.use}`;
   if (!throws) return twoWays || ch.extra ? way : by;
   return twoWays ? `${by} · ${way.toLowerCase()}` : by;
 }

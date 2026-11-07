@@ -24,6 +24,16 @@ export function MiniBoard({ kind, accent }: { kind: Variant["board"]; accent: st
         <rect x="11" y="11" width="8" height="8" fill={accent} opacity=".9" />
       </svg>
     );
+  // Chaupar: the cross in velvet and gold, with no castles (Chaupar has none).
+  if (kind === "velvet")
+    return (
+      <svg viewBox="0 0 30 30" className="h-full w-full" aria-hidden="true">
+        <path d="M11 1h8v10h10v8H19v10h-8V19H1v-8h10z" fill="#5c1a4a" stroke={accent} strokeWidth="1.2" strokeLinejoin="round" />
+        <path d="M13.7 1v10M16.3 1v10M13.7 19v10M16.3 19v10M1 13.7h10M1 16.3h10M19 13.7h10M19 16.3h10" stroke={accent} strokeWidth=".6" opacity=".8" />
+        <rect x="11" y="11" width="8" height="8" fill={accent} opacity=".9" />
+        <circle cx="15" cy="15" r="2.2" fill="#5c1a4a" />
+      </svg>
+    );
   if (kind === "plane")
     return (
       <svg viewBox="0 0 30 30" className="h-full w-full" aria-hidden="true">

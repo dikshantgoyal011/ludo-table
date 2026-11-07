@@ -13,8 +13,8 @@ import { frameStyle } from "./ludo-board";
 // The Pachisi board. A real one is a cloth cut into a cross: four arms of 3 x 8
 // squares round the Charkoni (centre). Every design here is that cross on its
 // own, except Modern, a square board with the corners between the arms filled
-// in. Each design also has night colours (the Dark theme). Only Pachisi uses
-// this file.
+// in. Each design also has night colours (the Dark theme). Chaupar, played on
+// the same cross, borrows its shapes and pawns (chaupar-board.tsx).
 
 /** The Pachisi board design in use: the one picked in Settings, or the one matching the theme. */
 export function usePachisiStyle(): [PachisiStyle, Theme] {
@@ -75,21 +75,21 @@ export function usePachisiLook(hex: (c: Color) => string, light: (c: Color) => s
 }
 
 // ---------------------------------------------------------------- the cross, in cells
-type Cell = [number, number];
-const OUTLINE = "M8 0h3v8h8v3h-8v8H8v-8H0V8h8z";
+export type Cell = [number, number];
+export const OUTLINE = "M8 0h3v8h8v3h-8v8H8v-8H0V8h8z";
 /** Every square of the cross (4 arms of 3 x 8). */
-const CELLS: Cell[] = [];
+export const CELLS: Cell[] = [];
 for (let r = 0; r < 19; r++) for (let c = 0; c < 19; c++) if ((r >= 8 && r <= 10) !== (c >= 8 && c <= 10)) CELLS.push([r, c]);
 /** Each colour's own column: down it at the start, back up it to come home (its arm's end included). */
-const MIDDLE = new Map<string, Color>(COLORS.flatMap((c) => ROUTE[c].slice(0, P_LAP_FROM + 1).map((cell) => [cell.join(","), c] as [string, Color])));
+export const MIDDLE = new Map<string, Color>(COLORS.flatMap((c) => ROUTE[c].slice(0, P_LAP_FROM + 1).map((cell) => [cell.join(","), c] as [string, Color])));
 /** The end of each arm (a castle, in the colour's column). */
-const ENDS = new Set(COLORS.map((c) => ROUTE[c][P_LAP_FROM].join(",")));
+export const ENDS = new Set(COLORS.map((c) => ROUTE[c][P_LAP_FROM].join(",")));
 /** The Charkoni's four triangles, one per colour: its pieces wait in it, and come home to it. */
-const TRIANGLE: Record<Color, string> = { red: "8,8 8,11 9.5,9.5", green: "8,8 11,8 9.5,9.5", yellow: "11,8 11,11 9.5,9.5", blue: "8,11 11,11 9.5,9.5" };
+export const TRIANGLE: Record<Color, string> = { red: "8,8 8,11 9.5,9.5", green: "8,8 11,8 9.5,9.5", yellow: "11,8 11,11 9.5,9.5", blue: "8,11 11,11 9.5,9.5" };
 const isCastle = (k: string) => CASTLES.has(k);
 
 /** An eight-pointed star round (cx, cy). */
-function star8(cx: number, cy: number, r: number, inner = 0.55) {
+export function star8(cx: number, cy: number, r: number, inner = 0.55) {
   return Array.from({ length: 16 }, (_, k) => {
     const a = -Math.PI / 2 + (k * Math.PI) / 8;
     const rr = k % 2 ? r * inner : r;
@@ -100,7 +100,7 @@ function star8(cx: number, cy: number, r: number, inner = 0.55) {
 const castleX = (r: number, c: number, s = 0.26) => `M${c + 0.5 - s} ${r + 0.5 - s}L${c + 0.5 + s} ${r + 0.5 + s}M${c + 0.5 + s} ${r + 0.5 - s}L${c + 0.5 - s} ${r + 0.5 + s}`;
 
 /** A soft shadow under the cross, so it lies on the page like a cloth or a board. */
-function CrossShadow({ id, night }: { id: string; night: boolean }) {
+export function CrossShadow({ id, night }: { id: string; night: boolean }) {
   return (
     <filter id={id} x="-10%" y="-10%" width="120%" height="120%">
       <feDropShadow dx="0" dy="0.2" stdDeviation="0.25" floodColor="#000" floodOpacity={night ? 0.7 : 0.45} />

@@ -4,9 +4,13 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { BoardPreview, TokenArt, useBoardStyle } from "@/components/game/ludo-board";
 import { PachisiPawn, PachisiSurface, pachisiLook, usePachisiStyle } from "@/components/game/pachisi-board";
 import { ParchisBoardPreview, ParchisToken } from "@/components/game/parchis-board";
+import { ChauparBoardPreview, ChauparPawn } from "@/components/game/chaupar-board";
 import { CowrieView } from "@/components/game/cowries";
 import { DiceView, newSpin, type DiceRoll } from "@/components/game/dice-3d";
+import { newPasaSpin, PasaView } from "@/components/game/pasa";
 
+import { stackSquare } from "@/lib/game/chaupar/board";
+import { throwOf } from "@/lib/game/chaupar/dice";
 import { COLORS, DICE_ROLL_MS, NAMES, SLOTS_FOR } from "@/lib/game/constants";
 import { rollDie } from "@/lib/game/ludo/dice";
 import { P_SIZE } from "@/lib/game/pachisi/board";
@@ -143,11 +147,12 @@ type Shown = Record<Color, number[]>;
 
 /**
  * The computer's moves with the roll in hand (or none: games that allow it let
- * the roll go). Parchís can add moves to the same roll (count 20 / count 10): those are made too.
+ * the roll go). Parchís can add moves to the same roll (count 20 / count 10), and
+ * Chaupar plays three dice: those are made too.
  */
 function botMove(s: GameState, c: Color) {
   const r = rulesFor(s);
-  const many = s.game === "parchis";
+  const many = s.game === "parchis" || s.game === "chaupar";
   for (let k = 0; k < (many ? 6 : 1) && s.roll && s.turn === c && s.phase === "playing"; k++) {
     const { i, opt } = r.chooseMove(s, c, s.roll);
     if (i >= 0) r.applyMove(s, c, i, s.roll, opt);
@@ -161,10 +166,10 @@ function freshDemo(players: number, game: GameId = "ludo"): GameState {
   s.phase = "playing";
   for (const c of SLOTS_FOR[players]) s.seats[c] = { id: c, nick: NAMES[c], bot: true };
   s.turn = SLOTS_FOR[players][0];
-  // Play a little first, so tokens are already out on the board.
+  // Play a little first, so tokens are already out on the board. (Chaupar's pieces start out, and its three dice go further.)
   const rules = rulesFor(game);
   rules.setup?.(s);
-  for (let k = 0; k < 70 && s.phase === "playing"; k++) {
+  for (let k = 0; k < (game === "chaupar" ? 12 : 70) && s.phase === "playing"; k++) {
     const c = s.turn!;
     rules.applyRoll(s, c, rules.roll(s, c));
     botMove(s, c);
@@ -172,10 +177,14 @@ function freshDemo(players: number, game: GameId = "ludo"): GameState {
   return s.phase === "playing" ? s : freshDemo(players, game);
 }
 
-/** A real game played by the computer: Ludo on the theme's board, Pachisi on its cloth, or Parchís. */
+/** A real game played by the computer: Ludo on the theme's board, Pachisi on its cloth, Parchís, or Chaupar. */
 function LudoDemo({ twoDice = false, game: kind = "ludo" }: { twoDice?: boolean; game?: GameId }) {
   const pachisi = kind === "pachisi";
   const parchis = kind === "parchis";
+  const chaupar = kind === "chaupar";
+  // (Thrown, not rolled: cowries and long dice.)
+  const throws = pachisi || chaupar;
+  const pasaSpins = useRef([newPasaSpin(), newPasaSpin(), newPasaSpin()]).current;
   const rules = rulesFor(kind);
   const [style, th] = useBoardStyle();
   const game = useRef<GameState | null>(null);
@@ -213,11 +222,13 @@ function LudoDemo({ twoDice = false, game: kind = "ludo" }: { twoDice?: boolean;
     return () => ro.disconnect();
   }, [box]);
   const dieCount = twoDice ? 2 : 1;
-  const narrow = width < (pachisi ? 250 : twoDice ? 230 : 170);
+  const narrow = width < (pachisi || chaupar ? 250 : twoDice ? 230 : 170);
   const room = narrow ? width - 28 : width - labelW - 12;
-  // A tray of six shells is about 6.1 shells wide; a dice is its size wide (plus the gap between two).
+  // A tray of six shells is about 6.1 shells wide; a dice is its size wide (plus the gap between two);
+  // the tray of three long dice about 3.8 sticks.
   const shellPx = Math.max(13, Math.min(22, Math.floor(room / 6.1)));
   const diePx = Math.max(26, Math.min(40, Math.floor((room - (dieCount - 1) * 12) / dieCount)));
+  const stickPx = Math.max(24, Math.min(46, Math.floor(room / 3.8)));
   const wait = useTimers(seen);
 
   useEffect(() => {
@@ -238,23 +249,31 @@ function LudoDemo({ twoDice = false, game: kind = "ludo" }: { twoDice?: boolean;
       const before = clone(s.tokens);
       rules.applyRoll(s, c, v);
       botMove(s, c);
-      const moved = before[c].some((a, i) => s.tokens[c][i] !== a && s.tokens[c][i] !== -1);
-      setDice((d) => ({ ...d, note: moved ? "" : "no move" }));
-      for (let i = 0; i < 4 && alive; i++) {
-        const a = before[c][i];
-        const b = s.tokens[c][i];
-        if (b === a || b === -1) continue;
+      // The pieces that moved; pieces going the same way together walk together (a Chaupar super-piece).
+      const moves: { col: Color; idx: number[]; a: number; b: number }[] = [];
+      for (const col of COLORS)
+        for (let i = 0; i < 4; i++) {
+          const a = before[col][i];
+          const b = s.tokens[col][i];
+          if (b === a || b === -1) continue;
+          const m = moves.find((x) => x.col === col && x.a === a && x.b === b);
+          if (m) m.idx.push(i);
+          else moves.push({ col, idx: [i], a, b });
+        }
+      setDice((d) => ({ ...d, note: moves.length ? "" : "no move" }));
+      for (const { col, idx, a, b } of moves) {
+        if (!alive) break;
         // Out of the yard onto the first square: one glide. (A Pachisi piece coming out further walks from there.)
         if (a === -1 && b === 0) {
-          pos[c][i] = 0;
+          idx.forEach((i) => (pos[col][i] = 0));
           setShown(clone(pos));
           await wait(420);
           continue;
         }
-        setWalking(c + i);
+        setWalking(idx.map((i) => col + i).join(","));
         for (const p of rules.steps(a, b)) {
           if (!alive) break;
-          pos[c][i] = p;
+          idx.forEach((i) => (pos[col][i] = p));
           setShown(clone(pos));
           await wait(170);
         }
@@ -313,35 +332,52 @@ function LudoDemo({ twoDice = false, game: kind = "ludo" }: { twoDice?: boolean;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // Tokens sharing a square sit side by side (same idea as the real board).
-  const tokens: { key: string; c: Color; x: number; y: number; scale: number; home: boolean; lying?: boolean }[] = [];
+  // Tokens sharing a square sit side by side (same idea as the real board; a Chaupar super-piece stands as a stack).
+  const tokens: { key: string; c: Color; x: number; y: number; scale: number; home: boolean; lying?: boolean; lift?: number; badge?: number }[] = [];
   if (shown) {
-    const groups: Record<string, { c: Color; i: number; x: number; y: number; lying?: boolean }[]> = {};
+    const groups: Record<string, { c: Color; i: number; p: number; x: number; y: number; lying?: boolean }[]> = {};
     for (const c of COLORS)
       shown[c].forEach((p, i) => {
         if (p === rules.finish && !game.current?.seats[c]) return;
+        // (Chaupar: only seated colours have pieces.)
+        if (chaupar && !game.current?.seats[c]) return;
         const b = rules.point(c, i, p);
-        (groups[b.key] ||= []).push({ c, i, x: b.x, y: b.y, lying: b.lying });
+        (groups[b.key] ||= []).push({ c, i, p, x: b.x, y: b.y, lying: b.lying });
       });
-    Object.values(groups).forEach((list) =>
+    Object.values(groups).forEach((list) => {
+      if (chaupar) {
+        for (const t of stackSquare(list)) tokens.push({ key: t.c + t.i, c: t.c, x: t.x, y: t.y, scale: t.scale, home: t.p === -1, lying: t.lying, lift: t.lift, badge: t.badge });
+        return;
+      }
       list.forEach((t, k) => {
         const n = list.length;
         const ang = (k / n) * Math.PI * 2 - Math.PI / 4;
         tokens.push({ lying: t.lying, key: t.c + t.i, home: shown[t.c][t.i] === -1, c: t.c, x: t.x + (n > 1 ? Math.cos(ang) * 0.2 : 0), y: t.y + (n > 1 ? Math.sin(ang) * 0.2 : 0), scale: n > 2 ? 0.62 : n > 1 ? 0.75 : 1 });
-      }),
-    );
+      });
+    });
     // Fixed order, so moving tokens keep their slide (see tokenViews in the controller).
     tokens.sort((a, b) => (a.key < b.key ? -1 : 1));
   }
 
+  const walkers = walking ? walking.split(",") : [];
   const pieces = tokens.map((t) => (
-    <g key={t.key} className={cn("token", walking === t.key && "stepping", t.home && "returning")} style={{ transform: `translate(${t.x}px,${t.y}px) scale(${t.scale})` }}>
-      {pachisi ? <PachisiPawn fill={th.pieces[t.c]} lying={t.lying} /> : parchis ? <ParchisToken fill={th.pieces[t.c]} /> : <TokenArt style={style} fill={th.pieces[t.c]} />}
+    <g key={t.key} className={cn("token", walkers.includes(t.key) && "stepping", t.home && "returning")} style={{ transform: `translate(${t.x}px,${t.y}px) scale(${t.scale})` }}>
+      {chaupar ? (
+        <ChauparPawn fill={th.pieces[t.c]} lying={t.lying} lift={t.lift} badge={t.badge} />
+      ) : pachisi ? (
+        <PachisiPawn fill={th.pieces[t.c]} lying={t.lying} />
+      ) : parchis ? (
+        <ParchisToken fill={th.pieces[t.c]} />
+      ) : (
+        <TokenArt style={style} fill={th.pieces[t.c]} />
+      )}
     </g>
   ));
   return (
     <div ref={box} className="flex flex-col items-center gap-2 md:gap-3">
-      {pachisi ? (
+      {chaupar ? (
+        <ChauparBoardPreview>{pieces}</ChauparBoardPreview>
+      ) : pachisi ? (
         <PachisiBoardPreview>{pieces}</PachisiBoardPreview>
       ) : parchis ? (
         <ParchisBoardPreview>{pieces}</ParchisBoardPreview>
@@ -355,10 +391,19 @@ function LudoDemo({ twoDice = false, game: kind = "ludo" }: { twoDice?: boolean;
         <span ref={label} className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
           <span className="h-3 w-3 rounded-full ring-2 ring-white/30" style={{ background: th.pieces[dice.c] }} />
           <span className={cn(narrow && "sr-only")}>
-            {NAMES[dice.c]} {dice.rolling ? (pachisi ? "throws…" : "rolls…") : `${pachisi ? "threw" : "rolled"}${dice.note ? " · " + dice.note : ""}`}
+            {NAMES[dice.c]} {dice.rolling ? (throws ? "throws…" : "rolls…") : `${throws ? "threw" : "rolled"}${dice.note ? " · " + dice.note : ""}`}
           </span>
         </span>
-        {pachisi ? (
+        {chaupar ? (
+          <PasaView
+            dice={dice.faceA >= 111 ? throwOf(dice.faceA) : [1, 2, 6]}
+            roll={dice.a}
+            rolling={dice.rolling}
+            spins={pasaSpins}
+            label="Long dice"
+            style={{ ["--pw" as string]: `${stickPx}px`, ["--ph" as string]: `${Math.round(stickPx * 0.29)}px` }}
+          />
+        ) : pachisi ? (
           <CowrieView value={dice.faceA} roll={dice.a} rolling={dice.rolling} shell={shellPx} label="Cowrie shells" />
         ) : (
           <DiceView spin={spinA} face={dice.faceA} roll={dice.a} rolling={dice.rolling} size={diePx} label="Dice" />
@@ -542,8 +587,9 @@ export function GamePreview({ variant }: { variant: Variant }) {
   if (variant.id === "ludo") return <LudoDemo />;
   if (variant.id === "pachisi") return <LudoDemo game="pachisi" />;
   if (variant.id === "parchis") return <LudoDemo game="parchis" />;
+  if (variant.id === "chaupar") return <LudoDemo game="chaupar" />;
   const board =
-    variant.board === "cloth" ? <ClothBoard v={variant} /> : variant.board === "plane" ? <PlaneBoard v={variant} /> : <FloorGrid v={variant} />;
+    variant.board === "cloth" || variant.board === "velvet" ? <ClothBoard v={variant} /> : variant.board === "plane" ? <PlaneBoard v={variant} /> : <FloorGrid v={variant} />;
   return (
     <div className="flex flex-col items-center gap-3">
       <div
@@ -551,10 +597,10 @@ export function GamePreview({ variant }: { variant: Variant }) {
         style={{
           // Pachisi / Chaupar: the cloth lies on a dark carved table; the rest sit in a gold frame.
           background:
-            variant.board === "cloth"
+            variant.board === "cloth" || variant.board === "velvet"
               ? "radial-gradient(circle at 50% 45%, #5a3520, #2a160a 75%), #2a160a"
               : `linear-gradient(145deg, ${variant.tint[1]}, #8a5d14)`,
-          boxShadow: variant.board === "cloth" ? "inset 0 0 0 2px #c8962e, 0 10px 24px rgba(0,0,0,.4)" : undefined,
+          boxShadow: variant.board === "cloth" || variant.board === "velvet" ? "inset 0 0 0 2px #c8962e, 0 10px 24px rgba(0,0,0,.4)" : undefined,
         }}
       >
         {board}

@@ -1,6 +1,6 @@
 # Ludo Darbar
 
-*Every Ludo ever played.* Ludo in the browser, made for phones, with Pachisi, Chowka Bara, Challas Aath and other variations to follow:
+*Every Ludo ever played.* Ludo in the browser, made for phones, with Pachisi, Parchís and Chaupar (each with its own variations and How to play), and Chowka Bara, Challas Aath and others to follow:
 
 - **Play online** – pick a 2, 3 or 4-player game and get matched only with people who picked the same size.
 - **Play with computer** – you against 1 to 3 computer players.
@@ -40,7 +40,8 @@ src/
   hooks/use-game.ts           React bindings: useGame(), useProfile(), useSettings()
   lib/
     game/                     Framework-free game code
-      rules.ts                Pure Ludo rules (no browser APIs: can run on a server)
+      rules.ts                Which game's rules a table plays (no browser APIs: can run on a server)
+      ludo/, pachisi/, parchis/, chaupar/   Each game's own rules, board and variations
       controller.ts           Runs a table: dice timing, bots, sync, chat, animations
       constants.ts, geometry.ts, dice.ts, types.ts
     net/

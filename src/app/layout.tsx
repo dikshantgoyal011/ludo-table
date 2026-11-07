@@ -10,7 +10,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Ludo Darbar · Every Ludo ever played",
-  description: "Every Ludo ever played. Ludo and Pachisi online, with friends, against the computer or pass-and-play, with Chowka Bara and more on the way.",
+  description: "Every Ludo ever played. Ludo, Pachisi, Parchís and Chaupar online, with friends, against the computer or pass-and-play, with Chowka Bara and more on the way.",
   applicationName: "Ludo Darbar",
   appleWebApp: { capable: true, title: "Ludo Darbar", statusBarStyle: "black-translucent" },
 };

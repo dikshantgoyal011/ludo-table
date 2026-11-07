@@ -24,9 +24,8 @@ import {
   roomPath,
 } from "@/lib/game/constants";
 import type { Color, GameId, Mode } from "@/lib/game/types";
-import { cleanVariations } from "@/lib/game/pachisi/variations";
 import { isGameId, rulesFor } from "@/lib/game/rules";
-import { countOn, hasVariations, plainRules, type Variations } from "@/lib/game/variations";
+import { countOn, hasSides, hasVariations, plainRules, playsSolo, type Variations } from "@/lib/game/variations";
 import { variantById } from "@/lib/game/variants";
 import { clearRulesChoice, SidesPicker, useRulesChoice, VariationsDialog, variationsSummary } from "@/components/game/variations";
 import type { Profile } from "@/lib/services/types";
@@ -55,7 +54,7 @@ function NameInput({
 }
 
 /**
- * Make sure no two pass-and-play players share a colour. `pairs` (Pachisi as
+ * Make sure no two pass-and-play players share a colour. `pairs` (Pachisi, Chaupar as
  * partners) with two players: each also plays the colour opposite theirs, so
  * that one is taken too.
  */
@@ -87,22 +86,23 @@ export function SetupScreen({ mode }: { mode: Mode }) {
   const game: GameId = picked ?? (isGameId(asked) ? asked : "ludo");
   const v = variantById(game);
   const gameQuery = game === "ludo" ? "" : `?game=${game}`;
-  const pachisi = game === "pachisi";
+  // Pachisi, Chaupar: Solo or 2 vs 2 is picked on its own.
+  const sided = hasSides(game);
   // Player counts this game is played with.
   const counts = rulesFor(game).counts;
   const fit = (n: number) => (counts.includes(n) ? n : counts.includes(4) && n > 2 ? 4 : counts[0]);
   const [varsOpen, setVarsOpen] = useState(false);
-  // (Pachisi / Parchís: the rules for this game: my saved preferences, or the standard ones.)
+  // (Games with variations: the rules for this game: my saved preferences, or the standard ones.)
   const withVars = hasVariations(game);
   const rules = useRulesChoice(game);
   const vars: Variations = rules.value;
   const saveVars = rules.set;
   const n = countOn(game, vars);
-  // Pachisi: Solo or 2 vs 2.
+  // Pachisi, Chaupar: Solo or 2 vs 2.
   const sidesField = (players: number) =>
-    pachisi && (
+    sided && (
       <Field label="How you play">
-        <SidesPicker value={cleanVariations(vars)} players={players} onChange={saveVars} />
+        <SidesPicker value={vars} players={players} onChange={saveVars} />
       </Field>
     );
   const rulesField = withVars && (mode === "computer" || mode === "local") && (
@@ -219,7 +219,7 @@ export function SetupScreen({ mode }: { mode: Mode }) {
               />
               <p className="mt-1.5 text-xs text-muted-foreground">
                 You&apos;ll only be matched with people who also picked a{" "}
-                {fit(profile.onlineCount)}-player game{pachisi && fit(profile.onlineCount) !== 3 ? `, ${cleanVariations(vars).alone ? "Solo" : fit(profile.onlineCount) === 2 ? "two colors each" : "2 vs 2"}` : ""}.
+                {fit(profile.onlineCount)}-player game{sided && fit(profile.onlineCount) !== 3 ? `, ${playsSolo(vars) ? "Solo" : fit(profile.onlineCount) === 2 ? "two colors each" : "2 vs 2"}` : ""}.
               </p>
             </Field>
             {sidesField(fit(profile.onlineCount))}
@@ -227,7 +227,7 @@ export function SetupScreen({ mode }: { mode: Mode }) {
               size="lg"
               className="w-full"
               onClick={() => {
-                getController().startOnline(fit(profile.onlineCount), game, !cleanVariations(vars).alone);
+                getController().startOnline(fit(profile.onlineCount), game, !playsSolo(vars));
                 clearRulesChoice(game);
                 go("/game");
               }}
@@ -375,15 +375,15 @@ function LocalSetup({
   counts: number[];
   rules: React.ReactNode;
   sides: (players: number) => React.ReactNode;
-  /** The rules picked for this game (Pachisi, Parchís). */
+  /** The rules picked for this game (games with variations). */
   vars: Variations;
   onStart: () => void;
 }) {
   const withVars = hasVariations(game);
   const saved = profile.localSetup;
   const count = counts.includes(saved.count) ? saved.count : counts[counts.length - 1];
-  // Pachisi, two colors each: two players each play a side (the colour picked and the one opposite).
-  const pairs = game === "pachisi" && !cleanVariations(vars).alone;
+  // Pachisi, Chaupar, two colors each: two players each play a side (the colour picked and the one opposite).
+  const pairs = hasSides(game) && !playsSolo(vars);
   const setup = fixLocalColors({ ...saved, count }, pairs);
   const update = (next: Profile["localSetup"]) => save({ localSetup: next });
   return (
@@ -403,7 +403,7 @@ function LocalSetup({
             .slice(0, setup.count)
             .filter((_, j) => j !== k)
             .map((r) => r.color)
-            // Pachisi as partners, two players: the other player's partner colour is theirs too.
+            // Partners (Pachisi, Chaupar), two players: the other player's partner colour is theirs too.
             .flatMap((c) => (pairs && setup.count === 2 ? [c, COLORS[(COLORS.indexOf(c) + 2) % 4]] : [c]));
           const setRow = (patch: Partial<typeof row>) =>
             update({

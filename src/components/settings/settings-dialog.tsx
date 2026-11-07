@@ -10,6 +10,7 @@ import { Avatar } from "@/components/game/avatar";
 import { BoardPreview } from "@/components/game/ludo-board";
 import { PachisiBoardPreview } from "@/components/menu/game-preview";
 import { ParchisBoardPreview } from "@/components/game/parchis-board";
+import { ChauparBoardPreview } from "@/components/game/chaupar-board";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -21,7 +22,7 @@ import { countriesByName, countryName, detectCountry, flagUrl } from "@/lib/coun
 import { COLORS, NICK_MAX } from "@/lib/game/constants";
 import type { GameId } from "@/lib/game/types";
 import type { Settings } from "@/lib/settings/settings";
-import { BOARD_STYLE_IDS, BOARD_STYLES, PACHISI_STYLE_IDS, PACHISI_STYLES, PARCHIS_STYLE_IDS, PARCHIS_STYLES } from "@/lib/theme/boards";
+import { BOARD_STYLE_IDS, BOARD_STYLES, CHAUPAR_STYLE_IDS, CHAUPAR_STYLES, PACHISI_STYLE_IDS, PACHISI_STYLES, PARCHIS_STYLE_IDS, PARCHIS_STYLES } from "@/lib/theme/boards";
 import { THEME_IDS, THEMES, themeOf, type Theme } from "@/lib/theme/themes";
 import { uiStore, useUi } from "@/lib/ui-store";
 import { cn } from "@/lib/utils";
@@ -76,6 +77,17 @@ const BOARDS: BoardChoices[] = [
     name: (id) => PARCHIS_STYLES[id as keyof typeof PARCHIS_STYLES]?.name || id,
     hint: (id) => PARCHIS_STYLES[id as keyof typeof PARCHIS_STYLES]?.hint || "",
     preview: (id) => <ParchisBoardPreview style={id as keyof typeof PARCHIS_STYLES} className="rounded-lg p-1" />,
+  },
+  {
+    game: "chaupar",
+    title: "Chaupar board",
+    ids: ["auto", ...CHAUPAR_STYLE_IDS],
+    current: (s) => s.chauparBoard,
+    pick: (s, id) => ({ ...s, chauparBoard: id as Settings["chauparBoard"] }),
+    auto: (th) => th.chauparStyle,
+    name: (id) => CHAUPAR_STYLES[id as keyof typeof CHAUPAR_STYLES]?.name || id,
+    hint: (id) => CHAUPAR_STYLES[id as keyof typeof CHAUPAR_STYLES]?.hint || "",
+    preview: (id) => <ChauparBoardPreview style={id as keyof typeof CHAUPAR_STYLES} className="rounded-lg p-1" />,
   },
 ];
 

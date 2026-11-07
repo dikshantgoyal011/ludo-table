@@ -612,6 +612,120 @@ html.in-game .board-fit > .board-size {
   }
 }
 
+/* Chaupar's three long dice (pasa.tsx), in the same tray as the cowries: real 3D sticks
+   (--pw long, --ph thick) that roll over their long side when thrown. */
+.pasa {
+  --pw: 34px;
+  --ph: 10px;
+  gap: calc(var(--ph) * 0.6);
+  padding: calc(var(--ph) * 0.5) calc(var(--ph) * 0.75);
+}
+@media (min-width: 400px) {
+  .pasa {
+    --pw: 40px;
+    --ph: 11px;
+  }
+}
+@media (min-width: 640px) {
+  .pasa {
+    --pw: 46px;
+    --ph: 13px;
+  }
+}
+.pasa-die {
+  position: relative;
+  display: block;
+  width: var(--pw);
+  height: var(--ph);
+  perspective: calc(var(--pw) * 3);
+  transform: rotate(var(--tilt, 0deg));
+  transition: opacity 0.25s ease, filter 0.25s ease;
+}
+/* A dice already played this throw. */
+.pasa-die.pasa-used {
+  opacity: 0.4;
+  filter: grayscale(0.7);
+}
+.pasa-hop,
+.pasa-prism {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+}
+.pasa-face {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: calc(var(--ph) * 0.3);
+  background: linear-gradient(180deg, #fdf3dc, #e6ca94 70%, #c9a565);
+  box-shadow:
+    inset 0 0 0 0.6px rgba(90, 52, 24, 0.55),
+    0 2px 3px rgba(0, 0, 0, 0.35);
+  backface-visibility: hidden;
+}
+.pasa-face svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.pasa-shade {
+  position: absolute;
+  inset: 0;
+  background: #2a1606;
+  opacity: 0;
+  pointer-events: none;
+}
+/* Thrown: each stick flies up and falls back with a bounce while it rolls over. */
+.pasa-roll .pasa-hop {
+  animation: pasa-hop var(--toss-ms, 820ms) both;
+  animation-delay: calc(var(--k, 0) * 40ms);
+}
+@keyframes pasa-hop {
+  0% {
+    transform: translateY(0);
+    animation-timing-function: ease-in;
+  }
+  12% {
+    transform: translateY(15%) scaleX(0.96);
+    animation-timing-function: cubic-bezier(0.2, 0.7, 0.4, 1);
+  }
+  42% {
+    transform: translateY(-150%) scale(1.08);
+    animation-timing-function: cubic-bezier(0.55, 0, 0.85, 0.4);
+  }
+  70% {
+    transform: translateY(0);
+    animation-timing-function: ease-out;
+  }
+  81% {
+    transform: translateY(-30%);
+    animation-timing-function: ease-in;
+  }
+  91% {
+    transform: translateY(0);
+  }
+  96% {
+    transform: translateY(-6%);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+/* Waiting to be thrown: the sticks bob in a wave, the tray glows (as with the cowries). */
+.cowries-ready .pasa-die {
+  animation: pasa-bob 1.3s ease-in-out infinite;
+  animation-delay: calc(var(--k, 0) * 110ms);
+}
+@keyframes pasa-bob {
+  0%,
+  100% {
+    transform: translateY(0) rotate(var(--tilt, 0deg));
+  }
+  50% {
+    transform: translateY(-4px) rotate(var(--tilt, 0deg));
+  }
+}
+
 /* Country name popping up over a flag (name tags). */
 .badge-pop {
   animation: badge-pop 0.18s ease-out;
@@ -989,6 +1103,8 @@ html.in-game .board-fit > .board-size {
     animation-duration: 1ms;
   }
   .cowries-ready .cowrie,
+  .cowries-ready .pasa-die,
+  .pasa-roll .pasa-hop,
   .tag-spotlight,
   .typing-dots span,
   .demo-tumble,

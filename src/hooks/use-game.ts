@@ -30,8 +30,8 @@ const SERVER_PROFILE: Profile = {
   onlineCount: 2,
   cpuCount: 2,
   localSetup: { count: 2, rows: [] },
-  variations: { pachisi: noVariations("pachisi"), parchis: noVariations("parchis") },
-  saveVariations: { pachisi: false, parchis: false },
+  variations: { pachisi: noVariations("pachisi"), parchis: noVariations("parchis"), chaupar: noVariations("chaupar") },
+  saveVariations: { pachisi: false, parchis: false, chaupar: false },
 };
 
 export function useProfile(): [Profile, (patch: Partial<Profile>) => void] {
