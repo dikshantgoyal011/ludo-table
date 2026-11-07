@@ -234,6 +234,8 @@ export interface Rulebook {
   handles?(s: GameState, c: Color): Color[];
   /** Pieces of one colour on one square are joined into one (Chaupar): they're drawn as a stack. */
   melds?: boolean;
+  /** Is position p of c a safe square (Ludo's stars, Pachisi's castles, Parchís's seguros)? Absent: the game has none. */
+  safe?(c: Color, p: number): boolean;
 }
 
 export interface ChatMessage {

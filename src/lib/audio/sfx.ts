@@ -18,6 +18,9 @@ function audio(): AudioContext | null {
   return actx;
 }
 
+/** The shared audio output (the music plays through it too); null where there's no sound. */
+export const audioContext = audio;
+
 /**
  * The phone's audio changed (the microphone closed, earphones came or went):
  * start the sounds afresh. On some phones the old sound output stays silent
@@ -91,6 +94,154 @@ function noise(dur: number, o: { vol?: number; delay?: number; freq?: number } =
   src.start(t);
 }
 
+/** A bell-like tone (FM): bright as it's struck, mellowing as it rings. */
+function bell(freq: number, dur: number, o: { vol?: number; delay?: number; ratio?: number; index?: number } = {}) {
+  const a = audio();
+  if (!a) return;
+  const t = a.currentTime + (o.delay || 0);
+  const car = a.createOscillator();
+  const mod = a.createOscillator();
+  const depth = a.createGain();
+  const g = a.createGain();
+  car.frequency.value = freq;
+  mod.frequency.value = freq * (o.ratio || 2);
+  depth.gain.setValueAtTime(freq * (o.index || 1.2), t);
+  depth.gain.exponentialRampToValueAtTime(freq * 0.05, t + dur * 0.6);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(o.vol || 0.1, t + 0.006);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  mod.connect(depth).connect(car.frequency);
+  car.connect(g).connect(a.destination);
+  car.start(t);
+  mod.start(t);
+  car.stop(t + dur + 0.05);
+  mod.stop(t + dur + 0.05);
+}
+
+// ---------------------------------------------------------------- cowries and long dice
+// Small, hard things knocking together: a burst of filtered noise for the contact
+// and a short ring for the body (porcelain-like for shells, bone for the long dice).
+let noiseBuf: AudioBuffer | null = null;
+function noiseOf(a: AudioContext) {
+  if (!noiseBuf || noiseBuf.sampleRate !== a.sampleRate) {
+    noiseBuf = a.createBuffer(1, Math.floor(a.sampleRate * 0.5), a.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let k = 0; k < d.length; k++) d[k] = Math.random() * 2 - 1;
+  }
+  return noiseBuf;
+}
+
+interface KnockOpts {
+  /** Contact noise: centre frequency, how narrow, how long */
+  nf: number;
+  nq?: number;
+  nd: number;
+  /** Body ring: its modes' frequencies (inharmonic, as in a real shell or bar) and how long */
+  ring?: number[];
+  rd?: number;
+  vol: number;
+  /** Panned left (-1) to right (1) */
+  pan?: number;
+}
+
+function knock(t: number, o: KnockOpts) {
+  const a = audio();
+  if (!a) return;
+  const out = a.createGain();
+  out.gain.value = o.vol;
+  let dest: AudioNode = a.destination;
+  if (o.pan && a.createStereoPanner) {
+    const p = a.createStereoPanner();
+    p.pan.value = o.pan;
+    p.connect(a.destination);
+    dest = p;
+  }
+  out.connect(dest);
+  const src = a.createBufferSource();
+  src.buffer = noiseOf(a);
+  const f = a.createBiquadFilter();
+  f.type = "bandpass";
+  f.frequency.value = o.nf;
+  f.Q.value = o.nq || 1.5;
+  const ng = a.createGain();
+  ng.gain.setValueAtTime(1, t);
+  ng.gain.exponentialRampToValueAtTime(0.001, t + o.nd);
+  src.connect(f).connect(ng).connect(out);
+  src.start(t, Math.random() * 0.4, o.nd + 0.02);
+  (o.ring || []).forEach((fr, k) => {
+    const osc = a.createOscillator();
+    const g = a.createGain();
+    osc.frequency.value = fr;
+    const d = (o.rd || 0.03) / (1 + k * 0.7);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.35 / (1 + k), t + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    osc.connect(g).connect(out);
+    osc.start(t);
+    osc.stop(t + d + 0.02);
+  });
+}
+
+const jit = (ms: number) => (Math.random() * 2 - 1) * ms;
+
+/** A cowrie shell clicking: bright, glassy, tiny. */
+function shell(t: number, vol: number, pan = 0) {
+  const f = 2600 + Math.random() * 1400;
+  knock(t, { nf: f * 1.4, nq: 3, nd: 0.012, ring: [f, f * 2.31], rd: 0.035, vol, pan });
+}
+
+/**
+ * Cowries (timed to the throw in cowries.tsx, DICE_ROLL_MS long): a shake in the
+ * hand, the shells landing one after another (68% of the throw, 30 ms apart) with a
+ * soft tap on the cloth, clicking into each other, a smaller bounce (89%), a settle.
+ */
+function cowrieThrow() {
+  const a = audio();
+  if (!a) return;
+  const t0 = a.currentTime + 0.01;
+  const n = 6;
+  for (let k = 0; k < 7; k++) shell(t0 + Math.random() * 0.11, 0.1 + Math.random() * 0.08, jit(0.3));
+  for (let k = 0; k < n; k++) {
+    const t = t0 + 0.558 + k * 0.03 + jit(6) / 1000;
+    const pan = (k / (n - 1) - 0.5) * 0.7;
+    knock(t, { nf: 700, nq: 0.8, nd: 0.03, vol: 0.18, pan }); // on the cloth
+    shell(t, 0.26 + Math.random() * 0.1, pan);
+    if (Math.random() < 0.6) shell(t + 0.012 + Math.random() * 0.03, 0.1, pan); // knocking a neighbour
+  }
+  for (let k = 0; k < n; k++) {
+    if (Math.random() < 0.3) continue;
+    shell(t0 + 0.73 + k * 0.03 + jit(8) / 1000, 0.08 + Math.random() * 0.06, (k / (n - 1) - 0.5) * 0.7);
+  }
+  shell(t0 + 0.79 + Math.random() * 0.03, 0.05);
+}
+
+/** One long dice (bone): a lower, woodier knock with a short ring along the bar. */
+function bar(t: number, k: number, vol: number, landing: boolean) {
+  const f = [1180, 1290, 1240][k % 3] * (0.97 + Math.random() * 0.06);
+  const pan = (k - 1) * 0.35;
+  if (landing) knock(t, { nf: 380, nq: 0.7, nd: 0.06, ring: [170 + k * 12], rd: 0.07, vol: vol * 0.9, pan }); // the thud on the cloth
+  knock(t + 0.004, { nf: 2200, nq: 1.2, nd: 0.018, ring: [f, f * 2.76, f * 5.4], rd: 0.06, vol, pan });
+}
+
+/**
+ * Chaupar's three long dice (timed to pasa.tsx): knocked together in the hand,
+ * landing one after another (70%, 40 ms apart) and rolling over on their long side
+ * (two quieter knocks at 81–91% and 96%).
+ */
+function pasaThrow() {
+  const a = audio();
+  if (!a) return;
+  const t0 = a.currentTime + 0.01;
+  bar(t0, 0, 0.16, false);
+  bar(t0 + 0.05 + Math.random() * 0.02, 2, 0.13, false);
+  for (let k = 0; k < 3; k++) {
+    const t = t0 + 0.574 + k * 0.04 + jit(5) / 1000;
+    bar(t, k, 0.3, true);
+    bar(t0 + 0.746 + k * 0.04 + jit(8) / 1000, k, 0.13, false);
+    if (Math.random() < 0.6) bar(t0 + 0.787 + k * 0.04 + jit(6) / 1000, k, 0.06, false);
+  }
+}
+
 // ---------------------------------------------------------------- dice
 // Built from real recordings (Kenney "Casino Audio", CC0) and timed to the dice animation (DICE_ROLL_MS):
 // a rattle in the hand while it flies, a thud as it lands (394 ms), a smaller one on the bounce (656 ms),
@@ -136,11 +287,23 @@ const SFX: Record<SoundName, () => void> = {
   dice() {
     diceRoll();
   },
+  cowries() {
+    cowrieThrow();
+  },
+  pasa() {
+    pasaThrow();
+  },
   move() {
     tone(700, 0.07, { type: "triangle", vol: 0.16 });
   },
   out() {
     tone(420, 0.18, { type: "square", vol: 0.07, slide: 940 });
+  },
+  // Safe: the piece settles, then a soft two-note chime (a fifth), like a shield closing.
+  safe() {
+    tone(330, 0.09, { type: "triangle", vol: 0.1 });
+    bell(1046, 0.55, { vol: 0.07, delay: 0.03, ratio: 2, index: 0.9 });
+    bell(1568, 0.7, { vol: 0.06, delay: 0.1, ratio: 2, index: 0.7 });
   },
   capture() {
     tone(560, 0.32, { type: "sawtooth", vol: 0.1, slide: 110 });

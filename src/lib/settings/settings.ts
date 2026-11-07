@@ -3,8 +3,11 @@ import type { ThemeId } from "@/lib/theme/themes";
 
 export const SOUND_KEYS = [
   ["dice", "Dice roll"],
+  ["cowries", "Cowrie throw (Pachisi)"],
+  ["pasa", "Long dice throw (Chaupar)"],
   ["move", "Token moving"],
   ["out", "Token comes out"],
+  ["safe", "Token lands on a safe square"],
   ["capture", "Cutting a token"],
   ["home", "Token reaches home"],
   ["turn", "Your turn"],
@@ -36,5 +39,5 @@ export const DEFAULT_SETTINGS: Settings = {
   parchisBoard: "auto",
   chauparBoard: "auto",
   steps: true,
-  sound: { all: true, dice: true, move: true, out: true, capture: true, home: true, turn: true, chat: true, win: true },
+  sound: { all: true, dice: true, cowries: true, pasa: true, move: true, out: true, safe: true, capture: true, home: true, turn: true, chat: true, win: true },
 };

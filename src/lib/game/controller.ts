@@ -761,7 +761,9 @@ export class GameController {
 
   /** Dice animation: the 3D dice listens for the "roll" event. */
   private animateDie(finalV: number, c: Color, done: () => void) {
-    this.play("dice");
+    // Pachisi throws cowries and Chaupar long dice: each has its own sound.
+    const g = this.state.game;
+    this.play(g === "pachisi" ? "cowries" : g === "chaupar" ? "pasa" : "dice");
     try {
       navigator.vibrate?.(30);
     } catch {
@@ -1498,6 +1500,8 @@ export class GameController {
           // A newer move of this token takes over from here.
           if (latest()) delete this.animPos[key];
           if (m.b === finishOf(this.state)) this.play("home");
+          // Reaching a safe square (not straight out of the yard: that has its own sound).
+          else if (!caps.length && !entering && rulesFor(this.state).safe?.(m.c, m.b)) this.play("safe");
           if (caps.length) {
             caps.forEach((k) => delete this.animPos[k.c + k.i]);
             this.sendHome(caps.map((k) => k.c + k.i));

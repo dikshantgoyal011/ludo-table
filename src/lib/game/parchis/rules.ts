@@ -410,4 +410,5 @@ export const parchis: Rulebook = {
   setup,
   stage: (s) => peek(s).moved,
   hand: (s) => peek(s).hand,
+  safe: isSeguro,
 };

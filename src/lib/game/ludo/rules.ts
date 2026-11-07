@@ -126,4 +126,5 @@ export const ludo: Rulebook = {
   steps: (a, b) => Array.from({ length: Math.max(0, b - a) }, (_, k) => a + k + 1),
   point: basePoint,
   progress,
+  safe: (c, p) => p >= 0 && p <= 50 && SAFE.has(trackIdx(c, p)),
 };
