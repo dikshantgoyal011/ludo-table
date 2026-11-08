@@ -3,6 +3,7 @@ import { Baloo_2, IBM_Plex_Mono, Rozha_One } from "next/font/google";
 import { AppHeader } from "@/components/layout/app-header";
 import { Confetti } from "@/components/game/confetti";
 import { LazyDialogs } from "@/components/layout/lazy-dialogs";
+import { MusicPlayer } from "@/components/providers/music-player";
 import { ThemeApplier } from "@/components/providers/theme-applier";
 import { themeBootScript } from "@/lib/theme/boot-script";
 import { brandVars, THEMES } from "@/lib/theme/themes";
@@ -49,6 +50,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </div>
         <LazyDialogs />
         <Confetti />
+        <MusicPlayer />
       </body>
     </html>
   );

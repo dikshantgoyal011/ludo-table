@@ -26,6 +26,7 @@ export class LocalSettingsRepository implements SettingsRepository {
     if (isParchisChoice(sv.parchisBoard)) s.parchisBoard = sv.parchisBoard;
     if (isChauparChoice(sv.chauparBoard)) s.chauparBoard = sv.chauparBoard;
     if (typeof sv.steps === "boolean") s.steps = sv.steps;
+    if (typeof sv.music === "boolean") s.music = sv.music;
     if (sv.sound && typeof sv.sound === "object") {
       for (const k of Object.keys(s.sound) as (keyof Settings["sound"])[]) {
         const v = (sv.sound as Record<string, unknown>)[k];

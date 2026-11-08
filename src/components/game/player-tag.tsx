@@ -159,12 +159,18 @@ export function PlayerTag({ corner }: { corner: number }) {
       )}
       style={{
         // Waiting: just a bar of the player's colour on the outer edge. Their turn: the bar
-        // glows softly and their colour washes in from it (see .tag-spotlight).
+        // glows and their colour surges across from it (see .tag-spotlight, .tag-fx).
         ["--spot" as string]: hex,
-        background: isTurn ? `linear-gradient(${right ? 270 : 90}deg, color-mix(in srgb, ${hex} 48%, transparent), color-mix(in srgb, ${hex} 8%, transparent))` : "transparent",
         opacity: seat.out ? 0.5 : away ? 0.75 : 1,
       }}
     >
+      {isTurn && (
+        <span className="tag-fx" aria-hidden="true">
+          <span className="tag-fx-base" />
+          <span className="tag-fx-surge" />
+          <span className="tag-fx-surge" />
+        </span>
+      )}
       {timer && <TurnRing key={game.turnId()} limit={game.turnLimit(c)} startedAt={game.turnSeenAt} />}
       {/* Finished: a medal with the place, while the others play on. */}
       {place >= 0 && (

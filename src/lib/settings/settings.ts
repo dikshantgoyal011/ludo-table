@@ -30,6 +30,8 @@ export interface Settings {
   /** true: tokens hop square by square; false: glide to the square */
   steps: boolean;
   sound: { all: boolean } & Record<SoundName, boolean>;
+  /** Music on the menu and setup screens (never during a game) */
+  music: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -40,4 +42,5 @@ export const DEFAULT_SETTINGS: Settings = {
   chauparBoard: "auto",
   steps: true,
   sound: { all: true, dice: true, cowries: true, pasa: true, move: true, out: true, safe: true, capture: true, home: true, turn: true, chat: true, win: true },
+  music: true,
 };

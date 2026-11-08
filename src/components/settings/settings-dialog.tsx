@@ -383,6 +383,11 @@ function MainPage({ go }: { go: (p: Page) => void }) {
             ))}
           </div>
         </Row>
+      </Group>
+      <Group title="Sound">
+        <Row label="Music" value={settings.music ? "On the menu and setup screens" : "Off"}>
+          <Switch aria-label="Music" checked={settings.music} onCheckedChange={(v) => save({ ...settings, music: v })} />
+        </Row>
         <Row label="Game sounds" value={settings.sound.all ? "On" : "Off"}>
           <Switch
             aria-label="Game sounds"
@@ -427,7 +432,7 @@ export function SettingsDialog() {
             <span className="w-1" />
           )}
           <DialogTitle className="min-w-0 flex-1 truncate">{title}</DialogTitle>
-          <DialogDescription className="sr-only">Profile, theme, boards, token movement and sounds</DialogDescription>
+          <DialogDescription className="sr-only">Profile, theme, boards, token movement, music and sounds</DialogDescription>
           <DialogClose asChild>
             <Button variant="outline" size="sm">
               Done
