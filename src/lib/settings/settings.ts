@@ -2,6 +2,7 @@ import type { BoardChoice, ChauparChoice, PachisiChoice, ParchisChoice } from "@
 import type { ThemeId } from "@/lib/theme/themes";
 
 export const SOUND_KEYS = [
+  ["start", "A game begins"],
   ["dice", "Dice roll"],
   ["cowries", "Cowrie throw (Pachisi)"],
   ["pasa", "Long dice throw (Chaupar)"],
@@ -41,6 +42,6 @@ export const DEFAULT_SETTINGS: Settings = {
   parchisBoard: "auto",
   chauparBoard: "auto",
   steps: true,
-  sound: { all: true, dice: true, cowries: true, pasa: true, move: true, out: true, safe: true, capture: true, home: true, turn: true, chat: true, win: true },
+  sound: { all: true, start: true, dice: true, cowries: true, pasa: true, move: true, out: true, safe: true, capture: true, home: true, turn: true, chat: true, win: true },
   music: true,
 };

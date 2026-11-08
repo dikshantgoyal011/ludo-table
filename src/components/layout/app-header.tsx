@@ -2,13 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Menu as MenuIcon, Music, Settings as SettingsIcon } from "lucide-react";
+import { Menu as MenuIcon, Settings as SettingsIcon } from "lucide-react";
 import { InviteDialog } from "@/components/game/invite-dialog";
-import { useAtTable } from "@/components/providers/music-player";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useGame, useSettings } from "@/hooks/use-game";
-import { cn } from "@/lib/utils";
+import { useGame } from "@/hooks/use-game";
 import { cleanRoomCode, MODES, newRoomCode, roomPath } from "@/lib/game/constants";
 import { variantById } from "@/lib/game/variants";
 import { uiStore } from "@/lib/ui-store";
@@ -17,8 +15,6 @@ export function AppHeader() {
   const game = useGame();
   const router = useRouter();
   const pathname = usePathname();
-  const [settings, saveSettings] = useSettings();
-  const atTable = useAtTable();
   const [roomOpen, setRoomOpen] = useState(false);
   const [code, setCode] = useState("");
 
@@ -108,21 +104,6 @@ export function AppHeader() {
                 Invite
               </Button>
             </>
-          )}
-          {/* Music on / off, where the music plays (outside a game) */}
-          {!atTable && (
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label={settings.music ? "Turn the music off" : "Turn the music on"}
-              aria-pressed={settings.music}
-              title={settings.music ? "Music on" : "Music off"}
-              onClick={() => saveSettings({ ...settings, music: !settings.music })}
-              className="relative"
-            >
-              <Music className={cn("size-[18px]", !settings.music && "opacity-45")} />
-              {!settings.music && <span aria-hidden="true" className="absolute h-[2px] w-6 rotate-45 rounded-full bg-current" />}
-            </Button>
           )}
           <Button variant="outline" size="icon" aria-label="Settings" onClick={() => uiStore.set({ settingsOpen: true })}>
             <SettingsIcon className="size-[18px]" />

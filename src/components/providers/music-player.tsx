@@ -3,11 +3,12 @@
 // Plays the menu music on the screens outside a game (home, setup, the lobby),
 // and fades it out as a game starts. Off with Settings → Music, while voice
 // chat is on, and while the app is in the background. The music code loads
-// only once someone has touched the page (browsers allow sound only then).
+// as soon as the browser lets the page play sound: straight away where it allows
+// that, otherwise at the first touch.
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useGame, useSettings } from "@/hooks/use-game";
-import { audioContext } from "@/lib/audio/sfx";
+import { audioContext, soundAllowed, tryAutoplay, UNLOCK_EVENTS } from "@/lib/audio/sfx";
 import type { TrackId } from "@/lib/audio/music";
 
 let loaded = false;
@@ -16,7 +17,7 @@ let loaded = false;
 export const MENU_TRACK: TrackId = "neelam";
 
 /** Screens where a game is on (the lobby before it isn't). */
-export function useAtTable() {
+function useAtTable() {
   const game = useGame();
   const pathname = usePathname();
   const tableRoute = pathname === "/game" || pathname === "/room" || pathname.startsWith("/r/");
@@ -27,27 +28,23 @@ export function useAtTable() {
 export function MusicPlayer() {
   const [settings] = useSettings();
   const game = useGame();
-  const pathname = usePathname();
   const atTable = useAtTable();
   const [touched, setTouched] = useState(false);
   const [visible, setVisible] = useState(true);
   useEffect(() => {
-    const touch = () => setTouched(true);
+    // (Music scheduled before the sound is let out waits for it: the audio clock stands still till then.)
+    const touch = () => soundAllowed() && setTouched(true);
     const seen = () => setVisible(document.visibilityState === "visible");
-    document.addEventListener("pointerdown", touch, {
-      once: true,
-      passive: true,
-    });
-    document.addEventListener("keydown", touch, { once: true });
+    // No touch needed where the browser lets the page play sound straight away.
+    void tryAutoplay().then((ok) => ok && setTouched(true));
+    for (const ev of UNLOCK_EVENTS) document.addEventListener(ev, touch, { passive: true });
     document.addEventListener("visibilitychange", seen);
     return () => {
-      document.removeEventListener("pointerdown", touch);
-      document.removeEventListener("keydown", touch);
+      for (const ev of UNLOCK_EVENTS) document.removeEventListener(ev, touch);
       document.removeEventListener("visibilitychange", seen);
     };
   }, []);
-  // (The preview page plays its own.)
-  const want = settings.music && touched && visible && !atTable && !game.voice.on && pathname !== "/lab";
+  const want = settings.music && touched && visible && !atTable && !game.voice.on;
   useEffect(() => {
     if (!want && !loaded) return;
     let gone = false;

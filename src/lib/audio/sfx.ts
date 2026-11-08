@@ -6,6 +6,9 @@ let actx: AudioContext | null = null;
 function audio(): AudioContext | null {
   if (typeof window === "undefined") return null;
   if (!actx || actx.state === "closed") {
+    // Not before the page may play sound: Chrome never lets a sound output made too early start
+    // (on a phone the first touch only allows sound when the finger lifts).
+    if (!soundAllowed()) return null;
     try {
       const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       actx = new Ctx();
@@ -16,6 +19,38 @@ function audio(): AudioContext | null {
   // Not only "suspended": iPhones put it "interrupted" when the phone's audio changes (a call, the microphone).
   if (actx.state !== "running") actx.resume().catch(() => {});
   return actx;
+}
+
+/** Whether the player has touched the page yet (where the browser says). */
+export function soundAllowed() {
+  return typeof navigator === "undefined" || !navigator.userActivation || navigator.userActivation.hasBeenActive;
+}
+
+/**
+ * Start the sound without waiting for a touch, where the browser allows it (it
+ * does for sites people come back to and play on; never on a first visit).
+ * Resolves true when sound is running.
+ */
+export async function tryAutoplay(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  if (actx && actx.state === "running") return true;
+  if (soundAllowed()) return !!audio();
+  const policy = (navigator as Navigator & { getAutoplayPolicy?: (t: string) => string }).getAutoplayPolicy?.("audiocontext");
+  if (policy === "disallowed") return false;
+  let a: AudioContext;
+  try {
+    a = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+  } catch {
+    return false;
+  }
+  if (a.state !== "running") await Promise.race([a.resume().catch(() => {}), new Promise((r) => setTimeout(r, 400))]);
+  // Not allowed: drop this one (one made too early never starts later) and wait for a touch.
+  if (a.state !== "running" || (actx && actx.state !== "closed")) {
+    void a.close().catch(() => {});
+    return a.state === "running" && actx?.state === "running";
+  }
+  actx = a;
+  return true;
 }
 
 /** The shared audio output (the music plays through it too); null where there's no sound. */
@@ -32,17 +67,32 @@ export function resetSoundOutput() {
   void old?.close().catch(() => {});
 }
 
+/**
+ * Events that let a page start sound. On a phone that's the end of a tap
+ * (touchend, click), not its start: a pointerdown from a finger doesn't count.
+ */
+export const UNLOCK_EVENTS = ["pointerdown", "pointerup", "touchend", "click", "keydown"] as const;
+
 /** Browsers only allow sound after the player has touched the page. */
 export function unlockAudioOnFirstTouch() {
   if (typeof document === "undefined") return;
-  document.addEventListener(
-    "pointerdown",
-    () => {
-      const a = audio();
-      if (a) loadDice(a); // ready before the first roll
-    },
-    { passive: true },
-  );
+  let primed = false;
+  const unlock = () => {
+    const a = audio();
+    if (!a) return;
+    if (!primed) {
+      primed = true;
+      loadDice(a); // ready before the first roll
+    }
+    // iPhones: playing something (even silence) inside the tap is what opens the sound up.
+    if (a.state !== "running") {
+      const s = a.createBufferSource();
+      s.buffer = a.createBuffer(1, 1, 22050);
+      s.connect(a.destination);
+      s.start();
+    }
+  };
+  for (const ev of UNLOCK_EVENTS) document.addEventListener(ev, unlock, { passive: true, capture: true });
   // Back to the page (or earphones plugged in / out): wake the sounds up again.
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && actx && actx.state !== "running") actx.resume().catch(() => {});
@@ -319,6 +369,19 @@ const SFX: Record<SoundName, () => void> = {
   chat() {
     tone(1046, 0.08, { vol: 0.1 });
     tone(1568, 0.1, { vol: 0.08, delay: 0.06 });
+  },
+  /** Game on: two deep drum hits, a quick run up the bells and a bright chord ringing out (A major). */
+  start() {
+    const a = audio();
+    if (!a) return;
+    tone(110, 0.38, { vol: 0.42, slide: 52 });
+    knock(a.currentTime, { nf: 180, nq: 1.2, nd: 0.08, ring: [98, 147], rd: 0.18, vol: 0.5 });
+    tone(147, 0.4, { vol: 0.38, slide: 70, delay: 0.16 });
+    knock(a.currentTime + 0.16, { nf: 220, nq: 1.2, nd: 0.08, ring: [131, 196], rd: 0.18, vol: 0.45 });
+    [440, 554, 659].forEach((f, k) => bell(f, 0.5, { vol: 0.07, delay: 0.32 + k * 0.07, ratio: 3.5, index: 0.9 }));
+    [880, 1109, 1319].forEach((f) => bell(f, 1.5, { vol: 0.06, delay: 0.55, ratio: 3.5, index: 1 }));
+    tone(220, 1.2, { type: "triangle", vol: 0.12, delay: 0.55 });
+    tone(330, 1.1, { type: "triangle", vol: 0.07, delay: 0.55 });
   },
   win() {
     [523, 659, 784, 1046, 784, 1046, 1318].forEach((f, k) => tone(f, 0.24, { type: "triangle", vol: 0.16, delay: k * 0.12 }));

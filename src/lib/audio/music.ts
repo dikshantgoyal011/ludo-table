@@ -425,6 +425,8 @@ class Band {
   readonly ctx: Ctx;
   private ch: Record<string, AudioNode> = {};
   private sitarVoice: { g: GainNode; src: AudioBufferSourceNode } | null = null;
+  /** Scheduling the bar the music comes in on */
+  entering = false;
 
   constructor(
     readonly mix: Mix,
@@ -1016,6 +1018,8 @@ interface Piece {
   /** Bars played once at the start, then bars that loop */
   intro: number;
   loop: number;
+  /** Where in the loop to come in (a lead-in to the hook), so the music is never heard starting from silence */
+  entry?: number;
   channels: Record<string, ChannelOpts>;
   /** Play bar `i` of the loop (or of the intro), starting at t. */
   bar(b: Band, i: number, intro: boolean, t: number): void;
@@ -1062,8 +1066,10 @@ const neelam: Piece = {
   band: { sa: 57, step: 60 / 122 / 4, echo: (60 / 122) * 0.75 },
   steps: 16,
   gain: 0.92,
-  intro: 4,
+  intro: 0,
   loop: 36,
+  // In on the last bar of the first build-up: a bar of rising snare roll, then the drop and the sitar hook.
+  entry: 3,
   channels: {
     sitar: { vol: 1.1, pan: 0.1, verb: 0.25, echo: 0.2 },
     flute: { vol: 0.12, pan: -0.2, verb: 0.35, echo: 0.15 },
@@ -1075,13 +1081,13 @@ const neelam: Piece = {
     tabla: { vol: 0.5, pan: 0.2, verb: 0.15 },
     shaker: { vol: 0.36, pan: -0.3 },
   },
-  bar(b, i, intro, t) {
+  bar(b, i, _intro, t) {
     const st = b.o.step;
     const sa = b.o.sa;
     const barLen = st * 16;
     // Build (4), drop: the sitar hook (8), groove: the bansuri (8), break (4), build (4), second drop (8).
-    const sec = intro ? "intro" : i < 4 ? "build" : i < 12 ? "drop" : i < 20 ? "groove" : i < 24 ? "break" : i < 28 ? "build" : "drop2";
-    const k = intro ? i : i < 4 ? i : i < 12 ? i - 4 : i < 20 ? i - 12 : i < 24 ? i - 20 : i < 28 ? i - 24 : i - 28;
+    const sec = i < 4 ? "build" : i < 12 ? "drop" : i < 20 ? "groove" : i < 24 ? "break" : i < 28 ? "build" : "drop2";
+    const k = i < 4 ? i : i < 12 ? i - 4 : i < 20 ? i - 12 : i < 24 ? i - 20 : i < 28 ? i - 24 : i - 28;
     const chord = sec === "break" ? NEELAM.breakProg[k] : NEELAM.prog[k % 8];
     const notes = CHORDS[chord].map((d) => sa + d);
     const root = notes[0] - 12;
@@ -1089,18 +1095,16 @@ const neelam: Piece = {
     const eighths = (line: Note[][]) => line[k % 8].map((n) => ({ ...n, at: n.at * 2, len: n.len * 2 }));
     const tones = [notes[0] + 12, notes[2] + 12, notes[0] + 24, notes[1] + 24, notes[2] + 12, notes[0] + 24, notes[1] + 12, notes[2] + 12];
     const marimba = (v: number) => tones.forEach((m, j) => b.marimba(m, at(j * 2), (j % 2 ? 0.45 : 0.6) * v));
-    if (sec === "intro") {
-      if (k === 0) b.sweep(t, 900, 6000, barLen * 4);
-      marimba(0.8);
-      for (let s = 0; s < 16; s++) b.shaker(at(s), s % 4 === 0 ? 0.5 : 0.25);
-      if (k >= 2) [0, 8].forEach((s) => b.kick(t + s * st, 0.6));
-      return;
-    }
     if (sec === "build") {
-      if (k === 0) {
-        b.sweep(t, 800, 16000, barLen * 4);
-        b.riser(t, barLen * 4, 0.3);
+      // The high end opens up and a riser climbs to the drop (from wherever the music came in).
+      if (k === 0 || b.entering) {
+        const len = barLen * (4 - k);
+        b.sweep(t, b.entering ? 3000 : 2500, 16000, len);
+        b.riser(t, len, 0.3);
       }
+      // A steady pulse under it, so it never drops away.
+      [0, 4, 8, 12].forEach((s) => (k < 3 || s < 12) && b.kick(t + s * st, 0.55));
+      for (let s = 0; s < 16; s++) b.shaker(at(s), s % 2 ? 0.2 : 0.35);
       marimba(0.9);
       b.pad(
         notes.map((m) => m + 12),
@@ -1126,6 +1130,7 @@ const neelam: Piece = {
         1,
       );
       marimba(0.6);
+      for (let s = 0; s < 16; s++) b.shaker(at(s), s % 2 ? 0.2 : 0.35);
       b.sitarLine(
         NEELAM.brk[k].map((n) => ({ ...n, at: n.at * 2, len: n.len * 2 })),
         t,
@@ -1166,7 +1171,9 @@ const neelam: Piece = {
 export const PIECES: Piece[] = [neelam];
 
 // ---------------------------------------------------------------- playing
-const FADE_IN = 2.5;
+/** Comes in at this share of its level, rising to full: heard at once, but not with a jolt. */
+const ENTRY_LEVEL = 0.55;
+const FADE_IN = 1.5;
 const FADE_OUT = 1.2;
 const LEVEL = 0.65;
 
@@ -1186,6 +1193,7 @@ class Performance {
     this.mix = new Mix(ctx, piece.band.echo, dest);
     this.band = new Band(this.mix, piece.band, piece.channels);
     this.next = ctx.currentTime + 0.15;
+    this.bar = piece.intro + (piece.entry ?? 0);
     piece.start?.(this.band, this.next);
   }
 
@@ -1199,6 +1207,7 @@ class Performance {
     while (this.next < until) {
       const intro = this.bar < p.intro;
       const i = intro ? this.bar : (this.bar - p.intro) % p.loop;
+      this.band.entering = this.bar === p.intro + (p.entry ?? 0);
       try {
         p.bar(this.band, i, intro, this.next);
       } catch {
@@ -1212,8 +1221,9 @@ class Performance {
   start() {
     const g = this.mix.out.gain;
     const now = this.ctx.currentTime;
-    g.setValueAtTime(0.0001, now);
-    g.exponentialRampToValueAtTime(LEVEL * (this.piece.gain ?? 1), now + FADE_IN);
+    const level = LEVEL * (this.piece.gain ?? 1);
+    g.setValueAtTime(level * ENTRY_LEVEL, now);
+    g.linearRampToValueAtTime(level, now + FADE_IN);
     this.schedule(now + 0.6);
     this.timer = setInterval(() => {
       const t = this.ctx.currentTime;

@@ -1213,6 +1213,7 @@ export class GameController {
     s.players = this.playersOf(s);
     this.mode = "computer";
     this.startOffline(s, true); // my corner animates to the bottom-left
+    this.play("start");
   }
 
   startLocal(rows: { name: string; color: Color }[], game: GameId = "ludo", variations?: Variations) {
@@ -1233,6 +1234,7 @@ export class GameController {
     s.players = this.playersOf(s);
     this.mode = "local";
     this.startOffline(s);
+    this.play("start");
   }
 
   /** The people at a table, once each (in Pachisi one person can play two colours). */
@@ -1581,6 +1583,8 @@ export class GameController {
   /** Compare two states and play the matching sounds / animations. */
   private onStateChange(prev: GameState | null, next: GameState, remote: boolean) {
     if (!prev || !next) return;
+    // A game begins (or begins again): nothing played in it yet.
+    if (next.phase === "playing" && !next.last && (prev.phase !== "playing" || (!!next.gid && next.gid !== prev.gid))) this.play("start");
     if (prev.phase === "playing" && (next.phase === "playing" || next.phase === "done")) {
       const moves: MoveAnim[] = [];
       const caps: { c: Color; i: number; a: number }[] = [];
