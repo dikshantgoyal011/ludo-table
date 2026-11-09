@@ -25,7 +25,7 @@ import {
 } from "@/lib/game/constants";
 import type { Color, GameId, Mode } from "@/lib/game/types";
 import { isGameId, rulesFor } from "@/lib/game/rules";
-import { countOn, hasSides, hasVariations, plainRules, playsSolo, type Variations } from "@/lib/game/variations";
+import { countOn, hasSides, hasVariations, plainRules, playsSolo, variationInfo, type Variations } from "@/lib/game/variations";
 import { variantById } from "@/lib/game/variants";
 import { clearRulesChoice, SidesPicker, useRulesChoice, VariationsDialog, variationsSummary } from "@/components/game/variations";
 import type { Profile } from "@/lib/services/types";
@@ -105,7 +105,8 @@ export function SetupScreen({ mode }: { mode: Mode }) {
         <SidesPicker value={vars} players={players} onChange={saveVars} />
       </Field>
     );
-  const rulesField = withVars && (mode === "computer" || mode === "local") && (
+  // (Not for a game whose only choice is Solo or 2 vs 2: Chaupar.)
+  const rulesField = withVars && variationInfo(game).length > 0 && (mode === "computer" || mode === "local") && (
     <Field label="Rules">
       <button
         type="button"

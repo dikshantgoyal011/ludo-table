@@ -7,7 +7,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useGame, useSettings } from "@/hooks/use-game";
 import type { TokenView } from "@/lib/game/controller";
 import { COLORS } from "@/lib/game/constants";
-import { C_PAIR, distOf } from "@/lib/game/chaupar/rules";
+import { C_KHADO, C_PAIR, C_SUM, distOf } from "@/lib/game/chaupar/rules";
 import { GRACE_STEP } from "@/lib/game/pachisi/throws";
 import { X_BOTH } from "@/lib/game/parchis/rules";
 import type { Color, GameId, MoveChoice } from "@/lib/game/types";
@@ -107,7 +107,7 @@ export function Board() {
                 className={"token" + (t.movable ? " movable" : "") + (t.stepping ? " stepping" : "") + (t.returning ? " returning" : "")}
                 style={{ transform: `translate(${t.x}px,${t.y}px) scale(${t.scale})`, display: t.hidden ? "none" : undefined }}
               >
-                {/* (Chaupar: a super-piece's pawns stand in a stack.) */}
+                {/* (Chaupar: a pair's pawns stand in a stack.) */}
                 <StackLift lift={t.lift} badge={t.badge}>
                   {look.token(hex(t.c), t.lying)}
                 </StackLift>
@@ -178,11 +178,19 @@ function choiceLabel(ch: MoveChoice, all: MoveChoice[], game: GameId) {
       ? "Grace · 1 square"
       : game === "parchis" && ch.use === X_BOTH
         ? "Both dice · come out"
-        : game === "chaupar" && (ch.use || 0) > C_PAIR
-          ? `Both ${(ch.use as number) - C_PAIR}s · move ${distOf(ch.use as number)}`
+        : game === "chaupar"
+          ? chauparLabel(ch.use || 0)
           : `Move ${ch.use}`;
   if (!throws) return twoWays || ch.extra ? way : by;
   return twoWays ? `${by} · ${way.toLowerCase()}` : by;
+}
+
+/** Chaupar: one dice, both added up, a pair together on a doublet, or Khado Karvo. */
+function chauparLabel(u: number) {
+  if (u >= C_KHADO) return "Capture · Khado Karvo";
+  if (u > C_PAIR) return `Pair together · move ${distOf(u)}`;
+  if (u > C_SUM) return `Both dice · move ${distOf(u)}`;
+  return `Move ${u}`;
 }
 
 /**

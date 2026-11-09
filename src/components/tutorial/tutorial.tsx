@@ -7,12 +7,12 @@ import { CowrieView, Shell } from "@/components/game/cowries";
 import { DiceView, newSpin, type DiceRoll } from "@/components/game/dice-3d";
 import { ChauparBoardPreview, ChauparPawn } from "@/components/game/chaupar-board";
 import { PachisiPawn } from "@/components/game/pachisi-board";
-import { newPasaSpin, PasaView } from "@/components/game/pasa";
+import { newPasaSpin, PasaView, RESTING } from "@/components/game/pasa";
 import { PachisiBoardPreview } from "@/components/menu/game-preview";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { stackSquare } from "@/lib/game/chaupar/board";
-import { FACES_25, FACES_34, sayThrow, throwOf } from "@/lib/game/chaupar/dice";
+import { sayThrow, throwOf, validThrow } from "@/lib/game/chaupar/dice";
 import { COLORS, DICE_ROLL_MS } from "@/lib/game/constants";
 import { rulesFor } from "@/lib/game/rules";
 import { P_LAP_FROM, P_LAP_TO, ROUTE } from "@/lib/game/pachisi/board";
@@ -29,9 +29,9 @@ import { cn } from "@/lib/utils";
 
 type Tokens = Partial<Record<Color, number[]>>;
 type Action =
-  // roll2: the second dice (Parchís with two dice). Chaupar: roll is all three long dice as one number (1, 2 and 6: 126).
+  // roll2: the second dice (Parchís with two dice). Chaupar: roll is both long dice as one number (3 and 6: 36).
   | { roll: number; roll2?: number; by: Color }
-  // (Chaupar: several pieces moving together, a super-piece.)
+  // (Chaupar: a pair moving together.)
   | { move: [Color, number | number[], number] }
   | { cut: [Color, number] }
   | { wait: number };
@@ -46,8 +46,6 @@ interface Lesson {
   shells?: boolean;
   /** Pachisi with seven cowries (a variation). */
   seven?: boolean;
-  /** Chaupar with long dice marked 3 and 4 (a variation). */
-  threeFour?: boolean;
 }
 
 /** Pachisi: the position colour `c` has on the square where colour `of` stands at position p. */
@@ -281,82 +279,70 @@ const LESSONS: Record<GameId, Lesson[]> = {
   ],
   chaupar: [
     {
-      title: "Your pieces start on the board",
-      text: "No waiting to come out: two of your pieces start near the end of your own arm, two on the next arm. Go down your arm, counter-clockwise round the cross, and back up the middle to the center.",
-      tokens: { red: [5, 6, 22, 23], green: [5, 6, 22, 23], yellow: [5, 6, 22, 23], blue: [5, 6, 22, 23] },
-      steps: [{ wait: 1200 }, { roll: 625, by: "red" }, { move: ["red", 3, 29] }, { move: ["red", 2, 24] }, { move: ["red", 3, 34] }, { wait: 1400 }],
+      title: "Two long dice",
+      text: "Throw two long dice, each marked 1, 3, 4 and 6. Move two pawns, one by each dice, or one pawn by both added up. Here the 4 moves one pawn and the 3 another.",
+      tokens: { red: [5, 6, 11, 11] },
+      steps: [{ wait: 600 }, { roll: 43, by: "red" }, { move: ["red", 1, 10] }, { move: ["red", 2, 14] }, { wait: 1400 }],
     },
     {
-      title: "Three long dice",
-      text: "Instead of a dice, throw three long dice, each marked 1, 2, 5 and 6. Then play each dice on its own: on three pieces, or one piece three times, like here (6, then 2, then 1).",
-      tokens: { red: [5, 6, 22, 23] },
-      steps: [{ wait: 600 }, { roll: 126, by: "red" }, { move: ["red", 3, 29] }, { move: ["red", 3, 31] }, { move: ["red", 3, 32] }, { wait: 1400 }],
+      title: "Round the cross and home",
+      text: "Your pawns start on squares 6 and 7 of your Belly, the middle of your arm, and two together (a pair) on 12. Go counter-clockwise round the cross, then back down your Belly into Home. Only your pawns enter your Belly, and they're safe there.",
+      tokens: { red: [5, 6, 11, 11], green: [5, 6, 11, 11], yellow: [5, 6, 11, 11], blue: [5, 6, 11, 11] },
+      steps: [{ wait: 1200 }, { roll: 46, by: "red" }, { move: ["red", 2, 21] }, { wait: 1400 }],
     },
     {
-      title: "Join up into a super-piece",
-      text: "Land on your own piece and the two join into a super-piece that moves as one. A single piece can't capture it, or even land on it: only a piece just as big can.",
-      tokens: { red: [5, 6, 22, 23] },
-      steps: [{ wait: 600 }, { roll: 152, by: "red" }, { move: ["red", 0, 6] }, { wait: 500 }, { move: ["red", [0, 1], 11] }, { move: ["red", 2, 24] }, { wait: 1400 }],
+      title: "An opening 1-1 or 6-6",
+      text: "If your very first throw is 1-1 or 6-6, a pawn of your pair on square 12 jumps straight to square 24.",
+      tokens: { red: [5, 6, 11, 11] },
+      steps: [{ wait: 600 }, { roll: 11, by: "red" }, { move: ["red", 2, 23] }, { wait: 1600 }],
     },
     {
-      title: "Capture anywhere",
-      text: "There are no safe squares: land on a rival round the cross and it goes back to the center, to come out again with any dice. Only your own column is safe. No throw gives another throw.",
-      tokens: { red: [20, -1, -1, -1], green: [sameSquare("green", "red", 25), -1, -1, -1] },
-      steps: [{ wait: 600 }, { roll: 512, by: "red" }, { move: ["red", 0, 25] }, { cut: ["green", 0] }, { wait: 1400 }],
+      title: "Land on a rival to capture it",
+      text: "Outside the Belly there are no safe squares: land on a rival pawn and it's captured. It comes back in at the top of its Belly, and until it does, none of its other pawns can move. A capture gives no extra throw.",
+      tokens: { red: [20, 5, 6, 11], green: [sameSquare("green", "red", 27), -1, -1, -1] },
+      steps: [{ wait: 600 }, { roll: 34, by: "red" }, { move: ["red", 0, 27] }, { cut: ["green", 0] }, { wait: 1400 }],
     },
     {
-      title: "Every dice must be played",
-      text: "You can't skip: if a piece can use a dice, you have to move it. A dice is only lost when nothing can use it. Here the 6 and the 5 go too far, so only the 2 is played.",
+      title: "Kajalvun: a pair on square 34",
+      text: "Square 34, counted from your arm, is marked in your color. Land a pawn on another of yours there to make a pair: that's Kajalvun. Until then, two of your pawns can't share a square. After it, a doublet gives you another throw, and pairs can be made anywhere.",
+      tokens: { red: [33, 29, 83, 83] },
+      steps: [{ wait: 600 }, { roll: 13, by: "red" }, { move: ["red", 1, 33] }, { wait: 1800 }],
+    },
+    {
+      title: "Pairs move on doublets",
+      text: "A pair moves together only on a doublet, by one dice: 4-4 moves it 4. Only a pair can capture a pair, and any pawn can jump over one. After Kajalvun a doublet throws again: all your throws come first, then you move.",
+      tokens: { red: [33, 33, 20, 83] },
+      steps: [{ wait: 600 }, { roll: 44, by: "red" }, { roll: 31, by: "red" }, { move: ["red", [0, 1], 37] }, { move: ["red", 2, 24] }, { wait: 1400 }],
+    },
+    {
+      title: "Ool Olangvun",
+      text: "The Kajalvun pair can't be split, and moves together only once. Then one of your pawns has to pass over it, and not be captured on the next player's turn: that's Ool Olangvun, and the pair is free. If the pair is captured first, you do Kajalvun again.",
+      tokens: { red: [37, 37, 30, 83] },
+      steps: [{ wait: 600 }, { roll: 63, by: "red" }, { move: ["red", 2, 39] }, { wait: 1800 }],
+    },
+    {
+      title: "Every throw must be played",
+      text: "You can't skip: a dice is only lost when nothing can use it. Home takes the exact count: here the 3 takes this pawn in, and the 6 is lost.",
       tokens: { red: [80, 83, 83, 83] },
-      steps: [{ wait: 600 }, { roll: 652, by: "red" }, { move: ["red", 0, 82] }, { wait: 1800 }],
+      steps: [{ wait: 600 }, { roll: 63, by: "red" }, { move: ["red", 0, 83] }, { wait: 1600 }],
     },
     {
-      title: "Back up your arm to the center",
-      text: "Come back up the middle of your arm, the piece lying on its side. Getting home takes the exact count: here 6, 5 and 2 take it all the way in. First with all four home wins.",
-      tokens: { red: [70, 83, 83, 83] },
-      steps: [{ wait: 600 }, { roll: 652, by: "red" }, { move: ["red", 0, 76] }, { move: ["red", 0, 81] }, { move: ["red", 0, 83] }, { wait: 1400 }],
+      title: "Too big for Home",
+      text: "A throw too big for Home, that no other pawn can use, takes the pawn in and back out. Still inside your Belly, it tries again; past it, it goes round the cross again. This pawn needed 2 and threw 6-6: the first 6 takes it in and back out to square 4.",
+      tokens: { red: [81, 83, 83, 83] },
+      steps: [{ wait: 600 }, { roll: 66, by: "red" }, { move: ["red", 0, 79] }, { wait: 1600 }],
     },
     {
       title: "Solo or 2 vs 2",
-      text: "You play solo unless you pick 2 vs 2. Then partners sit opposite (Red with Yellow, Green with Blue), never capture each other, and win together when all eight of their pieces are home. With two players, you can each play two colors.",
-      tokens: { red: [14, -1, -1, -1], yellow: [sameSquare("yellow", "red", 16), -1, -1, -1] },
-      steps: [{ wait: 600 }, { roll: 211, by: "red" }, { move: ["red", 0, 16] }, { wait: 1800 }],
+      text: "You play solo unless you pick 2 vs 2. Then partners sit opposite (Red with Yellow, Green with Blue) and never capture each other. With all four of your pawns home, you miss four turns, then play your partner's. A team wins with all eight home.",
+      tokens: { red: [80, 83, 83, 83], yellow: [sameSquare("yellow", "red", 30), 40, 50, 60] },
+      steps: [{ wait: 600 }, { roll: 31, by: "red" }, { move: ["red", 0, 83] }, { wait: 1800 }],
     },
     {
-      title: "Partners go home in turn",
-      text: "In 2 vs 2, once one of you has a piece home, the other can't bring one in until all four of the first are home. Here Red finishes, and then Yellow can go in.",
-      tokens: { red: [80, 83, 83, 83], yellow: [81, 30, 40, 50] },
-      steps: [{ wait: 600 }, { roll: 215, by: "red" }, { move: ["red", 0, 82] }, { move: ["red", 0, 83] }, { wait: 500 }, { roll: 221, by: "yellow" }, { move: ["yellow", 0, 83] }, { wait: 1400 }],
-    },
-    // The variations (off unless the table turns them on).
-    {
-      id: "c-three-four",
-      title: "Variation: dice with 3 and 4",
-      text: "The long dice show 1, 3, 4 and 6 instead of 1, 2, 5 and 6. Everything else stays the same.",
-      tokens: { red: [5, 6, 22, 23] },
-      threeFour: true,
-      steps: [{ wait: 600 }, { roll: 346, by: "red" }, { move: ["red", 3, 26] }, { move: ["red", 3, 30] }, { move: ["red", 2, 28] }, { wait: 1400 }],
-    },
-    {
-      id: "c-capture-first",
-      title: "Variation: capture before going home",
-      text: "Your pieces can't go home until you've captured a rival piece. Until then, at the end of the round they go round again instead of up the middle, like this one.",
-      tokens: { red: [70, -1, -1, -1] },
-      steps: [{ wait: 600 }, { roll: 611, by: "red" }, { move: ["red", 0, 8] }, { wait: 1800 }],
-    },
-    {
-      id: "c-pairs",
-      title: "Variation: doubles move super-pieces",
-      text: "When two dice match, a super-piece moves by both together: with 6, 6 and 2 it moves 12. Then a single piece moves the third dice, the 2.",
-      tokens: { red: [10, 10, 30, 83] },
-      steps: [{ wait: 600 }, { roll: 662, by: "red" }, { move: ["red", [0, 1], 22] }, { move: ["red", 2, 32] }, { wait: 1600 }],
-    },
-    {
-      id: "c-share",
-      title: "Variation: move your partner's pieces",
-      text: "In 2 vs 2, you can move any of your team's eight pieces. Here Red plays a 5 with Yellow's piece and captures Green.",
-      tokens: { red: [5, -1, -1, -1], yellow: [sameSquare("yellow", "red", 20), -1, -1, -1], green: [sameSquare("green", "red", 25), -1, -1, -1] },
-      steps: [{ wait: 600 }, { roll: 512, by: "red" }, { move: ["yellow", 0, sameSquare("yellow", "red", 25)] }, { cut: ["green", 0] }, { wait: 1600 }],
+      title: "Khado Karvo",
+      text: "In 2 vs 2, with all four pawns home you can instead bring one straight back out to capture, without a throw, a pawn of the next player on its own arm's last stretch before its Belly (once they've done Ool Olangvun).",
+      tokens: { red: [83, 83, 83, 83], blue: [70, 50, 40, 83] },
+      steps: [{ wait: 900 }, { move: ["red", 0, sameSquare("red", "blue", 70)] }, { cut: ["blue", 0] }, { wait: 1800 }],
     },
   ],
 };
@@ -368,7 +354,7 @@ function Scene({ game, lesson }: { game: GameId; lesson: Lesson }) {
   const pachisi = game === "pachisi";
   const parchis = game === "parchis";
   const chaupar = game === "chaupar";
-  const pasaSpins = useRef([newPasaSpin(), newPasaSpin(), newPasaSpin()]).current;
+  const pasaSpins = useRef([newPasaSpin(), newPasaSpin()]).current;
   const [style, th] = useBoardStyle();
   const [pos, setPos] = useState<Tokens>(lesson.tokens);
   const [walking, setWalking] = useState("");
@@ -403,7 +389,7 @@ function Scene({ game, lesson }: { game: GameId; lesson: Lesson }) {
             await wait(450);
           } else if ("move" in a) {
             const [c, which, to] = a.move;
-            // (Chaupar: a super-piece's pieces move together.)
+            // (Chaupar: a pair's pawns move together.)
             const idx = Array.isArray(which) ? which : [which];
             const from = cur[c]![idx[0]];
             // The token you'd tap ripples first, like in the game.
@@ -444,7 +430,7 @@ function Scene({ game, lesson }: { game: GameId; lesson: Lesson }) {
     };
   }, [lesson, pachisi, chaupar, game]);
 
-  // Tokens sharing a square sit side by side, as on the real board (a Chaupar super-piece stands as a stack).
+  // Tokens sharing a square sit side by side, as on the real board (a Chaupar pair stands as a stack).
   const groups: Record<string, { c: Color; i: number; p: number; x: number; y: number; lying?: boolean }[]> = {};
   for (const c of COLORS)
     (pos[c] || []).forEach((p, i) => {
@@ -485,9 +471,8 @@ function Scene({ game, lesson }: { game: GameId; lesson: Lesson }) {
       )}
     </g>
   ));
-  // Chaupar: the three long dice of the throw (before the first: at rest).
-  const faces = lesson.threeFour ? FACES_34 : FACES_25;
-  const sticks = roll.v >= 111 ? throwOf(roll.v) : [faces[0], faces[1], faces[3]];
+  // Chaupar: the two long dice of the throw (before the first: at rest).
+  const sticks = validThrow(roll.v) ? throwOf(roll.v) : RESTING;
 
   return (
     <div className="flex w-full flex-col items-center gap-2">
@@ -522,7 +507,7 @@ function Scene({ game, lesson }: { game: GameId; lesson: Lesson }) {
             : "Your turn"}
         </span>
         {chaupar ? (
-          <PasaView dice={sticks} roll={roll.r} rolling={roll.rolling} faces={faces} spins={pasaSpins} label="Long dice" />
+          <PasaView dice={sticks} roll={roll.r} rolling={roll.rolling} spins={pasaSpins} label="Long dice" />
         ) : pachisi ? (
           <CowrieView value={roll.v} roll={roll.r} rolling={roll.rolling} shell={lesson.seven ? 25 : 28} set={lesson.seven ? SEVEN_SHELLS : SIX_SHELLS} label="Cowrie shells" />
         ) : (

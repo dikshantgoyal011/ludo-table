@@ -10,7 +10,7 @@ import { DiceView, newSpin, type DiceRoll } from "@/components/game/dice-3d";
 import { newPasaSpin, PasaView } from "@/components/game/pasa";
 
 import { stackSquare } from "@/lib/game/chaupar/board";
-import { throwOf } from "@/lib/game/chaupar/dice";
+import { throwOf, validThrow } from "@/lib/game/chaupar/dice";
 import { COLORS, DICE_ROLL_MS, NAMES, SLOTS_FOR } from "@/lib/game/constants";
 import { rollDie } from "@/lib/game/ludo/dice";
 import { P_SIZE } from "@/lib/game/pachisi/board";
@@ -148,12 +148,12 @@ type Shown = Record<Color, number[]>;
 /**
  * The computer's moves with the roll in hand (or none: games that allow it let
  * the roll go). Parchís can add moves to the same roll (count 20 / count 10), and
- * Chaupar plays three dice: those are made too.
+ * Chaupar plays two dice (and the throws a doublet adds): those are made too.
  */
 function botMove(s: GameState, c: Color) {
   const r = rulesFor(s);
   const many = s.game === "parchis" || s.game === "chaupar";
-  for (let k = 0; k < (many ? 6 : 1) && s.roll && s.turn === c && s.phase === "playing"; k++) {
+  for (let k = 0; k < (many ? 12 : 1) && s.roll && s.turn === c && s.phase === "playing"; k++) {
     const { i, opt } = r.chooseMove(s, c, s.roll);
     if (i >= 0) r.applyMove(s, c, i, s.roll, opt);
     else r.pass?.(s, c);
@@ -166,7 +166,7 @@ function freshDemo(players: number, game: GameId = "ludo"): GameState {
   s.phase = "playing";
   for (const c of SLOTS_FOR[players]) s.seats[c] = { id: c, nick: NAMES[c], bot: true };
   s.turn = SLOTS_FOR[players][0];
-  // Play a little first, so tokens are already out on the board. (Chaupar's pieces start out, and its three dice go further.)
+  // Play a little first, so tokens are already out on the board. (Chaupar's pawns start out on the board.)
   const rules = rulesFor(game);
   rules.setup?.(s);
   for (let k = 0; k < (game === "chaupar" ? 12 : 70) && s.phase === "playing"; k++) {
@@ -184,7 +184,7 @@ function LudoDemo({ twoDice = false, game: kind = "ludo" }: { twoDice?: boolean;
   const chaupar = kind === "chaupar";
   // (Thrown, not rolled: cowries and long dice.)
   const throws = pachisi || chaupar;
-  const pasaSpins = useRef([newPasaSpin(), newPasaSpin(), newPasaSpin()]).current;
+  const pasaSpins = useRef([newPasaSpin(), newPasaSpin()]).current;
   const rules = rulesFor(kind);
   const [style, th] = useBoardStyle();
   const game = useRef<GameState | null>(null);
@@ -225,10 +225,10 @@ function LudoDemo({ twoDice = false, game: kind = "ludo" }: { twoDice?: boolean;
   const narrow = width < (pachisi || chaupar ? 250 : twoDice ? 230 : 170);
   const room = narrow ? width - 28 : width - labelW - 12;
   // A tray of six shells is about 6.1 shells wide; a dice is its size wide (plus the gap between two);
-  // the tray of three long dice about 3.8 sticks.
+  // the tray of two long dice about 2.7 sticks.
   const shellPx = Math.max(13, Math.min(22, Math.floor(room / 6.1)));
   const diePx = Math.max(26, Math.min(40, Math.floor((room - (dieCount - 1) * 12) / dieCount)));
-  const stickPx = Math.max(24, Math.min(46, Math.floor(room / 3.8)));
+  const stickPx = Math.max(24, Math.min(46, Math.floor(room / 2.7)));
   const wait = useTimers(seen);
 
   useEffect(() => {
@@ -249,7 +249,7 @@ function LudoDemo({ twoDice = false, game: kind = "ludo" }: { twoDice?: boolean;
       const before = clone(s.tokens);
       rules.applyRoll(s, c, v);
       botMove(s, c);
-      // The pieces that moved; pieces going the same way together walk together (a Chaupar super-piece).
+      // The pieces that moved; pieces going the same way together walk together (a Chaupar pair).
       const moves: { col: Color; idx: number[]; a: number; b: number }[] = [];
       for (const col of COLORS)
         for (let i = 0; i < 4; i++) {
@@ -332,7 +332,7 @@ function LudoDemo({ twoDice = false, game: kind = "ludo" }: { twoDice?: boolean;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // Tokens sharing a square sit side by side (same idea as the real board; a Chaupar super-piece stands as a stack).
+  // Tokens sharing a square sit side by side (same idea as the real board; a Chaupar pair stands as a stack).
   const tokens: { key: string; c: Color; x: number; y: number; scale: number; home: boolean; lying?: boolean; lift?: number; badge?: number }[] = [];
   if (shown) {
     const groups: Record<string, { c: Color; i: number; p: number; x: number; y: number; lying?: boolean }[]> = {};
@@ -396,7 +396,7 @@ function LudoDemo({ twoDice = false, game: kind = "ludo" }: { twoDice?: boolean;
         </span>
         {chaupar ? (
           <PasaView
-            dice={dice.faceA >= 111 ? throwOf(dice.faceA) : [1, 2, 6]}
+            dice={validThrow(dice.faceA) ? throwOf(dice.faceA) : [3, 6]}
             roll={dice.a}
             rolling={dice.rolling}
             spins={pasaSpins}

@@ -84,6 +84,8 @@ export function SavePreferences({ game, on, onChange }: { game: GameId; on: bool
 /** Every variation with its switch, and a way to see it in How to play. Without `onChange` it only shows them (others in a friends room). */
 export function VariationsList({ game, value, onChange, className }: { game: GameId; value: Variations; onChange?: (v: Variations) => void; className?: string }) {
   const info = variationInfo(game);
+  // (Chaupar has none: only Solo or 2 vs 2.)
+  if (!info.length) return null;
   const allOn = info.every((x) => value[x.id]);
   return (
     <ul className={cn("flex flex-col gap-1.5", className)}>
@@ -180,7 +182,6 @@ export function SidesPicker({ value, players, onChange }: { value: Variations; p
 const ABOUT: Partial<Record<GameId, string>> = {
   pachisi: "Pachisi is played a little differently from place to place. Turn on any rules you like.",
   parchis: "Parchís is played a few different ways. Turn on any rules you like.",
-  chaupar: "Chaupar is played a little differently from place to place: the last three are how it's played in Haryana. Turn on any rules you like.",
 };
 
 /** The variations screen before a game vs the computer or on this device. */

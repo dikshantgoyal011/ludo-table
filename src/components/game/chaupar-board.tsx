@@ -3,7 +3,8 @@
 import { memo, useId, useMemo } from "react";
 import { useSettings } from "@/hooks/use-game";
 import { COLORS } from "@/lib/game/constants";
-import { P_SIZE } from "@/lib/game/pachisi/board";
+import { C_KAJAL } from "@/lib/game/chaupar/board";
+import { P_SIZE, ROUTE } from "@/lib/game/pachisi/board";
 import type { Color } from "@/lib/game/types";
 import type { ChauparStyle } from "@/lib/theme/boards";
 import { themeOf, type Theme } from "@/lib/theme/themes";
@@ -13,8 +14,8 @@ import { frameStyle } from "./ludo-board";
 import { CELLS, CrossShadow, ENDS, MIDDLE, OUTLINE, PachisiPawn, PachisiPawnShadow, star8, TRIANGLE, type Cell } from "./pachisi-board";
 
 // The Chaupar board: Pachisi's cross (pachisi-board.tsx has its shapes and the
-// pawns), with no castles, since Chaupar has none: every square round the cross
-// is the same. Each design is the cross alone, except Modern, a square board.
+// pawns), with no castles, since Chaupar has none: only the four squares where
+// Kajalvun is done are marked. Each design is the cross alone, except Modern, a square board.
 // Each has night colours too (the Dark theme). Only Chaupar uses this file.
 
 /** The Chaupar board design in use: the one picked in Settings, or the one matching the theme. */
@@ -78,21 +79,48 @@ type SurfaceProps = { look: Look; hex: (c: Color) => string; light: (c: Color) =
 
 /** The board picture, 19 x 19 units. `hex(slot)` / `light(slot)`: the colour each seat shows in. */
 export const ChauparSurface = memo(function ChauparSurface(props: SurfaceProps) {
-  switch (props.look.style) {
-    case "velvet":
-      return <Velvet {...props} />;
-    case "marble":
-      return <Marble {...props} />;
-    case "print":
-      return <BlockPrint {...props} />;
-    case "inlay":
-      return <Inlay {...props} />;
-    case "phulkari":
-      return <Phulkari {...props} />;
-    default:
-      return <Modern {...props} />;
-  }
+  return (
+    <g>
+      {props.look.style === "velvet" ? (
+        <Velvet {...props} />
+      ) : props.look.style === "marble" ? (
+        <Marble {...props} />
+      ) : props.look.style === "print" ? (
+        <BlockPrint {...props} />
+      ) : props.look.style === "inlay" ? (
+        <Inlay {...props} />
+      ) : props.look.style === "phulkari" ? (
+        <Phulkari {...props} />
+      ) : (
+        <Modern {...props} />
+      )}
+      <KajalMarks hex={props.hex} />
+    </g>
+  );
 });
+
+/**
+ * The four squares where Kajalvun is done, each colour's square 34 (in the arm
+ * opposite its own): a ring in that colour round a diamond, on every design.
+ */
+function KajalMarks({ hex }: { hex: (c: Color) => string }) {
+  return (
+    <g aria-hidden="true">
+      {COLORS.map((c) => {
+        const [r, cc] = ROUTE[c][C_KAJAL];
+        const x = cc + 0.5;
+        const y = r + 0.5;
+        return (
+          <g key={c}>
+            <circle cx={x} cy={y} r={0.34} fill="none" stroke="#fffaf0" strokeOpacity={0.85} strokeWidth={0.13} />
+            <circle cx={x} cy={y} r={0.34} fill="none" stroke={hex(c)} strokeWidth={0.08} />
+            <polygon points={`${x},${y - 0.16} ${x + 0.16},${y} ${x},${y + 0.16} ${x - 0.16},${y}`} fill={hex(c)} stroke="#fffaf0" strokeOpacity={0.85} strokeWidth={0.03} />
+          </g>
+        );
+      })}
+    </g>
+  );
+}
 
 /** The whole grid of squares as one path (for inlaid / printed lines). */
 const GRID = CELLS.map(([r, c]) => `M${c} ${r}h1v1h-1z`).join("");
@@ -449,7 +477,7 @@ function Phulkari({ look, hex, uid }: SurfaceProps) {
 /**
  * Modern: a square board in the theme's own colours, the cross sunk into it as a
  * channel of rounded squares, each colour's column in its pale shade. In the
- * corners, each colour's panel shows a set of three long dice.
+ * corners, each colour's panel shows a pair of long dice.
  */
 function Modern({ look, hex, light }: SurfaceProps) {
   const th = look.th;
@@ -463,9 +491,9 @@ function Modern({ look, hex, light }: SurfaceProps) {
         return (
           <g key={c}>
             <rect x={c0 + 0.45} y={r0 + 0.45} width={7.1} height={7.1} rx={1.1} fill={light(c)} />
-            {/* Three long dice, showing 1, 2 and 6 */}
-            {[1, 2, 6].map((n, k) => {
-              const y = r0 + 2.35 + k * 1.25;
+            {/* Two long dice, showing 3 and 6 */}
+            {[3, 6].map((n, k) => {
+              const y = r0 + 2.9 + k * 1.25;
               return (
                 <g key={k}>
                   <rect x={c0 + 1.5} y={y} width={5} height={0.95} rx={0.3} fill={hex(c)} />
@@ -528,7 +556,7 @@ export function ChauparBoardPreview({ children, className, style }: { children?:
 }
 
 /**
- * One pawn of a super-piece's stack: lifted up the screen (however the board is
+ * One pawn of a pair's stack: lifted up the screen (however the board is
  * turned) to its place in the stack, the top one showing how many there are.
  */
 export function StackLift({ lift = 0, badge, children }: { lift?: number; badge?: number; children: React.ReactNode }) {
@@ -550,7 +578,7 @@ export function ChauparPawn({ fill, lying, lift, badge }: { fill: string; lying?
   );
 }
 
-/** How many pieces a super-piece is: a small round label by its top pawn, upright however the board is turned. */
+/** How many pawns a stack is (a pair: 2): a small round label by its top pawn, upright however the board is turned. */
 export function StackBadge({ n }: { n: number }) {
   return (
     <g style={{ transform: "rotate(var(--unturn, 0deg))" }} aria-hidden="true">

@@ -12,7 +12,7 @@ import { defaultAvatar } from "@/lib/avatars";
 import { countryName, flagUrl } from "@/lib/country";
 import { COLORS, NICK_MAX } from "@/lib/game/constants";
 import { cleanParchisVariations, parchisPairs } from "@/lib/game/parchis/variations";
-import { countOn, hasSides, hasVariations, noVariations, plainRules, playsSolo } from "@/lib/game/variations";
+import { countOn, hasSides, hasVariations, noVariations, plainRules, playsSolo, variationInfo } from "@/lib/game/variations";
 import type { Player } from "@/lib/game/types";
 import { variantById } from "@/lib/game/variants";
 import { themeOf } from "@/lib/theme/themes";
@@ -273,7 +273,8 @@ function RulesCard() {
     <Panel title="Rules" aside={<span className="text-xs font-semibold text-muted-foreground">{on ? `${on} variation${on > 1 ? "s" : ""} on` : plainRules(g).split(" ")[0]}</span>}>
       {!friends ? (
         <p className="text-sm text-muted-foreground">
-          Online games use the {plain}, without variations
+          Online games use the {plain}
+          {variationInfo(g).length > 0 && ", without variations"}
           {!hasSides(g) || cap === 3 ? "." : playsSolo(vars) ? ", playing Solo." : cap === 2 ? ", two colors each." : ", playing 2 vs 2."}
         </p>
       ) : (

@@ -690,7 +690,7 @@ html.in-game .board-fit > .board-size {
   }
 }
 
-/* Chaupar's three long dice (pasa.tsx), in the same tray as the cowries: real 3D sticks
+/* Chaupar's two long dice (pasa.tsx), in the same tray as the cowries: real 3D sticks
    (--pw long, --ph thick) that roll over their long side when thrown. */
 .pasa {
   --pw: 34px;

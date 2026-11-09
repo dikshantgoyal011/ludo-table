@@ -50,7 +50,7 @@ export interface TokenView {
   hidden: boolean;
   /** Pachisi: lying on its side (on its way back up, or home). */
   lying?: boolean;
-  /** Chaupar, a super-piece: how far up the screen this piece of the stack sits, and on the top one how many are in it. */
+  /** Chaupar, a pair: how far up the screen this piece of the stack sits, and on the top one how many are in it. */
   lift?: number;
   badge?: number;
 }
@@ -1441,7 +1441,7 @@ export class GameController {
     for (const key in groups) {
       const list = groups[key];
       const n = list.length;
-      // Chaupar: a super-piece (pieces of one colour on one position) stands as a stack.
+      // Chaupar: a pair (two pawns of one colour on one position) stands as a stack.
       const placed: ((typeof list)[number] & { scale: number; lift: number; badge?: number })[] = rules.melds
         ? stackSquare(list)
         : list.map((t, k) => {

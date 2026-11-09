@@ -3,13 +3,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useGame } from "@/hooks/use-game";
 import { DICE_ROLL_MS } from "@/lib/game/constants";
-import { FACES_25, facesOf, ringOf, sayThrow, throwOf, validThrow } from "@/lib/game/chaupar/dice";
-import { cleanChauparVariations } from "@/lib/game/chaupar/variations";
+import { FACES, ringOf, sayThrow, throwOf, validThrow } from "@/lib/game/chaupar/dice";
+import { chauparTurn } from "@/lib/game/chaupar/rules";
 import type { Color } from "@/lib/game/types";
 import { cn } from "@/lib/utils";
 import type { DiceRoll } from "./dice-3d";
 
-// Chaupar's three long dice (pasa): four-sided sticks of bone, each face marked
+// Chaupar's two long dice (pasa): four-sided sticks of bone, each face marked
 // with ringed dots. Each is a real 3D stick that rolls over its long side when
 // thrown and lands showing the throw.
 
@@ -19,6 +19,9 @@ export interface PasaSpin {
   handled: number;
 }
 export const newPasaSpin = (): PasaSpin => ({ a: 0, handled: 0 });
+
+/** The sticks at rest, before a throw. */
+export const RESTING = [3, 6];
 
 /** The face at index k of the ring is in front when the stick is turned to -k quarter turns: the nearest such turn at or below `cur`, then `spins` more. */
 function aim(cur: number, k: number, spins: number) {
@@ -109,37 +112,35 @@ function LongDie({ face, roll, rolling, spin, ring, used, k }: { face: number; r
 }
 
 /**
- * The three long dice in a tray, as a button: they bob while waiting to be
+ * The two long dice in a tray, as a button: they bob while waiting to be
  * thrown, roll when thrown, and show the throw; `used` dice (already played) go dim.
  */
 export function PasaView({
   dice,
-  used = [false, false, false],
+  used = [false, false],
   roll,
   rolling,
   ready = false,
   onClick,
   label,
-  faces = FACES_25,
   spins,
   className,
   style,
 }: {
   dice: number[];
   used?: boolean[];
-  /** The throw (all three dice as one number, see dice.ts). */
+  /** The throw (both dice as one number, see dice.ts). */
   roll: DiceRoll | null;
   rolling: boolean;
   ready?: boolean;
   onClick?: () => void;
   label?: string;
-  faces?: number[];
   /** Each stick's turn (the game's survive the dice moving from one name tag to another). */
   spins: PasaSpin[];
   className?: string;
   style?: React.CSSProperties;
 }) {
-  const ring = ringOf(faces);
+  const ring = ringOf(FACES);
   const [tossing, setTossing] = useState(false);
   useEffect(() => {
     if (!roll) return;
@@ -151,7 +152,7 @@ export function PasaView({
   }, [roll]);
   const busy = tossing || rolling;
   // One throw for each stick, made once per throw (a new object would start the roll again).
-  const rolls = useMemo(() => (roll ? throwOf(roll.value).map((value) => ({ ...roll, value })) : [null, null, null]), [roll]);
+  const rolls = useMemo(() => (roll ? throwOf(roll.value).map((value) => ({ ...roll, value })) : [null, null]), [roll]);
   return (
     <button
       type="button"
@@ -166,7 +167,7 @@ export function PasaView({
       )}
       style={{ ["--toss-ms" as string]: `${DICE_ROLL_MS}ms`, ...style }}
     >
-      {[0, 1, 2].map((k) => (
+      {[0, 1].map((k) => (
         <LongDie key={k} k={k} face={dice[k]} roll={rolls[k]} rolling={busy} spin={spins[k]} ring={ring} used={!busy && !!used[k]} />
       ))}
     </button>
@@ -185,26 +186,26 @@ export function usedDice(dice: number[], left: number[] | null) {
   });
 }
 
-// The game's three sticks: they keep their turn as the dice go round the table.
-const gameSpins = [newPasaSpin(), newPasaSpin(), newPasaSpin()];
+// The game's two sticks: they keep their turn as the dice go round the table.
+const gameSpins = [newPasaSpin(), newPasaSpin()];
 
 /** The long dice on the name tag of the player whose turn it is: thrown here, showing the throw until it's played. */
 export function TagPasa({ c }: { c: Color }) {
   const game = useGame();
   const s = game.state;
-  const faces = facesOf(cleanChauparVariations(game.variations()));
   const turn = game.dieColor() === c;
   const canRoll = turn && game.canRollNow();
   // Thrown this turn: the throw in play. Not yet: the sticks at rest.
   const thrown = turn && (game.rolling || s.last?.c === c);
   const v = thrown ? (!game.rolling && s.last?.c === c ? s.last.v : game.dieFace) : 0;
-  const dice = validThrow(v, faces) ? throwOf(v) : [faces[0], faces[1], faces[3]];
-  const left = thrown && !game.rolling ? (s.roll ? game.hand() : []) : null;
+  const dice = validThrow(v) ? throwOf(v) : RESTING;
+  // What's left of the latest throw (its dice go dim as they're played).
+  const t = chauparTurn(s);
+  const left = thrown && !game.rolling ? (t.c === c && t.hand.length ? t.hand[t.hand.length - 1] : []) : null;
   return (
     <PasaView
       dice={dice}
       used={usedDice(dice, left)}
-      faces={faces}
       spins={gameSpins}
       roll={turn ? game.diceRoll : null}
       rolling={turn && game.rolling}
@@ -215,7 +216,50 @@ export function TagPasa({ c }: { c: Color }) {
   );
 }
 
-/** Chaupar's row on a name tag: the long dice, only for the player whose turn it is (every tag keeps the row's space, so nothing jumps). */
+/**
+ * Chaupar's row on a name tag: the long dice (only for the player whose turn it
+ * is), the turn's earlier throws still to play (after a doublet throws again),
+ * and, when Khado Karvo is offered, missing four turns instead. Every tag keeps
+ * the row's space, so nothing jumps.
+ */
 export function PasaRow({ c, isTurn, right }: { c: Color; isTurn: boolean; right: boolean }) {
-  return <div className={cn("flex h-[34px] basis-full items-center gap-1.5", right && "flex-row-reverse")}>{isTurn && <TagPasa c={c} />}</div>;
+  const game = useGame();
+  const s = game.state;
+  const t = chauparTurn(s);
+  const mine = isTurn && s.turn === c && t.c === c;
+  // (Throwing again, or a throw in the air: every throw so far waits; once moving, the ones before the latest, which the dice show.)
+  const earlier = mine ? (game.rolling || !s.roll ? t.hand : t.hand.slice(0, -1)).filter((h) => h.length) : [];
+  return (
+    <div className={cn("flex h-[34px] basis-full items-center gap-1.5", right && "flex-row-reverse")}>
+      {isTurn && !t.khado && <TagPasa c={c} />}
+      {earlier.length > 0 && (
+        <span
+          className="badge-pop flex h-7 shrink-0 items-center gap-1 rounded-full bg-paper px-2 text-xs font-extrabold text-[#23302c] tabular-nums shadow"
+          aria-label={`Throws to play: ${earlier.map((h) => h.join(" and ")).join(", ")}`}
+          title="Throws to play"
+        >
+          {earlier.map((h, k) => (
+            <span key={k} className={cn(k > 0 && "border-l border-[#23302c]/25 pl-1")}>
+              {h.join("·")}
+            </span>
+          ))}
+        </span>
+      )}
+      {mine && t.khado && (
+        <>
+          <span className="min-w-0 flex-1 text-[11px] leading-tight font-bold">Khado Karvo: tap a pawn at Home to capture</span>
+          {game.canPass() && (
+            <button
+              type="button"
+              onClick={game.pass}
+              title="Don't bring a pawn back out: miss four turns, then play your partner's pawns"
+              className="badge-pop h-8 shrink-0 rounded-full border-2 border-foreground/45 px-3 text-xs font-bold text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95"
+            >
+              Miss 4 turns
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
 }

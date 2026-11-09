@@ -274,7 +274,7 @@ function bar(t: number, k: number, vol: number, landing: boolean) {
 }
 
 /**
- * Chaupar's three long dice (timed to pasa.tsx): knocked together in the hand,
+ * Chaupar's two long dice (timed to pasa.tsx): knocked together in the hand,
  * landing one after another (70%, 40 ms apart) and rolling over on their long side
  * (two quieter knocks at 81–91% and 96%).
  */
@@ -283,8 +283,8 @@ function pasaThrow() {
   if (!a) return;
   const t0 = a.currentTime + 0.01;
   bar(t0, 0, 0.16, false);
-  bar(t0 + 0.05 + Math.random() * 0.02, 2, 0.13, false);
-  for (let k = 0; k < 3; k++) {
+  bar(t0 + 0.05 + Math.random() * 0.02, 1, 0.13, false);
+  for (let k = 0; k < 2; k++) {
     const t = t0 + 0.574 + k * 0.04 + jit(5) / 1000;
     bar(t, k, 0.3, true);
     bar(t0 + 0.746 + k * 0.04 + jit(8) / 1000, k, 0.13, false);

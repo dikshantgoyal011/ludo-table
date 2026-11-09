@@ -124,16 +124,38 @@ export interface GameState {
 export interface ChauparTurn {
   /** Whose turn this is about (anything for another colour is stale). */
   c: Color | null;
-  /** The dice still to play, each moving a piece (with "doubles move super-pieces", a pair can move one together). */
-  hand: number[];
-  /** The three dice this throw showed. */
-  dice: number[];
+  /** The throws still to play this turn: of each, the dice not used yet. */
+  hand: number[][];
+  /** This turn's throws, as thrown (two dice each). */
+  dice: number[][];
   /** Moves made since the last throw (devices use it to tell their own moves apart). */
   moved: number;
-  /** Colours that have captured a rival piece this game (kept from turn to turn). */
-  cut: Color[];
-  /** A super-piece has moved with a pair this throw (the third dice is then a single piece's). */
-  paired?: boolean;
+  /** How far each colour has got with the game's steps (kept from turn to turn). */
+  sides: Partial<Record<Color, ChauparSide>>;
+  /** A partner with all four pawns home, on their first turn after: Khado Karvo, or miss four turns. */
+  khado?: boolean;
+}
+
+/** Chaupar: one colour's progress through the game's steps (see chaupar/rules.ts). */
+export interface ChauparSide {
+  /** Has made its first throw (an opening 1-1 or 6-6 is spent). */
+  opened?: boolean;
+  /** The pair it starts with is still together on square 12. */
+  start?: boolean;
+  /** Kajalvun is done: a pair made on its square 34 (doublets then throw again, and pairs can be made anywhere). */
+  kajal?: boolean;
+  /** The pair made at Kajalvun (its two pawns) until it's free: it can't be split. */
+  jug?: number[];
+  /** The Jug: 0 not moved yet, 1 moved together (a pawn has to pass over it), 2 passed over (by `passer`, safe once `watch`'s turn is over). */
+  ool?: 0 | 1 | 2;
+  passer?: number;
+  watch?: Color;
+  /** Ool Olangvun has been done. */
+  oolDone?: boolean;
+  /** With two pairs on the board, the one with true status (two pawns); the other is a false pair. */
+  truePair?: number[];
+  /** Partners: all four pawns home. "wait": Khado Karvo or miss four turns, on its next turn; "aid": it plays its partner's pawns. */
+  done?: "wait" | "aid";
 }
 
 /** Parchís: the turn in progress. */
