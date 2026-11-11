@@ -164,7 +164,7 @@ export class PeerRoomTransport implements RoomTransport {
     });
   }
 
-  async open(code: string, events: RoomEvents) {
+  async open(code: string, events: RoomEvents, opts: { join?: boolean } = {}) {
     const { Peer } = await loadPeer();
     if (this.closed) return;
     // Try to host the room and, at the same time, register a second address to
@@ -185,6 +185,16 @@ export class PeerRoomTransport implements RoomTransport {
       if (this.closed) return;
       destroy(this.spare);
       this.spare = null;
+      // Joining only, and the room's address was free: nobody hosts it. Let it go again at once.
+      // (Asking the server for an address nobody has only fails after many seconds; this takes one.)
+      if (opts.join) {
+        // (Not ours any more before it's let go: letting go reads as a lost connection, which keepAlive would answer by taking the address back.)
+        this.peer = null;
+        destroy(host);
+        if (events.noRoom) events.noRoom();
+        else events.lost("network");
+        return;
+      }
       this.isHost = true;
       events.hosting();
     });
@@ -207,19 +217,20 @@ export class PeerRoomTransport implements RoomTransport {
     host.on("error", (e: { type?: string }) => {
       if (this.closed || this.peer !== host) return;
       if (e.type === "unavailable-id") {
-        // Someone already hosts this room: join them as a guest.
+        // Someone already hosts this room: join them as a guest. (Not ours before it's let go: see above.)
+        this.peer = null;
         destroy(host);
         const ready = this.spare && !spareFailed ? this.spare : new Peer();
         if (ready !== this.spare) destroy(this.spare);
         this.spare = null;
-        this.joinAsGuest(ready, code, events);
+        this.joinAsGuest(ready, code, events, !!opts.join);
       } else if (e.type === "network" || e.type === "server-error" || e.type === "socket-error") {
         events.lost("network");
       }
     });
   }
 
-  private joinAsGuest(peer: PeerType, code: string, events: RoomEvents) {
+  private joinAsGuest(peer: PeerType, code: string, events: RoomEvents, joinOnly = false) {
     this.isHost = false;
     this.peer = peer;
     this.listenForCalls(peer);
@@ -251,7 +262,9 @@ export class PeerRoomTransport implements RoomTransport {
     else peer.on("open", connect);
     peer.on("error", (e: { type?: string }) => {
       if (this.closed || this.peer !== peer) return;
-      events.lost(e.type === "peer-unavailable" ? "host-left" : "network");
+      // (Nobody has the room's address: when only joining, there's no such room.)
+      if (e.type === "peer-unavailable" && joinOnly && !this.hostConn?.open && events.noRoom) events.noRoom();
+      else events.lost(e.type === "peer-unavailable" ? "host-left" : "network");
     });
   }
 

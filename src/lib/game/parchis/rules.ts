@@ -24,7 +24,7 @@
 // Variations change some of this (variations.ts): two dice, a piece out from
 // the start, two-colour barriers on the seguros, and pairs.
 import { COLORS } from "../constants";
-import { addLog, nextTurn, seatName, seated, teamOf } from "../table";
+import { addLog, nextTurn, noteStep, seatName, seated, teamOf } from "../table";
 import type { Color, GameState, MoveChoice, MoveOpt, ParchisTurn, Rulebook } from "../types";
 import { isSeguro, keyOf, parchisPoint, parchisSteps, SEGUROS, squareOf, X_FINISH, X_LAST_SHARED, X_PASILLO, X_TRACK } from "./board";
 import { cleanParchisVariations, parchisPairs, type ParchisVariations } from "./variations";
@@ -197,8 +197,10 @@ function carryOn(s: GameState, c: Color) {
     const u = playable[0];
     const moves = legal(s, c, u);
     s.roll = u;
-    // Only one real choice (pieces in the same place count once): make it.
-    if (playable.length === 1 && new Set(moves.map((m) => `${s.tokens[c][m.i]}>${m.to}`)).size === 1) applyMove(s, c, moves[0].i, u, { use: u });
+    // Only one real choice (pieces in the same place count once): make it. Out of the house, though, the
+    // player picks which piece, unless only one is left there.
+    const fromHouse = moves.filter((m) => s.tokens[c][m.i] === -1).length > 1;
+    if (playable.length === 1 && !fromHouse && new Set(moves.map((m) => `${s.tokens[c][m.i]}>${m.to}`)).size === 1) applyMove(s, c, moves[0].i, u, { use: u });
     return;
   }
   s.roll = null;
@@ -225,6 +227,7 @@ export function applyMove(s: GameState, c: Color, i: number, v: number, opt: Mov
     t.broke = { i, j };
   }
   s.tokens[c][i] = m.to;
+  noteStep(s, [{ c, i, a: p, b: m.to }], m.cap ? [{ ...m.cap, a: s.tokens[m.cap.c][m.cap.i] }] : []);
   if (m.cap) s.tokens[m.cap.c][m.cap.i] = -1;
   for (const d of both ? (t.dice as number[]) : [u]) {
     const k = t.hand.indexOf(d);
@@ -287,6 +290,7 @@ export function applyRoll(s: GameState, c: Color, v: number): boolean {
     const k = t.sixPiece;
     const p = k === null ? -1 : s.tokens[c][k];
     if (k !== null && p >= 0 && p <= X_LAST_SHARED) {
+      noteStep(s, [], [{ c, i: k, a: p }]);
       s.tokens[c][k] = -1;
       addLog(s, c, "Third 6 in a row: the last piece moved goes back home.");
     } else addLog(s, c, "Third 6 in a row: it doesn't count.");

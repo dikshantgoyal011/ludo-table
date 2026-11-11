@@ -18,6 +18,8 @@ export function GameScreen() {
   const game = useGame();
   const net = game.isNet();
   const playing = game.loaded && game.state.phase === "playing";
+  // At the table: playing, or the game just over (the board stays as it was, the result shows over it).
+  const atTable = playing || (game.loaded && game.state.phase === "done");
   useBackGuard();
 
   // First Pachisi / Parchís game on this device: show How to play (most people only know Ludo).
@@ -37,12 +39,12 @@ export function GameScreen() {
   // While a game is on, the screen is locked to one phone screen: nothing scrolls,
   // the board takes the room that's left (see .in-game in globals.css).
   useEffect(() => {
-    if (!playing) return;
+    if (!atTable) return;
     // Notes from before the start ("Tap Invite…") are done with.
     if (game.banner) game.setBanner("");
     document.documentElement.classList.add("in-game");
     return () => document.documentElement.classList.remove("in-game");
-  }, [playing]);
+  }, [atTable]);
 
   // Online / friends: everyone gathers in the lobby; the board only shows once the game has begun.
   const inLobby = net && (!game.loaded || game.state.phase === "lobby");
@@ -60,7 +62,7 @@ export function GameScreen() {
   const tagRow = { width: boardW || undefined, maxWidth: "100%" };
 
   return (
-    <div className={cn("flex min-h-0 flex-col gap-3", playing && "flex-1")}>
+    <div className={cn("flex min-h-0 flex-col gap-3", atTable && "flex-1")}>
       {net && !inLobby && (
         <div className="flex items-center gap-2 text-xs text-muted-foreground sm:text-sm">
           <span
@@ -72,14 +74,14 @@ export function GameScreen() {
           <span className="truncate">{game.net.text}</span>
         </div>
       )}
-      {game.banner && !inLobby && (playing ? <Toast text={game.banner} /> : <div className="rounded-xl border border-primary/40 bg-primary/10 px-3 py-2 text-sm break-words">{game.banner}</div>)}
+      {game.banner && !inLobby && (atTable ? <Toast text={game.banner} /> : <div className="rounded-xl border border-primary/40 bg-primary/10 px-3 py-2 text-sm break-words">{game.banner}</div>)}
 
       {inLobby ? (
         <LobbyScreen />
       ) : (
-      <div className={cn("grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-6", playing && "min-h-0 flex-1")}>
+      <div className={cn("grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-6", atTable && "min-h-0 flex-1")}>
         {/* Board with a name tag at each corner */}
-        <div className={cn("mx-auto flex w-full max-w-[min(100%,640px)] flex-col gap-2", playing && "min-h-0 justify-center")}>
+        <div className={cn("mx-auto flex w-full max-w-[min(100%,640px)] flex-col gap-2", atTable && "min-h-0 justify-center")}>
           <div className="mx-auto grid w-full grid-cols-2 gap-2" style={tagRow}>
             <PlayerTag corner={0} />
             <PlayerTag corner={1} />
@@ -95,9 +97,9 @@ export function GameScreen() {
           </div>
         </div>
 
-        {/* During play the corner tags say it all; on phones the side panel only comes back after the game. */}
-        <aside className={cn("min-w-0 flex-col gap-3", playing ? "hidden min-h-0 overflow-y-auto lg:flex" : "flex")}>
-          {!playing && <TurnCard />}
+        {/* At the table the corner tags say it all (and after the game, the result popup): on phones no side panel. */}
+        <aside className={cn("min-w-0 flex-col gap-3", atTable ? "hidden min-h-0 overflow-y-auto lg:flex" : "flex")}>
+          {!atTable && <TurnCard />}
           <PlayersPanel />
         </aside>
       </div>

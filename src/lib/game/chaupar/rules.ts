@@ -43,7 +43,7 @@
 //   they've done Ool Olangvun) on the last stretch of their own arm before
 //   their Belly. A side wins with all eight of its pawns home.
 import { COLORS } from "../constants";
-import { addLog, inPlay, nextTurn, seatName, seated, teamOf } from "../table";
+import { addLog, inPlay, nextTurn, noteStep, seatName, seated, teamOf } from "../table";
 import type { ChauparSide, ChauparTurn, Color, GameState, MoveChoice, MoveOpt, Rulebook } from "../types";
 import { P_LAP_FROM, P_LAP_TO, pachisiPoint, ROUTE, squareOf } from "../pachisi/board";
 import { C_FINISH, C_KAJAL, C_OPEN_TO, C_START, C_START_AT, C_START_PAIR, chauparAdvance, chauparBounce, chauparSteps } from "./board";
@@ -397,9 +397,12 @@ function carryOn(s: GameState, c: Color) {
   }
   // (Anything: which move is up to the player.)
   s.roll = 1;
-  // Only one thing to do: do it.
-  if (!t.khado && new Set(moves.map((m) => `${m.h}${m.from}>${m.to}:${m.use}`)).size === 1) applyMove(s, c, moves[0].k, 1, { use: moves[0].use });
+  // Only one thing to do: do it. (Pawns coming back in each count: the player picks which, unless only one is waiting.)
+  if (!t.khado && new Set(moves.map((m) => `${m.h}${m.from === -1 ? m.j : m.from}>${m.to}:${m.use}`)).size === 1) applyMove(s, c, moves[0].k, 1, { use: moves[0].use });
 }
+
+/** The rival pawns a move captures, where they stand (for the move record). */
+const capsOf = (s: GameState, cut: { o: Color; idx: number[] }[]) => cut.flatMap((r) => r.idx.map((k) => ({ c: r.o, i: k, a: s.tokens[r.o][k] })));
 
 const name = (s: GameState, c: Color, h: Color) => (s.seats[h]?.id !== s.seats[c]?.id ? `${seatName(s, h)}'s ` : "");
 
@@ -411,6 +414,7 @@ export function applyMove(s: GameState, c: Color, i: number, _v: number, opt: Mo
   const side = sideFor(t, m.h);
   // Khado Karvo: out of Home onto the rival's square, capturing it. That's the turn.
   if (m.use >= C_KHADO) {
+    noteStep(s, m.group.map((j) => ({ c, i: j, a: m.from, b: m.to })), capsOf(s, m.cut));
     for (const j of m.group) s.tokens[c][j] = m.to;
     for (const r of m.cut) for (const k of r.idx) s.tokens[r.o][k] = -1;
     delete side.done;
@@ -429,6 +433,7 @@ export function applyMove(s: GameState, c: Color, i: number, _v: number, opt: Mo
   if (k < 0) return;
   if (m.use > C_SUM) t.hand[k] = [];
   else t.hand[k].splice(t.hand[k].indexOf(m.use), 1);
+  noteStep(s, m.group.map((j) => ({ c: m.h, i: j, a: m.from, b: m.to })), capsOf(s, m.cut));
   for (const j of m.group) s.tokens[m.h][j] = m.to;
   for (const r of m.cut) for (const q of r.idx) s.tokens[r.o][q] = -1;
   t.moved++;
@@ -513,6 +518,7 @@ export function applyRoll(s: GameState, c: Color, v: number): boolean {
     // The opening throw: 1-1 or 6-6 sends a pawn of the pair on 12 to 24.
     const land = isDoublet(dice) && (dice[0] === 1 || dice[0] === 6) && side.start ? landing(s, c, [C_START_PAIR[0]], C_OPEN_TO) : null;
     if (land) {
+      noteStep(s, [{ c, i: C_START_PAIR[0], a: C_START_AT, b: C_OPEN_TO }], capsOf(s, land.cut));
       s.tokens[c][C_START_PAIR[0]] = C_OPEN_TO;
       for (const r of land.cut) for (const q of r.idx) s.tokens[r.o][q] = -1;
       t.hand[t.hand.length - 1] = [];

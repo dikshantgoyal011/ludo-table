@@ -33,7 +33,7 @@ import {
 import { stackSquare } from "./chaupar/board";
 import { cleanFor, hasSides, hasVariations, noVariations, playsSolo, type Variations } from "./variations";
 import { addLog, clone, finishOf, freshState, freshTokens, leaveGame, missTurn, movable, rulesFor, seatName, seated, seatsFor, teamOf, validState } from "./rules";
-import type { ChatMessage, Color, GameId, GameState, Looks, Mode, MoveOpt, Seat } from "./types";
+import type { ChatMessage, Color, GameId, GameState, Looks, Mode, MoveOpt, Seat, TrailStep } from "./types";
 
 export type NetKind = "" | "ok" | "bad";
 
@@ -45,6 +45,8 @@ export interface TokenView {
   scale: number;
   movable: boolean;
   stepping: boolean;
+  /** Gliding along the track square after square, one smooth run (the other way to move: see Settings). */
+  gliding: boolean;
   /** Cut: flying back to its yard (a longer glide, it can cross the board). */
   returning: boolean;
   hidden: boolean;
@@ -57,6 +59,10 @@ export interface TokenView {
 
 /** How long a cut token takes to fly home (matches .token.returning in globals.css). */
 const RETURN_MS = 650;
+/** A token out of its yard onto the first square: one glide (matches .token in globals.css). */
+const OUT_MS = 380;
+/** Moves still waiting to be shown for longer than this: catch up at once instead of falling further behind. */
+const CATCH_UP_MS = 6_000;
 
 interface MoveAnim {
   c: Color;
@@ -237,6 +243,8 @@ export class GameController {
   private animPos: Record<string, number> = {};
   private animTimers: ReturnType<typeof setTimeout>[] = [];
   private animBusyUntil = 0;
+  /** When the last move queued to be shown ends (the next one waits for it, so moves always play in order). */
+  private queueEnd = 0;
   private rotFrame = 0;
   private heartbeat: ReturnType<typeof setInterval> | null = null;
   /** Host: when each player was last heard from. */
@@ -302,6 +310,9 @@ export class GameController {
   ) {
     // I lost a voice call the other player places: tell the table, so they call me again.
     this.voice.onLost = () => this.announceVoice();
+    // For tests only: a page that sets window.__ludoTest = {} before loading gets this controller as __ludoTest.game (and the rules).
+    const test = (globalThis as { __ludoTest?: { game?: GameController; rulesFor?: typeof rulesFor } }).__ludoTest;
+    if (test) Object.assign(test, { game: this, rulesFor });
   }
 
   // ============================================================ subscriptions
@@ -803,10 +814,15 @@ export class GameController {
 
   private hostLeave(id: string) {
     this.commit((s) => {
-      if (s.phase !== "lobby") return false;
+      if (s.phase !== "lobby" && s.phase !== "done") return false;
       const me = s.players.find((p) => p.id === id);
       if (!me) return false;
       s.players = s.players.filter((p) => p.id !== id);
+      // (After a game the results stay as they are: the lobby that follows is without them.)
+      if (s.phase === "done") {
+        s.log = [{ c: "" as const, t: `${me.nick} left.` }, ...s.log].slice(0, 20);
+        return;
+      }
       s.seats = seatsFor(s.players);
       if (s.ready) s.ready = s.ready.filter((x) => x !== id);
       if (s.agreed) s.agreed = s.agreed.filter((x) => x !== id);
@@ -996,6 +1012,10 @@ export class GameController {
   reset = () => {
     this.confirmReset = false;
     if (!this.canRunTable()) return;
+    this.resetTable();
+  };
+  /** A new game at this table: online / friends, back to the lobby; vs computer / on this device, straight away. */
+  private resetTable() {
     // Friends: whoever runs the room now keeps it (the creator may have gone).
     const owner = this.mode === "friends" ? this.roomOwnerId() : undefined;
     this.commit((s) => {
@@ -1016,7 +1036,12 @@ export class GameController {
         this.setupGame(s);
       }
     });
-  };
+  }
+  /** Friends room: a game is over and someone at the table asked to play again. Everyone goes back to the room's lobby. */
+  private hostAgain() {
+    if (this.mode !== "friends" || this.state.phase !== "done") return;
+    this.resetTable();
+  }
   clearSeats = () => {
     this.confirmReset = false;
     if (!this.canRunTable()) return;
@@ -1272,15 +1297,24 @@ export class GameController {
     void this.openRoom(`pub${PUBLIC_PREFIX[this.wantGame]}${this.wantPairs ? "t" : ""}${this.wantCount}x${n}`);
   }
 
-  /** Friends room `code`; `game` is used if this device sets the room up (a new room). */
-  startFriends(code: string, game: GameId = "ludo") {
-    if (this.mode === "friends" && this.room === code) return;
+  /**
+   * Friends room `code`. `create`: a new room, set up for `game`. Otherwise
+   * joining one: only if someone is hosting it (a mistyped code doesn't make a room).
+   */
+  startFriends(code: string, game: GameId = "ludo", create = false) {
+    if (this.mode === "friends" && this.room === code && !this.noRoom) return;
     this.leaveCurrent();
     this.mode = "friends";
     this.wantGame = game;
+    this.joinOnly = !create;
+    this.noRoom = "";
     this.autoJoin = true;
     void this.openRoom(code);
   }
+  /** Joining a friends room (not creating it): nobody may host it on its own. */
+  private joinOnly = false;
+  /** The room code nobody was hosting when I tried to join it. */
+  noRoom = "";
 
   /** The online / friends game I'm seated in, if I closed the page by mistake. */
   activeRoom() {
@@ -1371,7 +1405,7 @@ export class GameController {
 
   /** Leave whatever is running (network rooms, timers). */
   leaveCurrent() {
-    if (this.isNet() && this.loaded && this.state.phase === "lobby" && this.joined()) {
+    if (this.isNet() && this.loaded && (this.state.phase === "lobby" || this.state.phase === "done") && this.joined()) {
       try {
         this.leave();
       } catch {
@@ -1469,6 +1503,7 @@ export class GameController {
           movable: moveSet.has(t.c + t.i),
           // Quick one-square hops while walking; coming out of the yard is a longer glide.
           stepping: this.settings.steps && this.animPos[t.c + t.i] !== undefined && !this.comingOut.has(t.c + t.i),
+          gliding: !this.settings.steps && this.animPos[t.c + t.i] !== undefined && !this.comingOut.has(t.c + t.i),
           returning: this.returning.has(t.c + t.i),
           hidden: !s.seats[t.c] || !!s.seats[t.c]?.out,
           lying: t.lying,
@@ -1481,21 +1516,129 @@ export class GameController {
     return out.sort((a, b) => CI[a.c] * 4 + a.i - (CI[b.c] * 4 + b.i));
   }
 
-  private animateMove(m: MoveAnim, caps: { c: Color; i: number; a: number }[], delay: number) {
-    const key = m.c + m.i;
-    const steps = this.settings.steps && !reduceMotion();
-    // The squares in between, by the game's own route.
-    const stepsOf = rulesFor(this.state).steps;
-    // The same token can move again before its last move has finished (a 6, then
-    // an automatic move). Queue behind it instead of cutting it short.
-    const gen = (this.animGen[key] = (this.animGen[key] || 0) + 1);
-    const busy = steps ? Math.max(0, (this.tokenBusyUntil[key] || 0) - Date.now()) : 0;
-    if (busy > delay) delay = busy;
-    else this.animPos[key] = m.a; // (while queued, the earlier move is still walking it to m.a)
-    caps.forEach((k) => {
-      this.animPos[k.c + k.i] = k.a;
+  /**
+   * How long a token's move takes on screen. The same whether it hops or glides
+   * (and with less motion), so every device at a table keeps the same time:
+   * nobody's screen falls behind because they picked the other way to move.
+   */
+  private walkMs(a: number, b: number) {
+    const path = rulesFor(this.state).steps(a, b);
+    return this.enters(a, path) ? OUT_MS : (path.length + 1) * STEP_MS;
+  }
+  /** Out of the yard onto the first square (or Chaupar's Khado Karvo, out of Home): one glide. */
+  private enters(a: number, path: number[]) {
+    return (a === -1 || a === finishOf(this.state)) && path.length <= 1;
+  }
+  /** How long one move takes on screen, its captures flying home included. */
+  private stepMs(st: TrailStep) {
+    return Math.max(0, ...st.moves.map((m) => this.walkMs(m.a, m.b))) + (st.caps.length ? RETURN_MS : 0);
+  }
+
+  /**
+   * The moves from prev to next, in the order they were made (the rules note each
+   * one: see noteStep), then anything else that changed (a new game, a copy from
+   * the host that differs from mine), all at once as before.
+   */
+  private stepsBetween(prev: GameState, next: GameState): TrailStep[] {
+    const out: TrailStep[] = [];
+    const pos = clone(prev.tokens);
+    const known = prev.trail?.[prev.trail.length - 1]?.n ?? 0;
+    const fresh = (next.gid || "") === (prev.gid || "") ? (next.trail || []).filter((st) => st.n > known) : [];
+    // (More moves than the record keeps came at once: show the change in one go.)
+    if (fresh.length && fresh[0].n === known + 1)
+      for (const st of fresh) {
+        const moves = st.moves.map((m) => ({ ...m, a: pos[m.c][m.i] })).filter((m) => m.a !== m.b);
+        const caps = st.caps.map((k) => ({ ...k, a: pos[k.c][k.i] })).filter((k) => k.a !== -1);
+        moves.forEach((m) => (pos[m.c][m.i] = m.b));
+        caps.forEach((k) => (pos[k.c][k.i] = -1));
+        if (moves.length || caps.length) out.push({ n: st.n, moves, caps });
+      }
+    const rest: TrailStep = { n: 0, moves: [], caps: [] };
+    for (const c of COLORS)
+      for (let i = 0; i < 4; i++) {
+        const a = pos[c][i];
+        const b = next.tokens[c][i];
+        if (a === b) continue;
+        if (b === -1) rest.caps.push({ c, i, a });
+        else rest.moves.push({ c, i, a, b });
+      }
+    if (rest.moves.length || rest.caps.length) out.push(rest);
+    return out;
+  }
+
+  /**
+   * Show these moves one after another: each starts once the one before it has
+   * finished, the tokens it captured back home (a Parchís capture, then the
+   * count of 20 with another piece). Moves still being shown from before go first.
+   */
+  private showSteps(steps: TrailStep[], delay: number) {
+    if (!steps.length) return;
+    const now = Date.now();
+    // Far behind (moves came in faster than they could be shown, say after the app was in the
+    // background): catch up at once, and show only the latest move.
+    if (this.queueEnd - now > CATCH_UP_MS) {
+      this.stopAnimations();
+      steps = steps.slice(-1);
+    }
+    let at = Math.max(now + delay, this.queueEnd);
+    for (const st of steps) {
+      const [first, ...others] = st.moves;
+      if (first) {
+        this.animateMove(first, st.caps, at - now);
+        others.forEach((m) => this.animateMove(m, [], at - now));
+      } else this.captureLater(st.caps, at - now);
+      at += this.stepMs(st);
+    }
+    this.queueEnd = at;
+    this.animBusyUntil = Math.max(this.animBusyUntil, at);
+  }
+
+  /** Tokens to be captured: they stay where they are until then (a later move of theirs takes over from there). */
+  private holdCaps(caps: TrailStep["caps"], until: number) {
+    const now = Date.now();
+    return caps.map((k) => {
+      const ck = k.c + k.i;
+      if ((this.tokenBusyUntil[ck] || 0) <= now) this.animPos[ck] = k.a;
+      this.tokenBusyUntil[ck] = Math.max(this.tokenBusyUntil[ck] || 0, until + RETURN_MS);
+      return (this.animGen[ck] = (this.animGen[ck] || 0) + 1);
     });
+  }
+  /** They fly home now. */
+  private sendCapsHome(caps: TrailStep["caps"], gens: number[]) {
+    caps.forEach((k, n) => {
+      const ck = k.c + k.i;
+      // (A later move of the same token starts from home.)
+      if (this.animGen[ck] === gens[n]) delete this.animPos[ck];
+      else this.animPos[ck] = -1;
+    });
+    this.sendHome(caps.map((k) => k.c + k.i));
+    this.play("capture");
+  }
+  /** A move that's only tokens going home (Parchís: a third 6 sends the last piece moved back). */
+  private captureLater(caps: TrailStep["caps"], delay: number) {
+    const gens = this.holdCaps(caps, Date.now() + delay);
+    this.animTimers.push(
+      setTimeout(() => {
+        this.sendCapsHome(caps, gens);
+        this.emit();
+      }, delay),
+    );
+  }
+
+  private animateMove(m: MoveAnim, caps: TrailStep["caps"], delay: number) {
+    const key = m.c + m.i;
+    const now = Date.now();
+    const hops = this.settings.steps;
+    const still = reduceMotion();
+    const path = rulesFor(this.state).steps(m.a, m.b);
+    const walk = this.walkMs(m.a, m.b);
+    const gen = (this.animGen[key] = (this.animGen[key] || 0) + 1);
+    // Where it starts. (A token still finishing an earlier move ends up there by itself.)
+    if ((this.tokenBusyUntil[key] || 0) <= now) this.animPos[key] = m.a;
+    this.tokenBusyUntil[key] = now + delay + walk;
+    const capGens = this.holdCaps(caps, now + delay + walk);
     const latest = () => this.animGen[key] === gen;
+    const entering = this.enters(m.a, path);
     const finish = (wait: number) => {
       this.animTimers.push(
         setTimeout(() => {
@@ -1504,37 +1647,33 @@ export class GameController {
           if (m.b === finishOf(this.state)) this.play("home");
           // Reaching a safe square (not straight out of the yard: that has its own sound).
           else if (!caps.length && !entering && rulesFor(this.state).safe?.(m.c, m.b)) this.play("safe");
-          if (caps.length) {
-            caps.forEach((k) => delete this.animPos[k.c + k.i]);
-            this.sendHome(caps.map((k) => k.c + k.i));
-            this.play("capture");
-          }
+          if (caps.length) this.sendCapsHome(caps, capGens);
           this.emit();
         }, wait),
       );
     };
-    // Out of the yard onto the first square: one glide. (A Pachisi piece coming out further walks from there.)
-    const entering = m.a === -1 && stepsOf(m.a, m.b).length <= 1;
     const run = () => {
       this.animOwner[key] = gen;
-      if (m.a === -1 && !entering) this.play("out");
       if (entering) {
-        this.animPos[key] = 0;
+        this.animPos[key] = path[0] ?? m.b;
         this.comingOut.add(key);
         this.play("out");
         this.emit();
-        this.animTimers.push(setTimeout(() => this.comingOut.delete(key), 380));
-        finish(380);
+        this.animTimers.push(setTimeout(() => this.comingOut.delete(key), OUT_MS));
+        finish(OUT_MS);
         return;
       }
-      if (!steps) {
-        if (latest()) delete this.animPos[key];
+      if (m.a === -1) this.play("out");
+      // Less motion: straight there, in the same time as everyone else.
+      if (still) {
+        this.animPos[key] = m.b;
         this.play("move");
         this.emit();
-        finish(360);
+        finish(walk);
         return;
       }
-      const path = stepsOf(m.a, m.b);
+      // Square by square: hopping (a tick each square), or gliding along the track in one smooth run.
+      if (!hops) this.play("move");
       let k = 0;
       this.animPos[key] = m.a;
       const iv = setInterval(() => {
@@ -1543,7 +1682,7 @@ export class GameController {
           return;
         }
         this.animPos[key] = path[k++];
-        this.play("move");
+        if (hops) this.play("move");
         this.emit();
         if (k >= path.length) {
           clearInterval(iv);
@@ -1552,10 +1691,8 @@ export class GameController {
       }, STEP_MS);
       this.animTimers.push(iv as unknown as ReturnType<typeof setTimeout>);
     };
-    const total = delay + (entering ? 380 : steps ? (stepsOf(m.a, m.b).length + 1) * STEP_MS : 360);
-    this.animBusyUntil = Math.max(this.animBusyUntil, Date.now() + total);
-    this.tokenBusyUntil[key] = Date.now() + total;
-    if (delay) this.animTimers.push(setTimeout(run, delay));
+    this.animBusyUntil = Math.max(this.animBusyUntil, now + delay + walk);
+    if (delay > 0) this.animTimers.push(setTimeout(run, delay));
     else run();
   }
 
@@ -1572,6 +1709,7 @@ export class GameController {
     });
     this.animTimers = [];
     this.animBusyUntil = 0;
+    this.queueEnd = 0;
     for (const k in this.animPos) delete this.animPos[k];
     this.animGen = {};
     this.animOwner = {};
@@ -1586,17 +1724,6 @@ export class GameController {
     // A game begins (or begins again): nothing played in it yet.
     if (next.phase === "playing" && !next.last && (prev.phase !== "playing" || (!!next.gid && next.gid !== prev.gid))) this.play("start");
     if (prev.phase === "playing" && (next.phase === "playing" || next.phase === "done")) {
-      const moves: MoveAnim[] = [];
-      const caps: { c: Color; i: number; a: number }[] = [];
-      for (const c of COLORS)
-        for (let i = 0; i < 4; i++) {
-          const a = prev.tokens[c][i];
-          const b = next.tokens[c][i];
-          if (a === b) continue;
-          if (b === -1 && a >= 0) caps.push({ c, i, a });
-          // (Tokens only ever move forward; a Pachisi piece heading home from a later round goes to a smaller number.)
-          else if (b !== -1) moves.push({ c, i, a, b });
-        }
       // A remote roll animates the dice first, so hold the token until it lands.
       const newRoll = !!next.last && (!prev.last || prev.last.seq !== next.last.seq);
       // (My own roll coming back from the host: its dice already played here.)
@@ -1606,11 +1733,10 @@ export class GameController {
         remote && newRoll && seq !== this.ownRollSeq && seq !== this.preRolledSeq ? REMOTE_MOVE_DELAY : 0,
         this.diceLandsAt - Date.now(),
       );
-      moves.forEach((m) => this.animateMove(m, caps, delay));
-      if (!moves.length && caps.length) {
-        this.sendHome(caps.map((k) => k.c + k.i));
-        this.play("capture");
-      }
+      // (A new game: nothing from the last one is still to be shown.)
+      if ((next.gid || "") !== (prev.gid || "")) this.stopAnimations();
+      // One after another, in the order they were made.
+      this.showSteps(this.stepsBetween(prev, next), delay);
     }
     if (next.phase === "playing" && prev.phase === "playing" && next.turn !== prev.turn && this.mode !== "local" && this.mine(next, next.turn)) {
       setTimeout(() => this.play("turn"), Math.max(250, this.animBusyUntil - Date.now()));
@@ -1656,6 +1782,7 @@ export class GameController {
     this.emit();
   }
   private hideWinner() {
+    this.againAsked = false;
     this.celebrated = false;
     this.finishShown = false;
     this.finalShown = false;
@@ -1676,7 +1803,19 @@ export class GameController {
     if (this.isNet() || !hasVariations(g) || this.services.profile.get().saveVariations[g]) return null;
     return `/play/${this.mode}?game=${g}`;
   }
+  /** Friends: I asked for the next game and the room is on its way back to the lobby. */
+  againAsked = false;
   playAgain() {
+    if (this.mode === "friends") {
+      // Anyone at the table can take the room back to its lobby (the host does it; asked again until it has).
+      if (this.isHost || !this.online) return this.hostAgain();
+      this.againAsked = true;
+      const ask = () => this.state.phase === "done" && this.againAsked && this.transport?.sendToHost({ type: "again", id: this.myId });
+      ask();
+      [1500, 4000].forEach((ms) => this.animTimers.push(setTimeout(ask, ms)));
+      this.emit();
+      return;
+    }
     this.winOpen = false;
     if (this.mode === "online") this.startOnline(this.wantCount);
     else if (this.canRunTable()) this.reset();
@@ -2152,6 +2291,11 @@ export class GameController {
 
   /** Called once a room's state is known. */
   private onFirstState() {
+    if (this.state.phase === "done" && this.state.winners.length && !this.finalShown) {
+      this.finalShown = true;
+      this.winFinal = true;
+      this.winOpen = true;
+    }
     if (this.searching) {
       const s = this.state;
       const cap = s.capacity || 0;
@@ -2255,6 +2399,15 @@ export class GameController {
       }
     };
     this.onHostSilent = () => lost("host-left");
+    // Joining a room nobody hosts: say so. (Looking again at once doesn't work: the connection server
+    // takes a while to free the room's address that was just looked at.)
+    const noRoom = () => {
+      if (!alive()) return;
+      this.teardown();
+      this.noRoom = code;
+      this.setNet("bad", "No room with this code");
+      this.emit();
+    };
     // Nothing at all after a while (the connection server never answered, or a
     // host that's listed but gone): start again instead of "Connecting…" for ever.
     setTimeout(() => {
@@ -2306,6 +2459,7 @@ export class GameController {
           this.voiceMembers.clear();
           this.joinVoice();
         },
+        noRoom,
         peerOpened: (link) => {
           link.send({ type: "state", state: this.state });
           if (this.chat.length) link.send({ type: "chatHistory", msgs: this.chat });
@@ -2352,7 +2506,7 @@ export class GameController {
           else if (m.type === "voiceRoster" && Array.isArray(m.list)) this.setVoiceRoster(m.list);
         },
         lost,
-      });
+      }, { join: this.mode === "friends" && this.joinOnly && !this.loaded });
     } catch (e) {
       if (!alive()) return;
       // The app was open across an update and its connection code is gone: load the new version.
@@ -2387,6 +2541,7 @@ export class GameController {
       this.hostJoin(m.id, String(m.nick || "Player").slice(0, NICK_MAX), { cc: m.cc, av: m.av });
     } else if (m.type === "leave" && typeof m.id === "string") this.hostLeave(m.id);
     else if (m.type === "start" && (this.mode !== "friends" || link.pid === this.roomOwnerId())) this.startGame();
+    else if (m.type === "again" && link.pid && m.id === link.pid) this.hostAgain();
     else if (m.type === "ready" && this.mode === "friends" && link.pid && m.id === link.pid) this.hostReady(link.pid, !!m.on);
     else if (m.type === "agree" && this.mode === "friends" && link.pid && m.id === link.pid) this.hostAgree(link.pid, !!m.on, Number(m.vv));
     else if (m.type === "variations" && this.mode === "friends" && link.pid && m.id === link.pid) this.hostVariations(link.pid, m.variations);

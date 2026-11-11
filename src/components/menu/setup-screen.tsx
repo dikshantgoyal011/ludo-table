@@ -77,6 +77,8 @@ export function SetupScreen({ mode }: { mode: Mode }) {
   const [profile, save] = useProfile();
   const [error, setError] = useState("");
   const [code, setCode] = useState("");
+  // Play with friends: creating a room, or joining one (two separate choices).
+  const [way, setWay] = useState<"create" | "join">("create");
   // Which game: ?game= in the address (Ludo when absent). Read from the router, so a
   // page opened from inside the app has the right game from its very first frame
   // (reading it after opening showed Ludo for a moment on every Pachisi screen).
@@ -245,49 +247,81 @@ export function SetupScreen({ mode }: { mode: Mode }) {
 
         {mode === "friends" && (
           <>
-            <Button
-              size="lg"
-              className="w-full"
-              disabled={opening}
-              onClick={() => go(roomPath(newRoomCode(), game === "ludo" ? "" : `game=${game}`))}
-            >
-              {opening ? "Opening the room…" : "Create a room"}
-            </Button>
-            <div className="text-center text-xs tracking-widest text-muted-foreground uppercase">
-              or
+            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Create or join a room">
+              {(
+                [
+                  ["create", "Create a room", "Get a code to send your friends"],
+                  ["join", "Join a room", "Use the code a friend sent you"],
+                ] as const
+              ).map(([id, title, text]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="radio"
+                  aria-checked={way === id}
+                  onClick={() => {
+                    setWay(id);
+                    setError("");
+                  }}
+                  className={cn(
+                    "flex flex-col gap-0.5 rounded-xl border-2 px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[.98]",
+                    way === id ? "border-primary bg-primary/12" : "border-border bg-background/50",
+                  )}
+                >
+                  <span className="text-sm leading-tight font-bold">{title}</span>
+                  <span className="text-xs leading-snug text-muted-foreground">{text}</span>
+                </button>
+              ))}
             </div>
-            <div className="flex gap-2">
-              <Input
-                className="font-mono tracking-wider placeholder:font-sans placeholder:tracking-normal"
-                placeholder="Friend's room code"
-                maxLength={12}
-                autoCapitalize="off"
-                autoComplete="off"
-                aria-label="Friend's room code"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter")
-                    document.getElementById("joinFriendRoom")?.click();
-                }}
-              />
-              <Button
-                id="joinFriendRoom"
-                variant="outline"
-                className="h-10 px-4"
-                onClick={() => {
-                  const v = cleanRoomCode(code);
-                  if (v.length < 3) {
-                    setError("Room codes are 3 to 12 letters or numbers.");
-                    return;
-                  }
-                  go(roomPath(v));
-                }}
-                disabled={opening}
-              >
-                Join
-              </Button>
-            </div>
+            {way === "create" ? (
+              <>
+                <p className="text-xs leading-snug text-muted-foreground">
+                  You get a room code and an invite link to send. When your friends are in, you start the game.
+                </p>
+                <Button
+                  size="lg"
+                  className="w-full"
+                  disabled={opening}
+                  onClick={() => go(roomPath(newRoomCode(), `new=1${game === "ludo" ? "" : `&game=${game}`}`))}
+                >
+                  {opening ? "Opening the room…" : "Create a room"}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Field label="Room code">
+                  <Input
+                    className="h-11 font-mono text-base tracking-wider placeholder:font-sans placeholder:tracking-normal"
+                    placeholder="The code your friend sent"
+                    maxLength={12}
+                    autoCapitalize="off"
+                    autoComplete="off"
+                    aria-label="Room code"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") document.getElementById("joinFriendRoom")?.click();
+                    }}
+                  />
+                </Field>
+                <Button
+                  id="joinFriendRoom"
+                  size="lg"
+                  className="w-full"
+                  onClick={() => {
+                    const v = cleanRoomCode(code);
+                    if (v.length < 3) {
+                      setError("Room codes are 3 to 12 letters or numbers.");
+                      return;
+                    }
+                    go(roomPath(v));
+                  }}
+                  disabled={opening}
+                >
+                  {opening ? "Joining…" : "Join the room"}
+                </Button>
+              </>
+            )}
           </>
         )}
 

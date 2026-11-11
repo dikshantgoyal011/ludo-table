@@ -2,7 +2,7 @@
 // Functions take a state and change it in place; callers work on a copy (see
 // GameController.commit).
 import { COLORS } from "../constants";
-import { addLog, nextTurn, seatName } from "../table";
+import { addLog, nextTurn, noteStep, seatName } from "../table";
 import type { Color, GameState, MoveChoice, Rulebook } from "../types";
 import { basePoint, FINISH, SAFE, trackIdx } from "./board";
 import { rollDie } from "./dice";
@@ -25,6 +25,7 @@ export function applyMove(s: GameState, c: Color, i: number, v: number) {
   s.tokens[c][i] = np;
   s.roll = null;
   const captured: Color[] = [];
+  const caps: { c: Color; i: number; a: number }[] = [];
   if (np <= 50) {
     const idx = trackIdx(c, np);
     if (!SAFE.has(idx)) {
@@ -34,11 +35,13 @@ export function applyMove(s: GameState, c: Color, i: number, v: number) {
           if (op >= 0 && op <= 50 && trackIdx(o, op) === idx) {
             s.tokens[o][j] = -1;
             captured.push(o);
+            caps.push({ c: o, i: j, a: op });
           }
         });
       }
     }
   }
+  noteStep(s, [{ c, i, a: p, b: np }], caps);
   const who = seatName(s, c);
   if (p === -1) addLog(s, c, `${who} brought a token out.`);
   else if (np === FINISH) addLog(s, c, `${who} got a token home!`);
@@ -56,7 +59,8 @@ export function applyMove(s: GameState, c: Color, i: number, v: number) {
 
 /**
  * Record a roll of v for colour c. Moves automatically when there is only one
- * real choice; otherwise leaves s.roll set so the player picks a token.
+ * real choice; otherwise leaves s.roll set so the player picks a token. Coming
+ * out of the yard, the player always picks which token (unless only one is left there).
  * Returns false if the roll isn't allowed right now.
  */
 export function applyRoll(s: GameState, c: Color, v: number): boolean {
@@ -77,7 +81,7 @@ export function applyRoll(s: GameState, c: Color, v: number): boolean {
     nextTurn(s);
     return true;
   }
-  if (new Set(opts.map((i) => s.tokens[c][i])).size === 1) {
+  if (new Set(opts.map((i) => s.tokens[c][i])).size === 1 && !(s.tokens[c][opts[0]] === -1 && opts.length > 1)) {
     applyMove(s, c, opts[0], v);
     return true;
   }

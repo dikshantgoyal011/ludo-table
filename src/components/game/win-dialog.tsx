@@ -13,8 +13,11 @@ const ORDINAL = ["1st", "2nd", "3rd", "4th"];
 const MEDAL = ["bg-[linear-gradient(145deg,#ffe9a0,#d9a73e)] text-[#3a2606]", "bg-[linear-gradient(145deg,#f4f6f8,#a9b2bd)] text-[#2b3138]", "bg-[linear-gradient(145deg,#f0c39a,#b06c35)] text-[#3a1d08]"];
 
 /**
- * Result popup. When the game is over: final rankings for everyone. While
- * others play on: only the player who just finished sees it (their place).
+ * Result popup. When the game is over: final rankings for everyone, and two
+ * choices: play again (in a friends room, back to its lobby, where the next
+ * game starts) or the main menu. It stays until one is picked, and the board
+ * stays as it was behind it. While others play on: only the player who just
+ * finished sees it (their place).
  */
 export function WinDialog() {
   const game = useGame();
@@ -42,8 +45,14 @@ export function WinDialog() {
   const sub = final && myPlace > 0 ? (sides ? "Your side came 2nd." : `You came ${ORDINAL[myPlace]}.`) : !final ? "The others are still playing." : sides ? "All eight pieces home." : "";
 
   return (
-    <Dialog open={game.winOpen && !!first} onOpenChange={(o) => !o && game.closeWinner()}>
-      <DialogContent variant="center" className="items-center gap-3 p-6 text-center">
+    <Dialog open={game.winOpen && !!first} onOpenChange={(o) => !o && !final && game.closeWinner()}>
+      <DialogContent
+        variant="center"
+        className="items-center gap-3 p-6 text-center"
+        // (The game is over: one of the two choices has to be made.)
+        onInteractOutside={(e) => final && e.preventDefault()}
+        onEscapeKeyDown={(e) => final && e.preventDefault()}
+      >
         <div className="text-5xl leading-none" aria-hidden="true">
           {myPlace === 0 ? "🏆" : final ? "🎲" : "🏅"}
         </div>
@@ -70,25 +79,19 @@ export function WinDialog() {
         </ol>
         <div className="mt-2 flex w-full flex-col gap-2">
           {final ? (
-            game.canRunTable() ? (
-              <Button
-                size="lg"
-                onClick={() => {
-                  // (Rules not saved as my preferences: choose them again first.)
-                  const choose = game.againPath();
-                  if (!choose) return game.playAgain();
-                  game.closeWinner();
-                  router.push(choose);
-                }}
-              >
-                {game.mode === "online" ? "Find another game" : "Play again"}
-              </Button>
-            ) : (
-              // Friends room: only its creator starts the next game
-              <Button size="lg" onClick={() => game.closeWinner()}>
-                OK · {game.roomOwnerName()} starts the next game
-              </Button>
-            )
+            <Button
+              size="lg"
+              disabled={game.againAsked}
+              onClick={() => {
+                // (Rules not saved as my preferences: choose them again first.)
+                const choose = game.againPath();
+                if (!choose) return game.playAgain();
+                game.closeWinner();
+                router.push(choose);
+              }}
+            >
+              {game.mode === "online" ? "Find another game" : game.againAsked ? "Back to the room…" : "Play again"}
+            </Button>
           ) : (
             <Button size="lg" onClick={() => game.closeWinner()}>
               Watch the rest
@@ -108,7 +111,7 @@ export function WinDialog() {
               router.push("/");
             }}
           >
-            Back to menu
+            Main menu
           </Button>
         </div>
       </DialogContent>

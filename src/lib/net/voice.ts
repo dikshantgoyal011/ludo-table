@@ -12,6 +12,13 @@
 //
 // Calls look after themselves: one that died (even if the other end never said
 // so) is hung up and placed again, and a voice that stopped playing is restarted.
+//
+// A phone call (or another app taking the microphone) interrupts voice chat: the
+// phone takes the microphone, and afterwards it can stay silent ("muted") or be
+// closed, and the others' voices can stay paused or silent. When the page is back
+// in front, and whenever the microphone has been silent for a while, the
+// microphone is opened again by itself (the mic stays on, as it was) and every
+// voice is started again. Nobody has to turn anything off and on, or reload.
 
 import { resetSoundOutput } from "@/lib/audio/sfx";
 import type { RoomTransport, VoiceCall, VoiceMember } from "./transport";
@@ -35,6 +42,11 @@ interface Line {
 const CONNECT_TIMEOUT = 12_000;
 /** A call whose connection has been lost this long is dropped and tried again. */
 const DOWN_TIMEOUT = 6_000;
+/** The microphone silenced by the phone (a call) this long, with the page in front: open it again. */
+const MIC_SILENT_MS = 2_500;
+/** Opening the microphone again (it fails while a call still has it): no more often than this. */
+const MIC_RETRY_MS = 3_000;
+const MIC_OPTIONS: MediaStreamConstraints = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false };
 /** Speaking indicator: how loud counts as talking (RMS, 0-1). */
 const SPEAKING_LEVEL = 0.035;
 /** The same, from a call's own figures of how loud a voice arrives (0-1). */
@@ -72,6 +84,11 @@ export class VoiceChat {
   private ctx: AudioContext | null = null;
   private myMeter: AnalyserNode | null = null;
   private meterTimer: ReturnType<typeof setInterval> | null = null;
+  /** When the page was hidden (a phone call, another app in front), and since when my microphone has been silenced by the phone. */
+  private hiddenAt = 0;
+  private micSilentSince = 0;
+  private micTriedAt = 0;
+  private reopening = false;
 
   constructor(private readonly changed: () => void) {}
 
@@ -92,7 +109,15 @@ export class VoiceChat {
     this.hearOne.clear();
     this.meterTimer = setInterval(() => this.measure(), 200);
     // Phones only play sound after a tap: start anything that was held back on the next one.
-    if (typeof document !== "undefined") document.addEventListener("pointerdown", this.unlock, { passive: true });
+    if (typeof document !== "undefined") {
+      document.addEventListener("pointerdown", this.unlock, { passive: true });
+      // Back in front after a phone call (or another app): get everything going again.
+      document.addEventListener("visibilitychange", this.onVisibility);
+      window.addEventListener("pageshow", this.onBack);
+      window.addEventListener("focus", this.onBack);
+    }
+    this.hiddenAt = 0;
+    this.micSilentSince = 0;
     this.changed();
   }
 
@@ -109,7 +134,12 @@ export class VoiceChat {
     this.silence = null;
     if (this.meterTimer) clearInterval(this.meterTimer);
     this.meterTimer = null;
-    if (typeof document !== "undefined") document.removeEventListener("pointerdown", this.unlock);
+    if (typeof document !== "undefined") {
+      document.removeEventListener("pointerdown", this.unlock);
+      document.removeEventListener("visibilitychange", this.onVisibility);
+      window.removeEventListener("pageshow", this.onBack);
+      window.removeEventListener("focus", this.onBack);
+    }
     void this.ctx?.close().catch(() => {});
     this.ctx = null;
     this.meters.clear();
@@ -126,17 +156,12 @@ export class VoiceChat {
     if (on) {
       // Open the microphone the first time (or again, if it was lost); after that it's just switched on.
       if (!this.micTrack()) {
-        const mic = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-          video: false,
-        });
+        const mic = await navigator.mediaDevices.getUserMedia(MIC_OPTIONS);
         if (!this.on) {
           mic.getTracks().forEach((t) => t.stop());
           return;
         }
-        this.mic = mic;
-        this.myMeter = this.meter(mic);
-        mic.getAudioTracks()[0]?.addEventListener("ended", this.micLost);
+        this.useMic(mic);
       }
       this.mic?.getAudioTracks().forEach((t) => (t.enabled = true));
       this.micOn = true;
@@ -151,13 +176,115 @@ export class VoiceChat {
     this.changed();
   }
 
-  /** The microphone stopped by itself (unplugged, or the phone took it away): send silence instead. */
+  /** A newly opened microphone: its level meter, and watching it for the phone taking it away. */
+  private useMic(mic: MediaStream) {
+    this.mic = mic;
+    this.myMeter = this.meter(mic);
+    const t = mic.getAudioTracks()[0];
+    t?.addEventListener("ended", this.micLost);
+    t?.addEventListener("mute", this.micMuted);
+    t?.addEventListener("unmute", this.micMuted);
+    this.micSilentSince = t?.muted ? Date.now() : 0;
+  }
+
+  /**
+   * The microphone stopped by itself (the phone took it for a call, or it was
+   * unplugged): silence goes out meanwhile, and it's opened again as soon as it
+   * can be, the mic staying on.
+   */
   private micLost = () => {
+    const wasOn = this.micOn;
     this.closeMic();
-    this.micOn = false;
+    this.micOn = wasOn;
     this.sendOut();
     this.changed();
+    if (wasOn) void this.reopenMic();
   };
+  /** The phone silenced the microphone (a call), or gave it back. */
+  private micMuted = () => {
+    const t = this.mic?.getAudioTracks()[0];
+    this.micSilentSince = t?.muted ? this.micSilentSince || Date.now() : 0;
+  };
+  /** Is my microphone, though on, not sending anything (closed, or silenced by the phone for a while)? */
+  private micStuck() {
+    if (!this.micOn) return false;
+    const t = this.micTrack();
+    return !t || (t.muted && !!this.micSilentSince && Date.now() - this.micSilentSince > MIC_SILENT_MS);
+  }
+  /** Open the microphone again (after a phone call) and put it into every call. Kept on if it can't be yet: tried again later. */
+  private async reopenMic() {
+    if (this.reopening || !this.on || !this.micOn || !navigator.mediaDevices?.getUserMedia) return;
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+    this.reopening = true;
+    this.micTriedAt = Date.now();
+    try {
+      const mic = await navigator.mediaDevices.getUserMedia(MIC_OPTIONS);
+      if (!this.on || !this.micOn) {
+        mic.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      const old = this.mic;
+      if (old) {
+        old.getAudioTracks()[0]?.removeEventListener("ended", this.micLost);
+        old.getAudioTracks()[0]?.removeEventListener("mute", this.micMuted);
+        old.getAudioTracks()[0]?.removeEventListener("unmute", this.micMuted);
+        this.dropMeter(this.myMeter);
+      }
+      this.useMic(mic);
+      this.sendOut();
+      old?.getTracks().forEach((t) => t.stop());
+      this.changed();
+    } catch (e) {
+      // Not allowed any more: the mic goes off. (Still busy with the call: tried again later.)
+      if ((e as Error)?.name === "NotAllowedError") {
+        this.micOn = false;
+        this.changed();
+      }
+    } finally {
+      this.reopening = false;
+    }
+  }
+
+  private onVisibility = () => {
+    if (document.visibilityState === "hidden") {
+      this.hiddenAt ||= Date.now();
+      return;
+    }
+    this.onBack();
+  };
+  /** The page is in front again: after being away (a phone call), start every voice again and check the microphone. */
+  private onBack = () => {
+    if (!this.on || (typeof document !== "undefined" && document.visibilityState === "hidden")) return;
+    const away = !!this.hiddenAt;
+    this.hiddenAt = 0;
+    this.heal(away);
+  };
+  /**
+   * Get voice chat going again: the sound running, every voice I should hear
+   * playing (`restart`: started afresh, as after a phone call a voice can be left
+   * silent without being paused), and my microphone open if it's on.
+   */
+  heal(restart = false) {
+    if (!this.on) return;
+    if (this.ctx && this.ctx.state !== "running") void this.ctx.resume().catch(() => {});
+    if (restart) for (const [pid, line] of this.lines) if (line.audio) this.replay(pid, line);
+    this.keepPlaying();
+    if (this.micOn && (!this.micTrack() || this.micStuck())) void this.reopenMic();
+  }
+  /** Start one voice afresh (the same stream, played again). */
+  private replay(pid: string, line: Line) {
+    const a = line.audio;
+    if (!a) return;
+    const src = a.srcObject;
+    a.srcObject = null;
+    a.srcObject = src;
+    a.muted = !this.hears(pid);
+    if (this.hears(pid))
+      a.play().then(
+        () => this.setBlocked(false),
+        () => this.setBlocked(true),
+      );
+  }
 
   /** Put what I send (microphone or silence) into every call. */
   private sendOut() {
@@ -279,6 +406,9 @@ export class VoiceChat {
 
   private closeMic() {
     this.mic?.getAudioTracks()[0]?.removeEventListener("ended", this.micLost);
+    this.mic?.getAudioTracks()[0]?.removeEventListener("mute", this.micMuted);
+    this.mic?.getAudioTracks()[0]?.removeEventListener("unmute", this.micMuted);
+    this.micSilentSince = 0;
     this.mic?.getTracks().forEach((t) => t.stop());
     this.mic = null;
     this.dropMeter(this.myMeter);
@@ -307,6 +437,16 @@ export class VoiceChat {
       audio.srcObject = remote;
       audio.muted = !this.hears(pid);
       line.audio = audio;
+      // The phone paused it (its sound went to a call): play it again as soon as it can.
+      audio.addEventListener("pause", () => {
+        if (this.lines.get(pid) === line && this.hears(pid)) setTimeout(() => this.keepPlaying(), 400);
+      });
+      // Their microphone came back (after a call on their side): start their voice afresh.
+      remote.getAudioTracks().forEach((t) =>
+        t.addEventListener("unmute", () => {
+          if (this.lines.get(pid) === line) this.replay(pid, line);
+        }),
+      );
       // A phone may refuse to start it without a tap: then "Tap to hear" shows.
       audio.play().then(
         () => this.setBlocked(false),
@@ -379,6 +519,7 @@ export class VoiceChat {
   }
 
   private measure() {
+    if (this.micStuck() && !this.reopening && Date.now() - this.micTriedAt > MIC_RETRY_MS) void this.reopenMic();
     const buf = new Uint8Array(512);
     const loud = (an?: AnalyserNode | null) => {
       if (!an) return false;

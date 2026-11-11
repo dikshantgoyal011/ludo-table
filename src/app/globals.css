@@ -837,6 +837,10 @@ html.in-game .board-fit > .board-size {
 .token.stepping {
   transition: transform 0.13s ease-out;
 }
+/* Glide: the same square-by-square timing as the hops (STEP_MS), each square flowing into the next. */
+.token.gliding {
+  transition: transform 0.14s linear;
+}
 /* A cut token flying home can cross the whole board: give it time (RETURN_MS in the controller). */
 .token.returning {
   transition: transform 0.65s cubic-bezier(0.45, 0.05, 0.25, 1);

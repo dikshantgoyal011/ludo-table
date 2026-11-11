@@ -4,7 +4,7 @@
 // place; callers work on a copy (see GameController.commit). No browser APIs in
 // here, so the same rules can later run on a server.
 import { COLORS, NAMES, SLOTS_FOR } from "./constants";
-import type { Color, GameState, Player, Seat } from "./types";
+import type { Color, GameState, Player, Seat, TrailStep } from "./types";
 
 export const freshTokens = (): Record<Color, number[]> => ({
   red: [-1, -1, -1, -1],
@@ -35,6 +35,17 @@ export const seatName = (s: GameState, c: Color) => s.seats[c]?.nick || NAMES[c]
 export const addLog = (s: GameState, c: Color | "", t: string) => {
   s.log = [{ c, t }, ...(s.log || [])].slice(0, 20);
 };
+
+/**
+ * Every game's rules note each move here as they make it: the screens then
+ * play the moves in that order, each after the one before (and its captures)
+ * has finished, even when several come in one change.
+ */
+export function noteStep(s: GameState, moves: TrailStep["moves"], caps: TrailStep["caps"] = []) {
+  const trail = s.trail || [];
+  const n = (trail[trail.length - 1]?.n || 0) + 1;
+  s.trail = [...trail.slice(-15), { n, moves, caps }];
+}
 
 /** Seats in join order; two players sit opposite each other. */
 export function seatsFor(players: Player[]): Partial<Record<Color, Seat>> {

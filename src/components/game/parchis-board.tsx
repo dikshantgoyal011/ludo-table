@@ -83,7 +83,8 @@ interface Skin {
   number: string;
 }
 
-type Paint = { hex: (c: Color) => string; light: (c: Color) => string; url: (n: string) => string; id: (n: string) => string };
+/** `turn`: how far the board is turned (degrees), so pictures can stay upright. */
+type Paint = { hex: (c: Color) => string; light: (c: Color) => string; url: (n: string) => string; id: (n: string) => string; turn: number };
 
 const num = (n: number, r: number, c: number, fill: string, opacity = 0.75) => (
   <text x={c + 0.5} y={r + 0.6} fontSize={0.3} fontWeight={700} textAnchor="middle" fill={fill} fillOpacity={opacity} style={{ fontFamily: "var(--font-display)" }}>
@@ -200,7 +201,7 @@ function sandstoneSkin(night: boolean, { hex, light, url, id }: Paint): Skin {
  * each house a jewel-coloured panel with gold lattice (jaali) under a palace
  * arch, gold stars on the seguros. Night: black onyx and gold.
  */
-function royalSkin(night: boolean, { hex, light, url, id }: Paint): Skin {
+function royalSkin(night: boolean, { hex, light, url, id, turn }: Paint): Skin {
   const P = night
     ? { field: ["#0d1f19", "#08120e"], cell: "#221f27", line: "#7a5e26", dark: "#0b0a0d", text: "#a88a50", arch: "#2a2730" }
     : { field: ["#13563f", "#0a3526"], cell: "#fffaf0", line: "#c49a42", dark: "#6b4a16", text: "#8a6a2a", arch: "#fdf6e3" };
@@ -232,10 +233,13 @@ function royalSkin(night: boolean, { hex, light, url, id }: Paint): Skin {
         <rect x={c0 + 0.3} y={r0 + 0.3} width={7.4} height={7.4} rx={0.3} fill={hex(c)} fillOpacity={night ? 0.7 : 1} />
         <rect x={c0 + 0.3} y={r0 + 0.3} width={7.4} height={7.4} rx={0.3} fill={url("jaali")} />
         <rect x={c0 + 0.3} y={r0 + 0.3} width={7.4} height={7.4} rx={0.3} fill="none" stroke={url("gold")} strokeWidth={0.12} />
-        <path d={arch(c0, r0)} fill={P.arch} stroke={P.dark} strokeWidth={0.18} />
-        <path d={arch(c0, r0)} fill="none" stroke={url("gold")} strokeWidth={0.1} />
-        <path d={arch(c0, r0)} fill={light(c)} fillOpacity={night ? 0.5 : 0.35} />
-        <circle cx={c0 + 4} cy={r0 + 0.75} r={0.2} fill={url("gold")} stroke={P.dark} strokeWidth={0.03} />
+        {/* The arch stays upright however the board is turned for this player. */}
+        <g className="house-arch" transform={turn ? `rotate(${-turn} ${c0 + 4} ${r0 + 4})` : undefined}>
+          <path d={arch(c0, r0)} fill={P.arch} stroke={P.dark} strokeWidth={0.18} />
+          <path d={arch(c0, r0)} fill="none" stroke={url("gold")} strokeWidth={0.1} />
+          <path d={arch(c0, r0)} fill={light(c)} fillOpacity={night ? 0.5 : 0.35} />
+          <circle cx={c0 + 4} cy={r0 + 0.75} r={0.2} fill={url("gold")} stroke={P.dark} strokeWidth={0.03} />
+        </g>
       </g>
     ),
     square: (n, r, c, salida, safe) => (
@@ -382,9 +386,9 @@ function modernSkin(night: boolean, { hex, light }: Paint, th: Theme): Skin {
 }
 
 /** The board picture, 19 x 19 units. `hex(slot)` / `light(slot)`: the colour each seat shows in. */
-export const ParchisSurface = memo(function ParchisSurface({ look, hex, light, uid }: { look: Look; hex: (c: Color) => string; light: (c: Color) => string; uid: string }) {
+export const ParchisSurface = memo(function ParchisSurface({ look, hex, light, uid, turn = 0 }: { look: Look; hex: (c: Color) => string; light: (c: Color) => string; uid: string; turn?: number }) {
   const id = (n: string) => `${uid}-${n}`;
-  const paint: Paint = { hex, light, id, url: (n) => `url(#${id(n)})` };
+  const paint: Paint = { hex, light, id, url: (n) => `url(#${id(n)})`, turn };
   const skin =
     look.style === "classic"
       ? classicSkin(look.night, paint)
@@ -421,8 +425,8 @@ export const ParchisSurface = memo(function ParchisSurface({ look, hex, light, u
   );
 });
 
-/** The Parchís board for the game screen. `hex(slot)` / `light(slot)`: the colour each seat shows in. */
-export function useParchisLook(hex: (c: Color) => string, light: (c: Color) => string, uid: string): BoardLook {
+/** The Parchís board for the game screen. `hex(slot)` / `light(slot)`: the colour each seat shows in; `turn`: how far it's turned (degrees). */
+export function useParchisLook(hex: (c: Color) => string, light: (c: Color) => string, uid: string, turn = 0): BoardLook {
   const [style, th] = useParchisStyle();
   const look = parchisLook(style, th);
   return {
@@ -431,7 +435,7 @@ export function useParchisLook(hex: (c: Color) => string, light: (c: Color) => s
     frame: look.frame,
     frameClass: "p-2 sm:p-3",
     corners: look.corners ? <FrameCorners kind={look.corners} /> : undefined,
-    surface: <ParchisSurface look={look} hex={hex} light={light} uid={uid} />,
+    surface: <ParchisSurface look={look} hex={hex} light={light} uid={uid} turn={turn} />,
     token: (fill) => (
       <>
         <g className="token-shadow">

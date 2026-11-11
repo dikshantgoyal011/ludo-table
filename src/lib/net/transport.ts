@@ -24,6 +24,8 @@ export type NetMessage =
   | { type: "join"; id: string; nick: string; cc?: string; av?: number }
   | { type: "leave"; id: string }
   | { type: "start" }
+  /** Friends room, after a game: back to the room's lobby for the next one. */
+  | { type: "again"; id: string }
   /** Friends lobby: I'm ready to start (or not any more). */
   | { type: "ready"; id: string; on: boolean }
   /** Friends lobby (Pachisi): I agree to the variations as of version `vv` (or not any more). */
@@ -108,12 +110,14 @@ export interface RoomEvents {
    * should try to take over; "network": a network problem, try again.
    */
   lost(reason: "host-left" | "network"): void;
+  /** Joining only (see RoomTransport.open): nobody hosts this room. */
+  noRoom?(): void;
 }
 
 export interface RoomTransport {
   readonly isHost: boolean;
-  /** Connect to the room `code`, hosting it if nobody else is. */
-  open(code: string, events: RoomEvents): Promise<void>;
+  /** Connect to the room `code`, hosting it if nobody else is (`join`: only if someone hosts it; if not, events.noRoom). */
+  open(code: string, events: RoomEvents, opts?: { join?: boolean }): Promise<void>;
   /** Host: to every guest except `except`. Guest: to the host. */
   broadcast(msg: NetMessage, except?: PeerLink): void;
   /** Guest only: send to the host. */

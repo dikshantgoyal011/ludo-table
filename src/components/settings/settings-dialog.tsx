@@ -362,7 +362,7 @@ function MainPage({ go }: { go: (p: Page) => void }) {
         />
       </Group>
       <Group title="Play">
-        <Row label="Token movement" value={settings.steps ? "Hops square by square" : "Slides straight to the square"}>
+        <Row label="Token movement" value={settings.steps ? "Hops square by square" : "Glides smoothly along the track"}>
           <div className="grid shrink-0 grid-cols-2 gap-0.5 rounded-lg bg-background/70 p-0.5" role="radiogroup" aria-label="Token movement">
             {(
               [

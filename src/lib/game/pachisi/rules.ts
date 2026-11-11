@@ -19,7 +19,7 @@
 //   round again instead of home. Home only by the exact throw.
 // Variations change some of this (variations.ts).
 import { COLORS } from "../constants";
-import { addLog, nextTurn, seatName, seated, teamOf } from "../table";
+import { addLog, nextTurn, noteStep, seatName, seated, teamOf } from "../table";
 import type { Color, GameState, MoveChoice, MoveOpt, PachisiTurn, Rulebook } from "../types";
 import {
   CASTLES,
@@ -173,8 +173,10 @@ export function applyMove(s: GameState, c: Color, i: number, v: number, opt: Mov
   const np = pick.to;
   const cut = cutsAt(s, c, np);
   const sq = squareOf(c, np);
+  const caps = cut.flatMap((o) => s.tokens[o].map((op, j) => ({ c: o, i: j, a: op })).filter((x) => squareOf(o, x.a) === sq));
   for (const o of cut) s.tokens[o] = s.tokens[o].map((op) => (squareOf(o, op) === sq ? -1 : op));
   s.tokens[c][i] = np;
+  noteStep(s, [{ c, i, a: p, b: np }], caps);
   const k = t.hand.indexOf(pick.use as number);
   if (k >= 0) t.hand.splice(k, 1);
   t.moved++;

@@ -56,7 +56,7 @@ export function Board() {
   const looks: Record<GameId, BoardLook> = {
     ludo: useLudoLook(colorKey, uid, game.rot.target),
     pachisi: usePachisiLook(hex, light, uid),
-    parchis: useParchisLook(hex, light, uid),
+    parchis: useParchisLook(hex, light, uid, game.rot.target),
     chaupar: useChauparLook(hex, light, uid),
   };
   const look = looks[game.state.game || "ludo"];
@@ -104,7 +104,7 @@ export function Board() {
             {views.map((t) => (
               <g
                 key={t.c + t.i}
-                className={"token" + (t.movable ? " movable" : "") + (t.stepping ? " stepping" : "") + (t.returning ? " returning" : "")}
+                className={"token" + (t.movable ? " movable" : "") + (t.stepping ? " stepping" : "") + (t.gliding ? " gliding" : "") + (t.returning ? " returning" : "")}
                 style={{ transform: `translate(${t.x}px,${t.y}px) scale(${t.scale})`, display: t.hidden ? "none" : undefined }}
               >
                 {/* (Chaupar: a pair's pawns stand in a stack.) */}

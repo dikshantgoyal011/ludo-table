@@ -118,6 +118,16 @@ export interface GameState {
   parchisAt?: Partial<Record<Color, number[]>>;
   /** Chaupar: the dice of the turn being played. */
   chaupar?: ChauparTurn;
+  /** The latest moves, in the order they were made, so every screen shows them one after another (see table.ts noteStep). */
+  trail?: TrailStep[];
+}
+
+/** One move: the tokens moving together (a Chaupar pair: two), and the rival tokens it captures as they land. */
+export interface TrailStep {
+  /** Numbered from 1 in each game. */
+  n: number;
+  moves: { c: Color; i: number; a: number; b: number }[];
+  caps: { c: Color; i: number; a: number }[];
 }
 
 /** Chaupar: the turn in progress. */
