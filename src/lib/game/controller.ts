@@ -68,8 +68,14 @@ const OUT_MS = 380;
 const GLIDE_STEP_MS = 60;
 const GLIDE_MIN_MS = 240;
 const GLIDE_MAX_MS = 600;
-/** A move that has to wait longer than this behind the ones before it on this screen is shown at glide speed, to catch up. */
-const BEHIND_MS = 150;
+/**
+ * Moves arriving while earlier ones still have longer than this to be shown here (the
+ * others glide, or play quickly) hop quicker, HURRY_STEP_MS a square, to catch up.
+ * (Only earlier moves count: a move made by itself right after mine, say Parchís's
+ * count of 20, isn't behind, it just comes next.)
+ */
+const BEHIND_MS = 1_000;
+const HURRY_STEP_MS = 80;
 /** Moves still waiting to be shown for longer than this: catch up at once instead of falling further behind. */
 const CATCH_UP_MS = 6_000;
 
@@ -1563,14 +1569,17 @@ export class GameController {
 
   /**
    * How a token's move is shown: hopping square by square (STEP_MS each, the
-   * slower way), or gliding along the track (the quicker way, as picked in
-   * Settings; `fast`: a hopping screen catching up, see showSteps). Returns
-   * each square's time and the whole move's.
+   * slower way), or gliding along the track (the quicker way), as picked in
+   * Settings. `fast`: a hopping screen catching up (see showSteps), which still
+   * hops, only quicker. Returns each square's time and the whole move's.
    */
   private pace(a: number, b: number, fast = false) {
     const path = rulesFor(this.state).steps(a, b);
     if (this.enters(a, path)) return { glide: false, per: OUT_MS, walk: OUT_MS };
-    if (this.settings.steps && !fast) return { glide: false, per: STEP_MS, walk: (path.length + 1) * STEP_MS };
+    if (this.settings.steps) {
+      const per = fast ? HURRY_STEP_MS : STEP_MS;
+      return { glide: false, per, walk: (path.length + 1) * per };
+    }
     const total = Math.min(GLIDE_MAX_MS, Math.max(GLIDE_MIN_MS, path.length * GLIDE_STEP_MS));
     const per = Math.round(total / Math.max(1, path.length));
     return { glide: true, per, walk: total + per };
@@ -1626,8 +1635,8 @@ export class GameController {
    *
    * Each screen moves at its own speed (hops or glide), and the game goes at the
    * pace of whoever plays: a hopping screen whose moves start to queue up (the
-   * others glide, or bots play quickly) shows the waiting ones at glide speed, so
-   * it's never more than about a move behind, and never holds the others up.
+   * others glide, or bots play quickly) hops the waiting ones quicker, so it's
+   * never much more than a move behind, and never holds the others up.
    */
   private showSteps(steps: TrailStep[], delay: number) {
     if (!steps.length) return;
@@ -1639,8 +1648,10 @@ export class GameController {
       steps = steps.slice(-1);
     }
     let at = Math.max(now + delay, this.queueEnd);
+    // Behind by what was still to be shown from before (these moves themselves, made one after
+    // another in a single turn, go at the usual pace).
+    const fast = at - (now + delay) > BEHIND_MS;
     for (const st of steps) {
-      const fast = at - (now + delay) > BEHIND_MS;
       const [first, ...others] = st.moves;
       if (first) {
         this.animateMove(first, st.caps, at - now, fast);
