@@ -28,7 +28,7 @@ export function AppHeader() {
       uiStore.set({ leaveOpen: "menu" });
       return;
     }
-    router.push("/");
+    router.push("/", { scroll: false });
   };
 
   return (

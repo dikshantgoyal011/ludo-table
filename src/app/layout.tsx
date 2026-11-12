@@ -4,6 +4,7 @@ import { AppHeader } from "@/components/layout/app-header";
 import { Confetti } from "@/components/game/confetti";
 import { LazyDialogs } from "@/components/layout/lazy-dialogs";
 import { MusicPlayer } from "@/components/providers/music-player";
+import { RouteWarmup } from "@/components/providers/route-warmup";
 import { ThemeApplier } from "@/components/providers/theme-applier";
 import { themeBootScript } from "@/lib/theme/boot-script";
 import { brandVars, THEMES } from "@/lib/theme/themes";
@@ -51,6 +52,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <LazyDialogs />
         <Confetti />
         <MusicPlayer />
+        <RouteWarmup />
       </body>
     </html>
   );

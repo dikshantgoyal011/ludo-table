@@ -4,8 +4,10 @@
 // shows once the game has begun. Friends rooms: everyone marks themselves ready
 // (and, in games with variations, agrees to the rules) before the creator can start.
 import { useEffect, useRef, useState } from "react";
-import { Check, Copy, Crown, MessageCircle, Mic, MicOff, UserPlus, Volume2, VolumeX } from "lucide-react";
+import { ArrowLeftRight, Check, Copy, Crown, MessageCircle, Mic, MicOff, UserPlus, Users, Volume2, VolumeX } from "lucide-react";
+import { MiniBoard } from "@/components/menu/mini-board";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useGame, useProfile, useSettings } from "@/hooks/use-game";
 import { defaultAvatar } from "@/lib/avatars";
@@ -13,8 +15,9 @@ import { countryName, flagUrl } from "@/lib/country";
 import { COLORS, NICK_MAX } from "@/lib/game/constants";
 import { cleanParchisVariations, parchisPairs } from "@/lib/game/parchis/variations";
 import { countOn, hasSides, hasVariations, noVariations, plainRules, playsSolo, variationInfo } from "@/lib/game/variations";
-import type { Player } from "@/lib/game/types";
-import { variantById } from "@/lib/game/variants";
+import { isGameId, rulesFor } from "@/lib/game/rules";
+import type { GameId, Player } from "@/lib/game/types";
+import { variantById, VARIANTS, type Variant } from "@/lib/game/variants";
 import { themeOf } from "@/lib/theme/themes";
 import { cn } from "@/lib/utils";
 import { Avatar } from "./avatar";
@@ -117,8 +120,118 @@ function RoomCard() {
           {copied ? "Code copied" : "Copy code"}
         </Button>
       </div>
+      <RoomGame />
       <InviteDialog open={inviteOpen} onClose={() => setInviteOpen(false)} />
     </Panel>
+  );
+}
+
+/** A game's little board picture, in its own colours (as on the home page's game cards). */
+function GameTile({ v, className }: { v: Variant; className?: string }) {
+  return (
+    <span
+      className={cn("block shrink-0 rounded-xl p-1 shadow-inner", className)}
+      style={{ background: v.id === "ludo" ? "radial-gradient(circle at 50% 30%, rgb(var(--c-panel)), rgb(var(--c-felt)))" : `radial-gradient(circle at 50% 30%, ${v.tint[0]}cc, ${v.tint[0]})` }}
+    >
+      <MiniBoard kind={v.board} accent={v.tint[1]} />
+    </span>
+  );
+}
+
+/**
+ * The game this room plays next. Its creator can switch it here, with everyone
+ * staying in the room; the others see it change (and who changed it).
+ */
+function RoomGame() {
+  const game = useGame();
+  const s = game.state;
+  const g = s.game || "ludo";
+  const v = variantById(g);
+  const iRun = game.canRunTable();
+  const [open, setOpen] = useState(false);
+  // Someone else switched it: say so for a few seconds (and the row pops).
+  const [note, setNote] = useState("");
+  const was = useRef(g);
+  useEffect(() => {
+    if (was.current === g) return;
+    was.current = g;
+    if (iRun) return;
+    setNote(`${game.roomOwnerName()} switched the game to ${v.name}`);
+    const t = setTimeout(() => setNote(""), 5000);
+    return () => clearTimeout(t);
+  }, [g, iRun, game, v.name]);
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div key={g} className="badge-pop flex items-center gap-3 rounded-xl bg-background/60 p-2 pr-3">
+        <GameTile v={v} className="h-12 w-12" />
+        <div className="min-w-0 flex-1">
+          <div className="text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">Game</div>
+          <div className="truncate text-base leading-tight font-extrabold">{v.name}</div>
+          <div className="truncate text-xs text-muted-foreground">{note || (iRun ? v.origin : `${game.roomOwnerName()} picks the game`)}</div>
+        </div>
+        {iRun && (
+          <Button variant="outline" className="h-10 shrink-0 gap-1.5 px-3" onClick={() => setOpen(true)} aria-label={`Change game (now ${v.name})`}>
+            <ArrowLeftRight className="size-4" /> Change game
+          </Button>
+        )}
+      </div>
+      <GameSheet
+        open={open}
+        current={g}
+        onClose={() => setOpen(false)}
+        onPick={(id) => {
+          setOpen(false);
+          if (id !== g) game.switchGame(id);
+        }}
+      />
+    </div>
+  );
+}
+
+/** The creator's sheet: every game that's ready, the one being played marked. */
+function GameSheet({ open, current, onClose, onPick }: { open: boolean; current: string; onClose: () => void; onPick: (id: GameId) => void }) {
+  const ready = VARIANTS.filter((v) => v.ready && isGameId(v.id));
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[92dvh] gap-3 overflow-y-auto p-4 sm:max-w-lg sm:p-5">
+        <DialogTitle>Change game</DialogTitle>
+        <DialogDescription>Everyone stays in the room. The new game&apos;s rules are shown, and everyone gets ready again.</DialogDescription>
+        <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Game">
+          {ready.map((v) => {
+            const on = v.id === current;
+            const counts = rulesFor(v.id as GameId).counts;
+            return (
+              <li key={v.id}>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => onPick(v.id as GameId)}
+                  className={cn(
+                    "hover-lift relative flex h-full w-full items-start gap-3 rounded-xl border-2 p-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[.98]",
+                    on ? "border-primary bg-primary/12" : "border-border bg-background/50 hover:border-primary/60",
+                  )}
+                >
+                  <GameTile v={v} className="h-14 w-14" />
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="flex items-center gap-1.5 text-base leading-tight font-extrabold">
+                      {v.name}
+                      {on && <span className="rounded-full bg-primary px-1.5 py-px text-[10px] font-extrabold tracking-wide text-primary-foreground uppercase">Playing now</span>}
+                    </span>
+                    <span className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{v.origin}</span>
+                    <span className="line-clamp-2 text-xs leading-snug text-muted-foreground">{v.hint}</span>
+                    <span className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-muted-foreground">
+                      <Users className="size-3" /> {counts[0]} to {counts[counts.length - 1]} players
+                    </span>
+                  </span>
+                  {on && <Check className="absolute top-2 right-2 size-4 text-primary" strokeWidth={3} />}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -20,7 +20,7 @@ export default function GamePage() {
     if (!mounted) return;
     const first = firstLook.current;
     firstLook.current = false;
-    if (!game.mode && !(first && game.resumeAfterReload())) router.replace("/");
+    if (!game.mode && !(first && game.resumeAfterReload())) router.replace("/", { scroll: false });
   }, [mounted, game, game.mode, router]);
 
   if (!mounted || !game.mode) return null;

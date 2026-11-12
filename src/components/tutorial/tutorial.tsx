@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { BoardPreview, TokenArt, useBoardStyle } from "@/components/game/ludo-board";
 import { CowrieView, Shell } from "@/components/game/cowries";
 import { DiceView, newSpin, type DiceRoll } from "@/components/game/dice-3d";
@@ -543,8 +543,31 @@ function ShellTable({ seven = false }: { seven?: boolean }) {
 export function TutorialDialog() {
   const { tutorial, tutorialAt } = useUi();
   const [step, setStep] = useState(0);
+  // Which way the page came in (for its slide): 1 from the right (next), -1 from the left (back).
+  const [dir, setDir] = useState(0);
   // (Opened from a variation: start at its lesson.)
-  useEffect(() => setStep(tutorial && tutorialAt ? Math.max(0, LESSONS[tutorial].findIndex((l) => l.id === tutorialAt)) : 0), [tutorial, tutorialAt]);
+  useEffect(() => {
+    setDir(0);
+    setStep(tutorial && tutorialAt ? Math.max(0, LESSONS[tutorial].findIndex((l) => l.id === tutorialAt)) : 0);
+  }, [tutorial, tutorialAt]);
+  // A swipe: where the finger went down.
+  const swipe = useRef<{ x: number; y: number; t: number } | null>(null);
+  const count = tutorial ? LESSONS[tutorial].length : 0;
+  const goTo = (to: number) => {
+    if (to < 0 || to >= count || to === step) return;
+    setDir(to > step ? 1 : -1);
+    setStep(to);
+  };
+  // The arrow keys turn the pages too.
+  useEffect(() => {
+    if (!tutorial) return;
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight") goTo(step + 1);
+      else if (e.key === "ArrowLeft") goTo(step - 1);
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  });
   if (!tutorial) return null;
   const lessons = LESSONS[tutorial];
   const lesson = lessons[step];
@@ -552,33 +575,79 @@ export function TutorialDialog() {
   const close = () => uiStore.set({ tutorial: null });
   return (
     <Dialog open onOpenChange={(o) => !o && close()}>
-      <DialogContent variant="center" className="max-h-[92dvh] items-center gap-3 overflow-y-auto p-4 text-center sm:p-6">
-        <span className="text-xs font-bold tracking-[0.2em] text-primary uppercase">
-          How to play {variantById(tutorial).name} · {step + 1} of {lessons.length}
-        </span>
-        <DialogTitle className="text-2xl leading-tight font-extrabold">{lesson.title}</DialogTitle>
-        <DialogDescription className="min-h-[3.75rem] text-sm leading-snug text-muted-foreground">{lesson.text}</DialogDescription>
-        {lesson.shells && <ShellTable seven={lesson.seven} />}
-        <Scene key={`${tutorial}${step}`} game={tutorial} lesson={lesson} />
-        <div className="flex gap-1.5" aria-hidden="true">
-          {lessons.map((_, k) => (
-            <span key={k} className={cn("h-1.5 rounded-full transition-all", k === step ? "w-5 bg-primary" : "w-1.5 bg-foreground/25")} />
+      <DialogContent
+        variant="center"
+        className="max-h-[92dvh] touch-pan-y items-center gap-3 overflow-y-auto p-4 text-center sm:p-6"
+        // Swipe left for the next page, right for the one before (a mostly sideways move of 50px or more).
+        onPointerDown={(e) => {
+          if (e.pointerType === "mouse" && e.button !== 0) return;
+          swipe.current = { x: e.clientX, y: e.clientY, t: Date.now() };
+        }}
+        onPointerUp={(e) => {
+          const s = swipe.current;
+          swipe.current = null;
+          if (!s) return;
+          const dx = e.clientX - s.x;
+          const dy = e.clientY - s.y;
+          if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5 || Date.now() - s.t > 900) return;
+          goTo(dx < 0 ? step + 1 : step - 1);
+        }}
+        onPointerCancel={() => (swipe.current = null)}
+      >
+        <button
+          type="button"
+          onClick={close}
+          aria-label="Close How to play"
+          className="absolute top-2.5 right-2.5 z-10 flex size-9 items-center justify-center rounded-full text-muted-foreground outline-none hover:bg-foreground/10 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:scale-95"
+        >
+          <X className="size-5" />
+        </button>
+        <div key={`${tutorial}${step}`} className={cn("flex w-full flex-col items-center gap-3", dir > 0 ? "lesson-in-next" : dir < 0 ? "lesson-in-back" : "")}>
+          <span className="px-8 text-xs font-bold tracking-[0.2em] text-primary uppercase">
+            How to play {variantById(tutorial).name} · {step + 1} of {lessons.length}
+          </span>
+          <DialogTitle className="text-2xl leading-tight font-extrabold">{lesson.title}</DialogTitle>
+          <DialogDescription className="min-h-[3.75rem] text-sm leading-snug text-muted-foreground">{lesson.text}</DialogDescription>
+          {lesson.shells && <ShellTable seven={lesson.seven} />}
+          <Scene key={`${tutorial}${step}`} game={tutorial} lesson={lesson} />
+        </div>
+        {/* The page dots: each one opens its page. */}
+        <div className="flex items-center gap-0.5">
+          {lessons.map((l, k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => goTo(k)}
+              aria-label={`Page ${k + 1}: ${l.title}`}
+              aria-current={k === step ? "step" : undefined}
+              className="flex h-6 items-center px-[3px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <span className={cn("block h-1.5 rounded-full transition-all", k === step ? "w-5 bg-primary" : "w-1.5 bg-foreground/25")} />
+            </button>
           ))}
         </div>
         <div className="grid w-full grid-cols-2 gap-2">
-          <Button variant="outline" size="lg" disabled={step === 0} onClick={() => setStep((s) => s - 1)}>
-            <ChevronLeft className="size-4" /> Back
-          </Button>
+          {/* (The first page has nothing before it: there, this button closes How to play.) */}
+          {step === 0 ? (
+            <Button variant="outline" size="lg" onClick={close}>
+              <X className="size-4" /> Close
+            </Button>
+          ) : (
+            <Button variant="outline" size="lg" onClick={() => goTo(step - 1)}>
+              <ChevronLeft className="size-4" /> Back
+            </Button>
+          )}
           {last ? (
             <Button size="lg" onClick={close}>
               Got it!
             </Button>
           ) : (
-            <Button size="lg" onClick={() => setStep((s) => s + 1)}>
+            <Button size="lg" onClick={() => goTo(step + 1)}>
               Next <ChevronRight className="size-4" />
             </Button>
           )}
         </div>
+        <p className="-mt-1 text-[11px] text-muted-foreground">Swipe to turn the pages</p>
       </DialogContent>
     </Dialog>
   );

@@ -48,8 +48,14 @@ const ZONES: Record<string, string> = {
 };
 
 /** Best guess of where this player is: time zone, then the language's region. "" if unknown. */
+let detected: string | null = null;
+/** The country this device seems to be in (worked out once: reading the time zone is slow on a phone). */
 export function detectCountry(): string {
   if (typeof window === "undefined") return "";
+  if (detected === null) detected = findCountry();
+  return detected;
+}
+function findCountry(): string {
   try {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
     if (ZONES[tz]) return ZONES[tz];

@@ -24,6 +24,8 @@ export type NetMessage =
   | { type: "join"; id: string; nick: string; cc?: string; av?: number }
   | { type: "leave"; id: string }
   | { type: "start" }
+  /** Friends lobby, the room's creator: play this game next (with these variations). */
+  | { type: "game"; id: string; game: string; variations?: unknown }
   /** Friends room, after a game: back to the room's lobby for the next one. */
   | { type: "again"; id: string }
   /** Friends lobby: I'm ready to start (or not any more). */

@@ -36,7 +36,8 @@ export function rememberGame(id: string) {
     /* private mode */
   }
 }
-function rememberedGame() {
+/** The game picked last (on the home page or a setup screen), if any. */
+export function rememberedGame() {
   try {
     return localStorage.getItem(GAME_KEY);
   } catch {
@@ -67,7 +68,7 @@ function ResumeButtons() {
     // Old invite links looked like /#abc123
     const hash = window.location.hash.slice(1).toLowerCase();
     if (isRoomCode(hash) && !hash.startsWith("pub")) {
-      router.replace(roomPath(hash));
+      router.replace(roomPath(hash), { scroll: false });
       return;
     }
     game.exitToMenu();
@@ -98,7 +99,7 @@ function ResumeButtons() {
           className="w-full sm:flex-1"
           onClick={() => {
             const path = getController().rejoin();
-            if (path) router.push(path);
+            if (path) router.push(path, { scroll: false });
             else setRejoin(null);
           }}
         >
@@ -110,7 +111,7 @@ function ResumeButtons() {
           size="lg"
           className="w-full sm:flex-1"
           onClick={() => {
-            if (getController().resumeOffline()) router.push("/game");
+            if (getController().resumeOffline()) router.push("/game", { scroll: false });
           }}
         >
           Continue your {MODES[resume].chip.toLowerCase()} game
@@ -151,13 +152,13 @@ function markOpening(a: HTMLElement) {
  */
 function PlayModes({ game }: { game: string }) {
   const router = useRouter();
-  const href = (key: Mode) => `/play/${key}${game === "ludo" ? "" : `?game=${game}`}`;
-  // Fetch all four pages straight away. (Next only fetches links on the screen, and on
-  // a phone these are below the demo: the first tap then had to wait for the network.)
+  // A plain address, fetched long before the tap (RouteWarmup): the setup screen opens on the game
+  // remembered here. (An address with ?game= in it was a page of its own, fetched only on the tap.)
+  const href = (key: Mode) => `/play/${key}`;
   useEffect(() => {
     MODE_ORDER.forEach((key) => router.prefetch(href(key)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game, router]);
+  }, [router]);
   return (
     <div className="grid grid-cols-3 gap-2 md:grid-cols-2 md:gap-2.5">
       {MODE_ORDER.map((key, k) => {
@@ -167,8 +168,10 @@ function PlayModes({ game }: { game: string }) {
           <Link
             key={key}
             href={href(key)}
+            scroll={false}
             // The demo holds still, so the page asked for opens as fast as the phone can.
             onClick={(e) => {
+              rememberGame(game);
               goingSomewhere();
               markOpening(e.currentTarget);
             }}

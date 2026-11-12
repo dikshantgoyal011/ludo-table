@@ -32,7 +32,8 @@ import {
 } from "./constants";
 import { stackSquare } from "./chaupar/board";
 import { cleanFor, hasSides, hasVariations, noVariations, playsSolo, type Variations } from "./variations";
-import { addLog, clone, finishOf, freshState, freshTokens, leaveGame, missTurn, movable, rulesFor, seatName, seated, seatsFor, teamOf, validState } from "./rules";
+import { addLog, clone, finishOf, freshState, freshTokens, isGameId, leaveGame, missTurn, movable, rulesFor, seatName, seated, seatsFor, teamOf, validState } from "./rules";
+import { variantById } from "./variants";
 import type { ChatMessage, Color, GameId, GameState, Looks, Mode, MoveOpt, Seat, TrailStep } from "./types";
 
 export type NetKind = "" | "ok" | "bad";
@@ -45,8 +46,10 @@ export interface TokenView {
   scale: number;
   movable: boolean;
   stepping: boolean;
-  /** Gliding along the track square after square, one smooth run (the other way to move: see Settings). */
+  /** Gliding along the track square after square, one smooth run (the quicker way to move: see Settings). */
   gliding: boolean;
+  /** Gliding: how long each square takes (ms). */
+  glideMs?: number;
   /** Cut: flying back to its yard (a longer glide, it can cross the board). */
   returning: boolean;
   hidden: boolean;
@@ -61,6 +64,12 @@ export interface TokenView {
 const RETURN_MS = 650;
 /** A token out of its yard onto the first square: one glide (matches .token in globals.css). */
 const OUT_MS = 380;
+/** Glide: each square this long (a whole move between GLIDE_MIN_MS and GLIDE_MAX_MS), much quicker than hopping (STEP_MS a square). */
+const GLIDE_STEP_MS = 60;
+const GLIDE_MIN_MS = 240;
+const GLIDE_MAX_MS = 600;
+/** A move that has to wait longer than this behind the ones before it on this screen is shown at glide speed, to catch up. */
+const BEHIND_MS = 150;
 /** Moves still waiting to be shown for longer than this: catch up at once instead of falling further behind. */
 const CATCH_UP_MS = 6_000;
 
@@ -245,6 +254,8 @@ export class GameController {
   private animBusyUntil = 0;
   /** When the last move queued to be shown ends (the next one waits for it, so moves always play in order). */
   private queueEnd = 0;
+  /** Per token: gliding right now, each square this long (ms). */
+  private glideOf: Record<string, number> = {};
   private rotFrame = 0;
   private heartbeat: ReturnType<typeof setInterval> | null = null;
   /** Host: when each player was last heard from. */
@@ -880,6 +891,26 @@ export class GameController {
     s.log = [{ c: "" as const, t: `Game on! ${seatName(s, s.turn as Color)} goes first.` }, ...s.log].slice(0, 20);
   }
 
+  /**
+   * Friends lobby, host: the room's creator switched the room to another game.
+   * Everyone stays; its rules are the creator's saved ones (or the standard
+   * ones), and everyone gets ready (and agrees to the rules) again.
+   */
+  private hostGame(id: string, game: unknown, variations: unknown) {
+    if (id !== this.roomOwnerId() || !isGameId(game)) return;
+    this.commit((s) => {
+      if (s.phase !== "lobby" || (s.game || "ludo") === game) return false;
+      if (game === "ludo") delete s.game;
+      else s.game = game;
+      if (hasVariations(game)) s.variations = cleanFor(game, variations);
+      else delete s.variations;
+      s.variationsV = (s.variationsV || 0) + 1;
+      s.agreed = [];
+      s.ready = [];
+      addLog(s, "", `${s.players.find((p) => p.id === id)?.nick || "The host"} switched the game to ${variantById(game).name}.`);
+    });
+    this.wantGame = game;
+  }
   /** Friends lobby, host: player `id` is ready (or not). */
   private hostReady(id: string, on: boolean) {
     this.commit((s) => {
@@ -917,7 +948,7 @@ export class GameController {
    * game shows it, so a message lost on a bad connection can't leave the lobby
    * waiting for ever. (The host takes each the same however often it comes.)
    */
-  private lobbyWant: { join?: boolean; ready?: boolean; agree?: number | null; start?: boolean } = {};
+  private lobbyWant: { join?: boolean; ready?: boolean; readyVv?: number; agree?: number | null; start?: boolean } = {};
   private lobbySentAt = 0;
   join = () => {
     this.lobbyWant.join = true;
@@ -940,6 +971,8 @@ export class GameController {
   /** Friends lobby: mark myself ready to start (or not). */
   setReady = (on: boolean) => {
     this.lobbyWant.ready = on;
+    // (Ready for the rules as they are: if they change, say the game is switched, I get ready again myself.)
+    this.lobbyWant.readyVv = this.state.variationsV || 0;
     if (this.isHost || !this.online) this.hostReady(this.myId, on);
     else this.transport?.sendToHost({ type: "ready", id: this.myId, on });
   };
@@ -965,6 +998,7 @@ export class GameController {
     if (w.join && !this.joined(s)) t?.sendToHost({ type: "join", id: me, nick: this.myNick(), ...this.myLooks() });
     if (w.join === false && this.joined(s)) t?.sendToHost({ type: "leave", id: me });
     if (!this.joined(s)) return;
+    if (w.ready !== undefined && (w.readyVv ?? 0) !== (s.variationsV || 0)) delete w.ready;
     if (w.ready !== undefined && !!s.ready?.includes(me) !== w.ready) t?.sendToHost({ type: "ready", id: me, on: w.ready });
     // (Agreeing counts only for the rules as they were: once they change, I agree again myself.)
     if (w.agree !== undefined) {
@@ -973,6 +1007,16 @@ export class GameController {
     }
     if (w.start) t?.sendToHost({ type: "start" });
   }
+  /** Friends lobby, the room's creator: play this game next, everyone staying in the room. */
+  switchGame = (game: GameId) => {
+    if (this.mode !== "friends" || !this.canRunTable() || this.state.phase !== "lobby") return;
+    // Its rules: the ones I saved for it, or the standard ones.
+    const p = this.services.profile.get();
+    const variations = hasVariations(game) ? (p.saveVariations[game] ? p.variations[game] : noVariations(game)) : undefined;
+    this.wantGame = game;
+    if (this.isHost || !this.online) this.hostGame(this.myId, game, variations);
+    else this.transport?.sendToHost({ type: "game", id: this.myId, game, variations });
+  };
   /** Friends lobby (Pachisi, Parchís), the room's creator: play with these variations. */
   setVariations = (v: Variations) => {
     if (!this.canRunTable()) return;
@@ -1502,8 +1546,9 @@ export class GameController {
           ...(t.badge ? { badge: t.badge } : {}),
           movable: moveSet.has(t.c + t.i),
           // Quick one-square hops while walking; coming out of the yard is a longer glide.
-          stepping: this.settings.steps && this.animPos[t.c + t.i] !== undefined && !this.comingOut.has(t.c + t.i),
-          gliding: !this.settings.steps && this.animPos[t.c + t.i] !== undefined && !this.comingOut.has(t.c + t.i),
+          stepping: !this.glideOf[t.c + t.i] && this.settings.steps && this.animPos[t.c + t.i] !== undefined && !this.comingOut.has(t.c + t.i),
+          gliding: !!this.glideOf[t.c + t.i] && this.animPos[t.c + t.i] !== undefined && !this.comingOut.has(t.c + t.i),
+          ...(this.glideOf[t.c + t.i] ? { glideMs: this.glideOf[t.c + t.i] } : {}),
           returning: this.returning.has(t.c + t.i),
           hidden: !s.seats[t.c] || !!s.seats[t.c]?.out,
           lying: t.lying,
@@ -1517,21 +1562,29 @@ export class GameController {
   }
 
   /**
-   * How long a token's move takes on screen. The same whether it hops or glides
-   * (and with less motion), so every device at a table keeps the same time:
-   * nobody's screen falls behind because they picked the other way to move.
+   * How a token's move is shown: hopping square by square (STEP_MS each, the
+   * slower way), or gliding along the track (the quicker way, as picked in
+   * Settings; `fast`: a hopping screen catching up, see showSteps). Returns
+   * each square's time and the whole move's.
    */
-  private walkMs(a: number, b: number) {
+  private pace(a: number, b: number, fast = false) {
     const path = rulesFor(this.state).steps(a, b);
-    return this.enters(a, path) ? OUT_MS : (path.length + 1) * STEP_MS;
+    if (this.enters(a, path)) return { glide: false, per: OUT_MS, walk: OUT_MS };
+    if (this.settings.steps && !fast) return { glide: false, per: STEP_MS, walk: (path.length + 1) * STEP_MS };
+    const total = Math.min(GLIDE_MAX_MS, Math.max(GLIDE_MIN_MS, path.length * GLIDE_STEP_MS));
+    const per = Math.round(total / Math.max(1, path.length));
+    return { glide: true, per, walk: total + per };
+  }
+  private walkMs(a: number, b: number, fast = false) {
+    return this.pace(a, b, fast).walk;
   }
   /** Out of the yard onto the first square (or Chaupar's Khado Karvo, out of Home): one glide. */
   private enters(a: number, path: number[]) {
     return (a === -1 || a === finishOf(this.state)) && path.length <= 1;
   }
   /** How long one move takes on screen, its captures flying home included. */
-  private stepMs(st: TrailStep) {
-    return Math.max(0, ...st.moves.map((m) => this.walkMs(m.a, m.b))) + (st.caps.length ? RETURN_MS : 0);
+  private stepMs(st: TrailStep, fast = false) {
+    return Math.max(0, ...st.moves.map((m) => this.walkMs(m.a, m.b, fast))) + (st.caps.length ? RETURN_MS : 0);
   }
 
   /**
@@ -1570,6 +1623,11 @@ export class GameController {
    * Show these moves one after another: each starts once the one before it has
    * finished, the tokens it captured back home (a Parchís capture, then the
    * count of 20 with another piece). Moves still being shown from before go first.
+   *
+   * Each screen moves at its own speed (hops or glide), and the game goes at the
+   * pace of whoever plays: a hopping screen whose moves start to queue up (the
+   * others glide, or bots play quickly) shows the waiting ones at glide speed, so
+   * it's never more than about a move behind, and never holds the others up.
    */
   private showSteps(steps: TrailStep[], delay: number) {
     if (!steps.length) return;
@@ -1582,12 +1640,13 @@ export class GameController {
     }
     let at = Math.max(now + delay, this.queueEnd);
     for (const st of steps) {
+      const fast = at - (now + delay) > BEHIND_MS;
       const [first, ...others] = st.moves;
       if (first) {
-        this.animateMove(first, st.caps, at - now);
-        others.forEach((m) => this.animateMove(m, [], at - now));
+        this.animateMove(first, st.caps, at - now, fast);
+        others.forEach((m) => this.animateMove(m, [], at - now, fast));
       } else this.captureLater(st.caps, at - now);
-      at += this.stepMs(st);
+      at += this.stepMs(st, fast);
     }
     this.queueEnd = at;
     this.animBusyUntil = Math.max(this.animBusyUntil, at);
@@ -1625,13 +1684,12 @@ export class GameController {
     );
   }
 
-  private animateMove(m: MoveAnim, caps: TrailStep["caps"], delay: number) {
+  private animateMove(m: MoveAnim, caps: TrailStep["caps"], delay: number, fast = false) {
     const key = m.c + m.i;
     const now = Date.now();
-    const hops = this.settings.steps;
     const still = reduceMotion();
     const path = rulesFor(this.state).steps(m.a, m.b);
-    const walk = this.walkMs(m.a, m.b);
+    const { glide, per, walk } = this.pace(m.a, m.b, fast);
     const gen = (this.animGen[key] = (this.animGen[key] || 0) + 1);
     // Where it starts. (A token still finishing an earlier move ends up there by itself.)
     if ((this.tokenBusyUntil[key] || 0) <= now) this.animPos[key] = m.a;
@@ -1643,7 +1701,10 @@ export class GameController {
       this.animTimers.push(
         setTimeout(() => {
           // A newer move of this token takes over from here.
-          if (latest()) delete this.animPos[key];
+          if (latest()) {
+            delete this.animPos[key];
+            delete this.glideOf[key];
+          }
           if (m.b === finishOf(this.state)) this.play("home");
           // Reaching a safe square (not straight out of the yard: that has its own sound).
           else if (!caps.length && !entering && rulesFor(this.state).safe?.(m.c, m.b)) this.play("safe");
@@ -1672,8 +1733,11 @@ export class GameController {
         finish(walk);
         return;
       }
-      // Square by square: hopping (a tick each square), or gliding along the track in one smooth run.
-      if (!hops) this.play("move");
+      // Square by square: hopping (a tick each square), or gliding along the track in one quick, smooth run.
+      if (glide) {
+        this.glideOf[key] = per;
+        this.play("move");
+      } else delete this.glideOf[key];
       let k = 0;
       this.animPos[key] = m.a;
       const iv = setInterval(() => {
@@ -1682,13 +1746,13 @@ export class GameController {
           return;
         }
         this.animPos[key] = path[k++];
-        if (hops) this.play("move");
+        if (!glide) this.play("move");
         this.emit();
         if (k >= path.length) {
           clearInterval(iv);
-          finish(STEP_MS);
+          finish(per);
         }
-      }, STEP_MS);
+      }, per);
       this.animTimers.push(iv as unknown as ReturnType<typeof setTimeout>);
     };
     this.animBusyUntil = Math.max(this.animBusyUntil, now + delay + walk);
@@ -1710,6 +1774,7 @@ export class GameController {
     this.animTimers = [];
     this.animBusyUntil = 0;
     this.queueEnd = 0;
+    this.glideOf = {};
     for (const k in this.animPos) delete this.animPos[k];
     this.animGen = {};
     this.animOwner = {};
@@ -1801,7 +1866,7 @@ export class GameController {
   againPath(): string | null {
     const g = this.state.game;
     if (this.isNet() || !hasVariations(g) || this.services.profile.get().saveVariations[g]) return null;
-    return `/play/${this.mode}?game=${g}`;
+    return `/play/${this.mode}`;
   }
   /** Friends: I asked for the next game and the room is on its way back to the lobby. */
   againAsked = false;
@@ -2542,6 +2607,7 @@ export class GameController {
     } else if (m.type === "leave" && typeof m.id === "string") this.hostLeave(m.id);
     else if (m.type === "start" && (this.mode !== "friends" || link.pid === this.roomOwnerId())) this.startGame();
     else if (m.type === "again" && link.pid && m.id === link.pid) this.hostAgain();
+    else if (m.type === "game" && this.mode === "friends" && link.pid && m.id === link.pid) this.hostGame(link.pid, m.game, m.variations);
     else if (m.type === "ready" && this.mode === "friends" && link.pid && m.id === link.pid) this.hostReady(link.pid, !!m.on);
     else if (m.type === "agree" && this.mode === "friends" && link.pid && m.id === link.pid) this.hostAgree(link.pid, !!m.on, Number(m.vv));
     else if (m.type === "variations" && this.mode === "friends" && link.pid && m.id === link.pid) this.hostVariations(link.pid, m.variations);

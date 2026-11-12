@@ -830,6 +830,32 @@ html.in-game .board-fit > .board-size {
   will-change: transform;
 }
 
+/* How to play: a page slides in from the side it came from (next: the right, back: the left). */
+.lesson-in-next {
+  animation: lesson-in-next 0.24s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.lesson-in-back {
+  animation: lesson-in-back 0.24s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+@keyframes lesson-in-next {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+}
+@keyframes lesson-in-back {
+  from {
+    opacity: 0;
+    transform: translateX(-28px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lesson-in-next,
+  .lesson-in-back {
+    animation: none;
+  }
+}
+
 /* ---------------------------------------------------------------- tokens */
 .token {
   transition: transform 0.35s cubic-bezier(0.3, 0.7, 0.3, 1.2);
@@ -837,9 +863,9 @@ html.in-game .board-fit > .board-size {
 .token.stepping {
   transition: transform 0.13s ease-out;
 }
-/* Glide: the same square-by-square timing as the hops (STEP_MS), each square flowing into the next. */
+/* Glide: quicker than the hops, square by square along the track (each square --glide long), flowing into the next. */
 .token.gliding {
-  transition: transform 0.14s linear;
+  transition: transform var(--glide, 60ms) linear;
 }
 /* A cut token flying home can cross the whole board: give it time (RETURN_MS in the controller). */
 .token.returning {

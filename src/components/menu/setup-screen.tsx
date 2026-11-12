@@ -17,6 +17,7 @@ import { useMounted } from "@/hooks/use-mounted";
 import {
   cleanRoomCode,
   COLORS,
+  isRoomCode,
   MODE_ORDER,
   MODES,
   newRoomCode,
@@ -31,7 +32,7 @@ import { clearRulesChoice, SidesPicker, useRulesChoice, VariationsDialog, variat
 import type { Profile } from "@/lib/services/types";
 import { cn } from "@/lib/utils";
 import { GameStrip } from "./game-picker";
-import { rememberGame } from "./menu-screen";
+import { rememberedGame, rememberGame } from "./menu-screen";
 
 /** Name input that saves to the profile as you type. */
 function NameInput({
@@ -79,13 +80,14 @@ export function SetupScreen({ mode }: { mode: Mode }) {
   const [code, setCode] = useState("");
   // Play with friends: creating a room, or joining one (two separate choices).
   const [way, setWay] = useState<"create" | "join">("create");
-  // Which game: ?game= in the address (Ludo when absent). Read from the router, so a
-  // page opened from inside the app has the right game from its very first frame
-  // (reading it after opening showed Ludo for a moment on every Pachisi screen).
+  // Which game: ?game= in the address, else the one picked last (the app's own links are plain
+  // addresses, already fetched: see RouteWarmup), else Ludo. Read while drawing, so the screen
+  // has the right game from its very first frame.
   const query = useSearchParams();
   const [picked, setGame] = useState<GameId | null>(null);
   const asked = query.get("game");
-  const game: GameId = picked ?? (isGameId(asked) ? asked : "ludo");
+  const last = rememberedGame();
+  const game: GameId = picked ?? (isGameId(asked) ? asked : isGameId(last) && variantById(last).ready ? last : "ludo");
   const v = variantById(game);
   const gameQuery = game === "ludo" ? "" : `?game=${game}`;
   // Pachisi, Chaupar: Solo or 2 vs 2 is picked on its own.
@@ -133,16 +135,34 @@ export function SetupScreen({ mode }: { mode: Mode }) {
     getController().exitToMenu();
   }, []);
   // The home page opens on the game last looked at.
-  useEffect(() => rememberGame(game), [game]);
+  // Remembered, and shown in the address (to share or reload), without going anywhere.
+  useEffect(() => {
+    rememberGame(game);
+    const url = `/play/${mode}${gameQuery}`;
+    if (location.pathname + location.search !== url) window.history.replaceState(null, "", url);
+  }, [game, mode, gameQuery]);
 
   // Going on to a room or a game: show it's on its way (and don't start a second one).
   const [opening, startOpening] = useTransition();
-  const go = (path: string) => startOpening(() => router.push(path));
-  // Ready before the tap: the room and game pages load at once.
+  const go = (path: string) => startOpening(() => router.push(path, { scroll: false }));
+  // Ready before the tap: the room and game pages load at once. A new room's code is picked now, so
+  // its page (an address of its own) is fetched before Create a room is tapped.
+  const [newCode, setNewCode] = useState(newRoomCode);
+  const createPath = roomPath(newCode, `new=1${game === "ludo" ? "" : `&game=${game}`}`);
   useEffect(() => {
     router.prefetch("/room");
     router.prefetch("/game");
   }, [router]);
+  useEffect(() => {
+    if (mode === "friends") router.prefetch(createPath);
+  }, [mode, createPath, router]);
+  // Joining: the room's page is fetched while its code is typed.
+  useEffect(() => {
+    const v = cleanRoomCode(code);
+    if (mode !== "friends" || !isRoomCode(v)) return;
+    const t = setTimeout(() => router.prefetch(roomPath(v)), 150);
+    return () => clearTimeout(t);
+  }, [mode, code, router]);
   // The same game strip, in the same place, as on the home page: switch game in one tap.
   const strip = (
     <GameStrip
@@ -150,10 +170,9 @@ export function SetupScreen({ mode }: { mode: Mode }) {
       onSelect={(id) => {
         rememberGame(id);
         // Another playable game: stay on this screen with it; one that's coming: show it on the home page.
-        if (variantById(id).ready && isGameId(id)) {
-          setGame(id);
-          router.replace(`/play/${mode}${id === "ludo" ? "" : `?game=${id}`}`);
-        } else go(`/?game=${id}`);
+        // (The address follows by itself, without a trip to the network.)
+        if (variantById(id).ready && isGameId(id)) setGame(id);
+        else go("/");
       }}
     />
   );
@@ -173,7 +192,8 @@ export function SetupScreen({ mode }: { mode: Mode }) {
           {MODE_ORDER.map((m) => (
             <Link
               key={m}
-              href={`/play/${m}${gameQuery}`}
+              href={`/play/${m}`}
+              scroll={false}
               replace
               aria-current={m === mode ? "page" : undefined}
               className={cn(
@@ -282,7 +302,11 @@ export function SetupScreen({ mode }: { mode: Mode }) {
                   size="lg"
                   className="w-full"
                   disabled={opening}
-                  onClick={() => go(roomPath(newRoomCode(), `new=1${game === "ludo" ? "" : `&game=${game}`}`))}
+                  onClick={() => {
+                    go(createPath);
+                    // (Back here later: a new room gets a new code.)
+                    setTimeout(() => setNewCode(newRoomCode()), 1000);
+                  }}
                 >
                   {opening ? "Opening the room…" : "Create a room"}
                 </Button>
@@ -372,7 +396,7 @@ export function SetupScreen({ mode }: { mode: Mode }) {
         <Button
           variant="outline"
           className="self-start"
-          onClick={() => go(`/${gameQuery}`)}
+          onClick={() => go("/")}
         >
           ← All games
         </Button>

@@ -131,7 +131,7 @@ export function LeaveDialog() {
               close();
               leaving = true;
               // The home page leaves the game once it's there (leaving first emptied this screen while it loaded).
-              router.replace("/");
+              router.replace("/", { scroll: false });
             }}
           >
             Leave game

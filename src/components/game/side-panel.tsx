@@ -3,6 +3,7 @@
 import { useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { rememberGame } from "@/components/menu/menu-screen";
 import { Input } from "@/components/ui/input";
 import { useGame, useProfile, useSettings } from "@/hooks/use-game";
 import { COLORS, NICK_MAX } from "@/lib/game/constants";
@@ -81,9 +82,12 @@ export function TurnCard() {
         onClick={() => {
           // (Rules not saved as my preferences: choose them again first.)
           const choose = game.againPath();
-          if (choose) return router.push(choose);
+          if (choose) {
+            rememberGame(s.game || "ludo");
+            return router.push(choose, { scroll: false });
+          }
           game.playAgain();
-          if (game.mode === "online") router.push("/game");
+          if (game.mode === "online") router.push("/game", { scroll: false });
         }}
       >
         {game.mode === "online" ? "Find another game" : "Play again"}

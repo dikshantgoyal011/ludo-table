@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { rememberGame } from "@/components/menu/menu-screen";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useGame, useSettings } from "@/hooks/use-game";
 import { NAMES } from "@/lib/game/constants";
@@ -87,7 +88,9 @@ export function WinDialog() {
                 const choose = game.againPath();
                 if (!choose) return game.playAgain();
                 game.closeWinner();
-                router.push(choose);
+                // (The setup screen opens on this game.)
+                rememberGame(s.game || "ludo");
+                router.push(choose, { scroll: false });
               }}
             >
               {game.mode === "online" ? "Find another game" : game.againAsked ? "Back to the room…" : "Play again"}
@@ -108,7 +111,7 @@ export function WinDialog() {
             onClick={() => {
               // The home page leaves the table once it's there (leaving first emptied this screen while it loaded).
               game.closeWinner();
-              router.push("/");
+              router.push("/", { scroll: false });
             }}
           >
             Main menu

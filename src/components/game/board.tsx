@@ -105,7 +105,7 @@ export function Board() {
               <g
                 key={t.c + t.i}
                 className={"token" + (t.movable ? " movable" : "") + (t.stepping ? " stepping" : "") + (t.gliding ? " gliding" : "") + (t.returning ? " returning" : "")}
-                style={{ transform: `translate(${t.x}px,${t.y}px) scale(${t.scale})`, display: t.hidden ? "none" : undefined }}
+                style={{ transform: `translate(${t.x}px,${t.y}px) scale(${t.scale})`, display: t.hidden ? "none" : undefined, ...(t.glideMs ? { ["--glide" as string]: `${t.glideMs}ms` } : {}) }}
               >
                 {/* (Chaupar: a pair's pawns stand in a stack.) */}
                 <StackLift lift={t.lift} badge={t.badge}>

@@ -24,7 +24,7 @@ export function RoomScreen({ code }: { code: string }) {
 
   useEffect(() => {
     if (!isRoomCode(room) || room.startsWith("pub")) {
-      router.replace("/play/friends");
+      router.replace("/play/friends", { scroll: false });
       return;
     }
     // (A new room's lobby shows its code and Invite right away.)
@@ -32,13 +32,14 @@ export function RoomScreen({ code }: { code: string }) {
   }, [room, wanted, create, game, router]);
 
   if (!mounted || game.mode !== "friends") return null;
-  if (game.noRoom === room) return <NoRoom code={room} game={wanted} onRetry={() => game.startFriends(room, wanted)} />;
+  if (game.noRoom === room) return <NoRoom code={room} onRetry={() => game.startFriends(room, wanted)} />;
   return <GameScreen />;
 }
 
 /** Joining a code nobody is hosting: say so (no room is made from it). */
-function NoRoom({ code, game, onRetry }: { code: string; game: string; onRetry: () => void }) {
-  const back = `/play/friends${game === "ludo" ? "" : `?game=${game}`}`;
+function NoRoom({ code, onRetry }: { code: string; onRetry: () => void }) {
+  // (The friends screen opens on the game picked last.)
+  const back = "/play/friends";
   return (
     <div role="alert" className="mx-auto flex w-full max-w-xl flex-col items-center gap-3 rounded-2xl border border-border bg-card px-6 py-8 text-center">
       <div className="text-lg font-bold">
@@ -50,7 +51,9 @@ function NoRoom({ code, game, onRetry }: { code: string; game: string; onRetry: 
           Try again
         </Button>
         <Button size="lg" asChild>
-          <Link href={back}>Back</Link>
+          <Link href={back} scroll={false}>
+            Back
+          </Link>
         </Button>
       </div>
     </div>

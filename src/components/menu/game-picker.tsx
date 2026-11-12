@@ -29,14 +29,18 @@ export function GameStrip({ selected, onSelect }: { selected: string; onSelect: 
 export function GamePicker({ selected, onSelect }: { selected: string; onSelect: (id: string) => void }) {
   const rowRef = useRef<HTMLDivElement>(null);
 
-  // Keep the chosen game in view (sideways only: never moves the page).
+  // Keep the chosen game in view (sideways only: never moves the page). Measured once the screen is
+  // drawn: measuring while it's being put up made the browser lay the whole new page out an extra time.
   useEffect(() => {
-    const row = rowRef.current;
-    const el = row?.querySelector<HTMLElement>(`[data-game="${selected}"]`);
-    if (!row || !el) return;
-    const left = el.offsetLeft - row.offsetLeft;
-    if (left < row.scrollLeft || left + el.offsetWidth > row.scrollLeft + row.clientWidth)
-      row.scrollTo({ left: Math.max(0, left - 12), behavior: "smooth" });
+    const id = requestAnimationFrame(() => {
+      const row = rowRef.current;
+      const el = row?.querySelector<HTMLElement>(`[data-game="${selected}"]`);
+      if (!row || !el) return;
+      const left = el.offsetLeft - row.offsetLeft;
+      if (left < row.scrollLeft || left + el.offsetWidth > row.scrollLeft + row.clientWidth)
+        row.scrollTo({ left: Math.max(0, left - 12), behavior: "smooth" });
+    });
+    return () => cancelAnimationFrame(id);
   }, [selected]);
 
   return (
