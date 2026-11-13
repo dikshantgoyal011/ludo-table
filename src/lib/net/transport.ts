@@ -137,6 +137,12 @@ export interface RoomTransport {
    * running, or null if nobody is hosting it (or they don't answer).
    */
   probe?(code: string): Promise<GameState | null>;
+  /** Guest: the host has gone quiet; connect to it again alongside the connection there is (the first to work carries on). */
+  refresh?(): void;
+  /** Host: is player `pid` connected (a connection of theirs open)? */
+  linked?(pid: string): boolean;
+  /** This device can't reach the connection server, or has no network. */
+  serverDown?(): boolean;
   close(): void;
 }
 

@@ -24,11 +24,11 @@ export const OFFLINE_ALLOWANCE = 15_000;
  */
 export const ABANDON_MS = 90_000;
 /** Online/friends: a player we haven't heard from for this long counts as offline. (Mobile connections stall for a few seconds now and then.) */
-export const AWAY_GRACE = 6_000;
+export const AWAY_GRACE = 8_000;
 /** Online/friends: every device says "I'm here" this often. */
 export const PING_MS = 1_000;
 /** Guests: if the host has been silent this long, it's gone; take over the table. */
-export const HOST_SILENT_MS = 9_000;
+export const HOST_SILENT_MS = 10_000;
 /** How long a "typing…" hint lasts without a fresh signal. */
 export const TYPING_TTL = 4_000;
 /** Online: once a table is full it starts after this short countdown. */

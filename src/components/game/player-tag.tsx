@@ -90,7 +90,11 @@ function statusNote(game: ReturnType<typeof useGame>, seat: Seat, place: number)
   const s = game.state;
   if (seat.out) return seat.left ? { text: "Left the game", tone: "grey" } : { text: `Out · missed ${MAX_MISSES} turns`, tone: "red" };
   if (s.phase !== "playing" || place >= 0) return null;
-  if (game.awayInfo(seat).away) return { text: seat.bot ? "Offline" : `Offline · bot in ${Math.ceil(game.offlineLeft(seat) / 1000)}s`, tone: "red" };
+  if (game.awayInfo(seat).away) {
+    const left = Math.ceil(game.offlineLeft(seat) / 1000);
+    // (At 0 the computer is about to play for them: it takes the host's next check, or the table being taken over.)
+    return { text: seat.bot ? "Offline" : left > 0 ? `Offline · bot in ${left}s` : "Offline · bot taking over", tone: "red" };
+  }
   if (game.mode === "online" && (seat.misses || 0) > 0) return { text: `Missed ${seat.misses}/${MAX_MISSES} turns`, tone: "amber" };
   return null;
 }

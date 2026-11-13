@@ -863,9 +863,9 @@ html.in-game .board-fit > .board-size {
 .token.stepping {
   transition: transform 0.13s ease-out;
 }
-/* Glide: quicker than the hops, square by square along the track (each square --glide long), flowing into the next. */
+/* Glide: one animation along the track, played by the board (useGlides); nothing else moves it meanwhile. */
 .token.gliding {
-  transition: transform var(--glide, 60ms) linear;
+  transition: none;
 }
 /* A cut token flying home can cross the whole board: give it time (RETURN_MS in the controller). */
 .token.returning {

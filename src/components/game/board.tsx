@@ -3,7 +3,7 @@
 // The board on the game screen, for every game: tokens moving, the ripples on
 // tokens you can move, tapping them, and choosing how to move. What the board
 // itself looks like comes from each game's own file (ludo-board.tsx, pachisi-board.tsx).
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useGame, useSettings } from "@/hooks/use-game";
 import type { TokenView } from "@/lib/game/controller";
 import { COLORS } from "@/lib/game/constants";
@@ -50,6 +50,7 @@ export function Board() {
   // ripples and tap target in a separate layer on top instead.
   const views = game.tokenViews();
   const movableViews = views.filter((t) => t.movable && !t.hidden);
+  useGlides(views);
   const hex = (slot: Color) => th.pieces[game.displayColor(slot)];
   const light = (slot: Color) => th.light[game.displayColor(slot)];
   // Each game's own board (all are worked out, so switching games keeps the hooks in order).
@@ -104,8 +105,9 @@ export function Board() {
             {views.map((t) => (
               <g
                 key={t.c + t.i}
+                data-token={t.c + t.i}
                 className={"token" + (t.movable ? " movable" : "") + (t.stepping ? " stepping" : "") + (t.gliding ? " gliding" : "") + (t.returning ? " returning" : "")}
-                style={{ transform: `translate(${t.x}px,${t.y}px) scale(${t.scale})`, display: t.hidden ? "none" : undefined, ...(t.glideMs ? { ["--glide" as string]: `${t.glideMs}ms` } : {}) }}
+                style={{ transform: place(t.x, t.y, t.scale), display: t.hidden ? "none" : undefined }}
               >
                 {/* (Chaupar: a pair's pawns stand in a stack.) */}
                 <StackLift lift={t.lift} badge={t.badge}>
@@ -165,6 +167,38 @@ export function Board() {
       </div>
     </div>
   );
+}
+
+const place = (x: number, y: number, scale: number) => `translate(${x}px,${y}px) scale(${scale})`;
+
+/**
+ * Gliding tokens: each glide is one animation from where the token stood, through the
+ * middle of every square on the way, to where it ends, at the same speed all the way
+ * (each stretch takes as long as it is long). The browser draws it frame by frame by
+ * itself, so it doesn't stop on each square or wait for the page. Started before the
+ * new position is drawn; the token's own position is already where it ends.
+ */
+function useGlides(views: TokenView[]) {
+  const runs = useRef(new Map<string, { id: number; anim: Animation }>());
+  useLayoutEffect(() => {
+    for (const t of views) {
+      const g = t.glide;
+      const key = t.c + t.i;
+      const run = runs.current.get(key);
+      if (!g || run?.id === g.id) continue;
+      const el = document.querySelector<SVGGElement>(`.token[data-token="${key}"]`);
+      if (!el || typeof el.animate !== "function") continue;
+      const pts = [g.from, ...g.via.map((p) => ({ ...p, scale: 1 })), { x: t.x, y: t.y, scale: t.scale }];
+      const far = [0];
+      for (let k = 1; k < pts.length; k++) far.push(far[k - 1] + Math.hypot(pts[k].x - pts[k - 1].x, pts[k].y - pts[k - 1].y));
+      const total = far[far.length - 1] || 1;
+      const frames: Keyframe[] = pts.map((p, k) => ({ transform: place(p.x, p.y, p.scale), offset: far[k] / total }));
+      // Still on its way from an earlier glide: on from where it is now.
+      if (run && run.anim.playState === "running") frames[0].transform = getComputedStyle(el).transform;
+      run?.anim.cancel();
+      runs.current.set(key, { id: g.id, anim: el.animate(frames, { duration: g.ms, easing: "linear" }) });
+    }
+  });
 }
 
 /** What a choice does, in a word or two. */

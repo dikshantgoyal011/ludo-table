@@ -49,8 +49,8 @@ export interface TokenView {
   stepping: boolean;
   /** Gliding along the track square after square, one smooth run (the quicker way to move: see Settings). */
   gliding: boolean;
-  /** Gliding: how long each square takes (ms). */
-  glideMs?: number;
+  /** Gliding: the run the board plays (x, y, scale are where it ends). */
+  glide?: Glide;
   /** Cut: flying back to its yard (a longer glide, it can cross the board). */
   returning: boolean;
   hidden: boolean;
@@ -61,22 +61,38 @@ export interface TokenView {
   badge?: number;
 }
 
+/**
+ * A glide, played by the board as one animation from start to end (one run the browser
+ * draws by itself, every frame: no stop on each square, whatever else the page is doing).
+ */
+export interface Glide {
+  /** A new id: a new run. */
+  id: number;
+  ms: number;
+  /** Where the token stood. */
+  from: { x: number; y: number; scale: number };
+  /** The middle of each square on the way, before the last. */
+  via: { x: number; y: number }[];
+}
+
 /** How long a cut token takes to fly home (matches .token.returning in globals.css). */
 const RETURN_MS = 650;
 /** A token out of its yard onto the first square: one glide (matches .token in globals.css). */
 const OUT_MS = 380;
-/** Glide: each square this long (a whole move between GLIDE_MIN_MS and GLIDE_MAX_MS), much quicker than hopping (STEP_MS a square). */
-const GLIDE_STEP_MS = 60;
-const GLIDE_MIN_MS = 240;
-const GLIDE_MAX_MS = 600;
+/** Glide: every square this long, however long the move (half the time of a hop: STEP_MS). */
+const GLIDE_STEP_MS = 70;
 /**
  * Moves arriving while earlier ones still have longer than this to be shown here (the
- * others glide, or play quickly) hop quicker, HURRY_STEP_MS a square, to catch up.
+ * others glide, or play quickly, or a slow connection brought several at once) hop
+ * quicker, HURRY_STEP_MS a square, to catch up; further behind, quicker still.
  * (Only earlier moves count: a move made by itself right after mine, say Parchís's
  * count of 20, isn't behind, it just comes next.)
  */
 const BEHIND_MS = 1_000;
-const HURRY_STEP_MS = 80;
+const FAR_BEHIND_MS = 2_500;
+/** (Quicker than a glide, GLIDE_STEP_MS: a screen that hops catches up with one that glides.) */
+const HURRY_STEP_MS = 50;
+const HURRY_MORE_STEP_MS = 30;
 /** Moves still waiting to be shown for longer than this: catch up at once instead of falling further behind. */
 const CATCH_UP_MS = 6_000;
 
@@ -149,9 +165,13 @@ const WAKE_GRACE_MS = 6_000;
 /** A gap this long between heartbeats means this device was asleep / in the background. */
 const TICK_GAP_MS = 3_000;
 /** Opening a room: nothing at all after this long, start again (a connection that never answers). */
-const OPEN_WATCHDOG_MS = 15_000;
+const OPEN_WATCHDOG_MS = 25_000;
 /** Friends wait longer for each other than strangers do before the computer stands in. */
-const FRIENDS_OFFLINE_ALLOWANCE = 40_000;
+const FRIENDS_OFFLINE_ALLOWANCE = 60_000;
+/** Guest: the host quiet this long, connect to it again alongside the connection there is (see the transport's refresh). */
+const REFRESH_MS = 3_000;
+/** No connection server, and nobody heard from for this long: it's this device that's offline. */
+const SELF_SILENT_MS = 4_000;
 
 /** A number someone could really have rolled / thrown in this game. */
 const validRoll = (s: GameState, v: number) => rulesFor(s).validRoll(v, s);
@@ -261,8 +281,9 @@ export class GameController {
   private animBusyUntil = 0;
   /** When the last move queued to be shown ends (the next one waits for it, so moves always play in order). */
   private queueEnd = 0;
-  /** Per token: gliding right now, each square this long (ms). */
-  private glideOf: Record<string, number> = {};
+  /** Per token: gliding right now. */
+  private glideOf: Record<string, Glide> = {};
+  private glideId = 0;
   private rotFrame = 0;
   private heartbeat: ReturnType<typeof setInterval> | null = null;
   /** Host: when each player was last heard from. */
@@ -270,6 +291,12 @@ export class GameController {
   /** Guest: who hosts the table and when we last heard from them. */
   private hostId = "";
   private hostHeardAt = 0;
+  /** Guest: when the host was last heard from, kept while connecting again (hostHeardAt starts over with each connection). */
+  private hostSeenAt = 0;
+  /** This device is the one offline, as last shown (see selfOffline). */
+  private offlineShown = false;
+  /** Host: since when this device has been the one offline (0: it isn't). */
+  private offlineSince = 0;
   /** Guest: the host went silent; treat it as gone and take over the table. */
   private onHostSilent: (() => void) | null = null;
   /** Per token: bumped by every new move animation, so an older one can't cut a newer one short. */
@@ -498,7 +525,23 @@ export class GameController {
   }
   /** Online/friends: only act while connected, or this device's game would drift from everyone else's. */
   private connected() {
-    return !this.isNet() || this.online;
+    return !this.isNet() || (this.online && !this.selfOffline());
+  }
+  /**
+   * It's this device that's offline (not everyone else): it can't reach the connection
+   * server, and hasn't heard from anyone for a few seconds. Then nobody here counts as
+   * offline, the computer doesn't step in for anyone, and play waits: what's played
+   * here meanwhile would only be lost.
+   */
+  selfOffline() {
+    if (!this.isNet() || !this.loaded || !this.transport?.serverDown?.()) return false;
+    const now = Date.now();
+    if (!this.isHost) return now - this.hostHeardAt > SELF_SILENT_MS;
+    const s = this.state;
+    return !seated(s).some((c) => {
+      const id = s.seats[c]?.id;
+      return !!id && id !== this.myId && !s.seats[c]?.bot && now - (this.lastSeen[id] ?? 0) <= SELF_SILENT_MS;
+    });
   }
   /** Which player the dice sits with. */
   dieColor(): Color | null {
@@ -534,8 +577,11 @@ export class GameController {
    */
   awayInfo(seat: Seat): { away: boolean; since: number } {
     if (seat.away) return { away: true, since: seat.awayAt || Date.now() };
-    const hostGone = this.isNet() && this.loaded && !this.isHost && seat.id === this.hostId && Date.now() - this.hostHeardAt > AWAY_GRACE;
-    return hostGone ? { away: true, since: this.hostHeardAt } : { away: false, since: 0 };
+    // (Counted from when the host was last heard, however many times this device has tried to connect since;
+    // not while it's this device that's offline.)
+    const hostGone =
+      this.isNet() && this.loaded && !this.isHost && seat.id === this.hostId && Date.now() - this.hostHeardAt > AWAY_GRACE && !this.selfOffline();
+    return hostGone ? { away: true, since: this.hostSeenAt || this.hostHeardAt || Date.now() } : { away: false, since: 0 };
   }
   /** How long someone can be offline before the computer plays for them (friends wait longer for each other). */
   private offlineAllowance() {
@@ -784,7 +830,8 @@ export class GameController {
     this.botTimer = setTimeout(() => {
       this.botTimer = null;
       const t = this.state.turn;
-      if (t && this.state.seats[t]?.bot) this.autoStep();
+      // (Not while this device is offline: the others can't see it, and it would only be lost. Next second, again.)
+      if (t && this.state.seats[t]?.bot && !this.selfOffline()) this.autoStep();
     }, wait);
   }
 
@@ -1153,14 +1200,30 @@ export class GameController {
       }
     } else {
       if (this.hostHeardAt) this.hostHeardAt = Math.max(this.hostHeardAt, now - HOST_SILENT_MS + WAKE_GRACE_MS);
+      if (this.hostSeenAt) this.hostSeenAt = Math.max(this.hostSeenAt, now - HOST_SILENT_MS + WAKE_GRACE_MS);
       if (this.online) {
         this.transport?.sendToHost({ type: "ping", id: this.myId });
         this.syncAskedAt = 0;
         this.requestSync();
         this.resendPending(true);
+        // (The connection may have died meanwhile, say on a change of network: a second one alongside.)
+        this.transport?.refresh?.();
       }
     }
     this.autoTakeBack();
+  }
+
+  /** Whether it's this device that's offline: the connection line says so (and says when it's back). */
+  private noteOffline() {
+    const off = this.selfOffline();
+    const say = "You're offline · reconnecting…";
+    // (Said again if something else changed the line meanwhile, say "Reconnecting…".)
+    if (off === this.offlineShown && (!off || this.net.text === say)) return;
+    this.offlineShown = off;
+    if (off) this.setNet("bad", say);
+    else if (this.online) this.netSummary();
+    else this.setNet("bad", "Reconnecting…");
+    this.emit();
   }
 
   /** Guest: while a move of mine waits for the host a few seconds, the connection line says so. */
@@ -1179,7 +1242,12 @@ export class GameController {
       // Every seat of theirs (in Pachisi one person can play two colours).
       const mine = COLORS.filter((k) => s.seats[k]?.id === id && s.seats[k]?.takeover);
       if (!mine.length) return false;
-      for (const c of mine) Object.assign(s.seats[c]!, { bot: false, takeover: false });
+      // (Taking it back, they're here: not offline any more either, without waiting for the next presence check.)
+      this.lastSeen[id] = Date.now();
+      for (const c of mine) {
+        Object.assign(s.seats[c]!, { bot: false, takeover: false, away: false });
+        delete s.seats[c]!.awayAt;
+      }
       addLog(s, mine[0], `${s.seats[mine[0]]!.nick} is back in control.`);
     });
   }
@@ -1465,7 +1533,8 @@ export class GameController {
     }
     this.teardown();
     this.hostId = "";
-    this.hostHeardAt = 0;
+    this.hostHeardAt = this.hostSeenAt = 0;
+    this.offlineShown = false;
     this.onHostSilent = null;
     this.rejoinGid = null;
     this.rejoinUntil = 0;
@@ -1514,7 +1583,9 @@ export class GameController {
       s.tokens[c].forEach((p0, i) => {
         const p = this.animPos[c + i] !== undefined ? this.animPos[c + i] : p0;
         const b = rules.point(c, i, p);
-        (groups[b.key] = groups[b.key] || []).push({ c, i, p, x: b.x, y: b.y, lying: b.lying });
+        // (Gliding: on its own until it lands, so the tokens where it's going make room only as it gets there.)
+        const k = this.glideOf[c + i] ? "glide:" + b.key : b.key;
+        (groups[k] = groups[k] || []).push({ c, i, p, x: b.x, y: b.y, lying: b.lying });
       });
     const turn = s.turn;
     // (Piece k * 4 + i of the turn is piece i of the k-th colour it moves: a partner's, in some games.)
@@ -1555,7 +1626,7 @@ export class GameController {
           // Quick one-square hops while walking; coming out of the yard is a longer glide.
           stepping: !this.glideOf[t.c + t.i] && this.settings.steps && this.animPos[t.c + t.i] !== undefined && !this.comingOut.has(t.c + t.i),
           gliding: !!this.glideOf[t.c + t.i] && this.animPos[t.c + t.i] !== undefined && !this.comingOut.has(t.c + t.i),
-          ...(this.glideOf[t.c + t.i] ? { glideMs: this.glideOf[t.c + t.i] } : {}),
+          ...(this.glideOf[t.c + t.i] ? { glide: this.glideOf[t.c + t.i] } : {}),
           returning: this.returning.has(t.c + t.i),
           hidden: !s.seats[t.c] || !!s.seats[t.c]?.out,
           lying: t.lying,
@@ -1571,30 +1642,30 @@ export class GameController {
   /**
    * How a token's move is shown: hopping square by square (STEP_MS each, the
    * slower way), or gliding along the track (the quicker way), as picked in
-   * Settings. `fast`: a hopping screen catching up (see showSteps), which still
-   * hops, only quicker. Returns each square's time and the whole move's.
+   * Settings. `hurry`: a hopping screen catching up (see showSteps), which still
+   * hops, only quicker, this long a square. Returns each square's time and the whole move's.
    */
-  private pace(a: number, b: number, fast = false) {
+  private pace(a: number, b: number, hurry = 0) {
     const path = rulesFor(this.state).steps(a, b);
     if (this.enters(a, path)) return { glide: false, per: OUT_MS, walk: OUT_MS };
     if (this.settings.steps) {
-      const per = fast ? HURRY_STEP_MS : STEP_MS;
+      const per = hurry || STEP_MS;
       return { glide: false, per, walk: (path.length + 1) * per };
     }
-    const total = Math.min(GLIDE_MAX_MS, Math.max(GLIDE_MIN_MS, path.length * GLIDE_STEP_MS));
-    const per = Math.round(total / Math.max(1, path.length));
-    return { glide: true, per, walk: total + per };
+    // (A frame more, for the board to start the run.)
+    const total = path.length * GLIDE_STEP_MS;
+    return { glide: true, per: GLIDE_STEP_MS, walk: total + 30 };
   }
-  private walkMs(a: number, b: number, fast = false) {
-    return this.pace(a, b, fast).walk;
+  private walkMs(a: number, b: number, hurry = 0) {
+    return this.pace(a, b, hurry).walk;
   }
   /** Out of the yard onto the first square (or Chaupar's Khado Karvo, out of Home): one glide. */
   private enters(a: number, path: number[]) {
     return (a === -1 || a === finishOf(this.state)) && path.length <= 1;
   }
   /** How long one move takes on screen, its captures flying home included. */
-  private stepMs(st: TrailStep, fast = false) {
-    return Math.max(0, ...st.moves.map((m) => this.walkMs(m.a, m.b, fast))) + (st.caps.length ? RETURN_MS : 0);
+  private stepMs(st: TrailStep, hurry = 0) {
+    return Math.max(0, ...st.moves.map((m) => this.walkMs(m.a, m.b, hurry))) + (st.caps.length ? RETURN_MS : 0);
   }
 
   /**
@@ -1651,14 +1722,15 @@ export class GameController {
     let at = Math.max(now + delay, this.queueEnd);
     // Behind by what was still to be shown from before (these moves themselves, made one after
     // another in a single turn, go at the usual pace).
-    const fast = at - (now + delay) > BEHIND_MS;
+    const behind = at - (now + delay);
+    const hurry = behind > FAR_BEHIND_MS ? HURRY_MORE_STEP_MS : behind > BEHIND_MS ? HURRY_STEP_MS : 0;
     for (const st of steps) {
       const [first, ...others] = st.moves;
       if (first) {
-        this.animateMove(first, st.caps, at - now, fast);
-        others.forEach((m) => this.animateMove(m, [], at - now, fast));
+        this.animateMove(first, st.caps, at - now, hurry);
+        others.forEach((m) => this.animateMove(m, [], at - now, hurry));
       } else this.captureLater(st.caps, at - now);
-      at += this.stepMs(st, fast);
+      at += this.stepMs(st, hurry);
     }
     this.queueEnd = at;
     this.animBusyUntil = Math.max(this.animBusyUntil, at);
@@ -1696,12 +1768,12 @@ export class GameController {
     );
   }
 
-  private animateMove(m: MoveAnim, caps: TrailStep["caps"], delay: number, fast = false) {
+  private animateMove(m: MoveAnim, caps: TrailStep["caps"], delay: number, hurry = 0) {
     const key = m.c + m.i;
     const now = Date.now();
     const still = reduceMotion();
     const path = rulesFor(this.state).steps(m.a, m.b);
-    const { glide, per, walk } = this.pace(m.a, m.b, fast);
+    const { glide, per, walk } = this.pace(m.a, m.b, hurry);
     const gen = (this.animGen[key] = (this.animGen[key] || 0) + 1);
     // Where it starts. (A token still finishing an earlier move ends up there by itself.)
     if ((this.tokenBusyUntil[key] || 0) <= now) this.animPos[key] = m.a;
@@ -1745,11 +1817,29 @@ export class GameController {
         finish(walk);
         return;
       }
-      // Square by square: hopping (a tick each square), or gliding along the track in one quick, smooth run.
+      // Gliding along the track in one quick, smooth run: the board plays it from where the token
+      // stands, through the middle of every square on the way, to where it ends.
       if (glide) {
-        this.glideOf[key] = per;
+        delete this.glideOf[key];
+        const at = this.tokenViews().find((t) => t.c + t.i === key);
+        const rules = rulesFor(this.state);
+        this.glideOf[key] = {
+          id: ++this.glideId,
+          ms: path.length * per,
+          from: at ? { x: at.x, y: at.y, scale: at.scale } : { ...rules.point(m.c, m.i, m.a), scale: 1 },
+          via: path.slice(0, -1).map((p) => {
+            const q = rules.point(m.c, m.i, p);
+            return { x: q.x, y: q.y };
+          }),
+        };
+        this.animPos[key] = m.b;
         this.play("move");
-      } else delete this.glideOf[key];
+        this.emit();
+        finish(walk);
+        return;
+      }
+      // Square by square, hopping (a tick each square).
+      delete this.glideOf[key];
       let k = 0;
       this.animPos[key] = m.a;
       const iv = setInterval(() => {
@@ -1758,7 +1848,7 @@ export class GameController {
           return;
         }
         this.animPos[key] = path[k++];
-        if (!glide) this.play("move");
+        this.play("move");
         this.emit();
         if (k >= path.length) {
           clearInterval(iv);
@@ -2155,10 +2245,15 @@ export class GameController {
         if (this.isHost) this.transport?.broadcast(this.hostPing());
         else {
           this.transport?.sendToHost({ type: "ping", id: this.myId });
-          // The host's page was closed (its connection may still look open for a long time).
-          if (this.hostHeardAt && now - this.hostHeardAt > HOST_SILENT_MS) this.onHostSilent?.();
+          // Quiet for a few seconds: the connection may have died without either end noticing (a phone
+          // that changed networks). A second one alongside it, which carries on if it opens.
+          if (this.hostHeardAt && now - this.hostHeardAt > REFRESH_MS) this.transport?.refresh?.();
+          // The host's page was closed (its connection may still look open for a long time). (Not while
+          // it's this device that's offline: nothing can be taken over from here, and the host may well be there.)
+          if (this.hostHeardAt && now - this.hostHeardAt > HOST_SILENT_MS && !this.selfOffline()) this.onHostSilent?.();
         }
       }
+      this.noteOffline();
       if (this.pending.length) {
         if (now - this.pending[0].at > PENDING_GIVE_UP_MS) this.dropPending();
         else this.resendPending();
@@ -2215,7 +2310,17 @@ export class GameController {
    * the computer plays for them until they come back and take over again.
    */
   private checkPresence() {
+    // It's this device that's offline: nobody else counts as gone, and once it's back everyone gets
+    // a fresh moment to be heard from again (their connections need a moment to come back too).
     const now = Date.now();
+    if (this.selfOffline()) {
+      this.offlineSince ||= now;
+      return;
+    }
+    if (this.offlineSince) {
+      this.offlineSince = 0;
+      for (const id in this.lastSeen) this.lastSeen[id] = Math.max(this.lastSeen[id], now);
+    }
     this.lastSeen[this.myId] = now;
     const s0 = this.state;
     // After a gap in these checks (this phone asleep, the app in the background)
@@ -2367,7 +2472,8 @@ export class GameController {
     if (first) this.onFirstState();
     this.onRemoteState();
     // The computer was standing in for me while my connection was down, and I'm here: play myself again.
-    if (!fromGuest) this.autoTakeBack();
+    // (Hosting too: the game a guest brings back, say after taking the table over meanwhile.)
+    this.autoTakeBack();
     return true;
   }
 
@@ -2454,8 +2560,9 @@ export class GameController {
     };
     // The previous host and when we last heard from it: if we end up hosting,
     // its offline time counts from then, not from when we took over.
+    // (When it was last heard, not when this connection began: connecting can take a few goes.)
     const prevHost = this.hostId;
-    const prevHostHeard = this.hostHeardAt;
+    const prevHostHeard = this.hostSeenAt || this.hostHeardAt;
     this.hostHeardAt = 0;
     let lostAlready = false;
     const lost = (reason: "host-left" | "network") => {
@@ -2505,7 +2612,11 @@ export class GameController {
           // Rejoined an online game and nobody else is at its table: give the
           // others a moment (they may be reconnecting) before calling it over.
           if (this.rejoinGid !== null && this.mode === "online") this.rejoinUntil = Date.now() + REJOIN_WAIT_MS;
-          if (prevHost && prevHost !== this.myId && prevHostHeard) this.lastSeen[prevHost] = prevHostHeard;
+          if (prevHost && prevHost !== this.myId && prevHostHeard) {
+            this.lastSeen[prevHost] = prevHostHeard;
+            // (This device was watching all along, as a guest: no gap in the checks that starts everyone's time again.)
+            this.lastPresenceCheck = Date.now();
+          }
           // The game as this screen shows it: my own moves the old host never confirmed are in it, and
           // it's the real one now. (Not the copy carried in when this connection began: a roll made
           // while it was connecting was in the game on screen, and taking over without it undid it.)
@@ -2552,15 +2663,17 @@ export class GameController {
         peerMessage: (link, m) => this.onPeerMessage(link, m),
         peerClosed: (link) => {
           if (!alive()) return;
-          if (link.pid && this.state.phase === "lobby") this.hostLeave(link.pid);
-          if (link.pid && this.voiceMembers.delete(link.pid)) this.shareVoice();
+          // (They connected again meanwhile, say after changing networks, and this is the old connection closing: still here.)
+          const still = !!link.pid && !!t.linked?.(link.pid);
+          if (link.pid && !still && this.state.phase === "lobby") this.hostLeave(link.pid);
+          if (link.pid && !still && this.voiceMembers.delete(link.pid)) this.shareVoice();
           this.netSummary();
           this.emit();
         },
         joinedHost: () => {
           if (!alive()) return;
           this.online = true;
-          this.hostHeardAt = Date.now();
+          this.hostHeardAt = this.hostSeenAt = Date.now();
           t.sendToHost({ type: "hello", id: this.myId });
           // Offer the game as I have it: the host keeps whichever is newer. (A host that
           // went quiet, say its app in the background, can find a guest has taken the
@@ -2576,7 +2689,7 @@ export class GameController {
         },
         hostMessage: (m) => {
           if (!alive()) return;
-          this.hostHeardAt = Date.now();
+          this.hostHeardAt = this.hostSeenAt = Date.now();
           if (m.type === "ping") {
             this.hostId = String(m.id || "");
             this.checkBehind(m);
