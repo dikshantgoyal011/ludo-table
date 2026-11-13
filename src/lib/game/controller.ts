@@ -3,6 +3,7 @@
 // It is framework-free; React components subscribe to it (see
 // src/hooks/use-game.ts) and call its methods.
 
+import { track } from "@vercel/analytics";
 import { playSound } from "@/lib/audio/sfx";
 import { defaultAvatar, isAvatar } from "@/lib/avatars";
 import { detectCountry, isCountry } from "@/lib/country";
@@ -1798,7 +1799,10 @@ export class GameController {
   private onStateChange(prev: GameState | null, next: GameState, remote: boolean) {
     if (!prev || !next) return;
     // A game begins (or begins again): nothing played in it yet.
-    if (next.phase === "playing" && !next.last && (prev.phase !== "playing" || (!!next.gid && next.gid !== prev.gid))) this.play("start");
+    if (next.phase === "playing" && !next.last && (prev.phase !== "playing" || (!!next.gid && next.gid !== prev.gid))) {
+      this.play("start");
+      track("game_started", { game: next.game, mode: this.mode || "", players: seated(next).length });
+    }
     if (prev.phase === "playing" && (next.phase === "playing" || next.phase === "done")) {
       // A remote roll animates the dice first, so hold the token until it lands.
       const newRoll = !!next.last && (!prev.last || prev.last.seq !== next.last.seq);
@@ -1820,8 +1824,10 @@ export class GameController {
     // Celebrate the first player home right away (others may keep playing),
     // and show final rankings when the game is over.
     const wait = Math.max(300, this.animBusyUntil - Date.now() + 200);
-    if (prev.phase !== "done" && next.phase === "done") setTimeout(() => this.onFinish(true), wait);
-    else if (next.phase === "playing" && (next.winners || []).length > (prev.winners || []).length) setTimeout(() => this.onFinish(false), wait);
+    if (prev.phase !== "done" && next.phase === "done") {
+      setTimeout(() => this.onFinish(true), wait);
+      track("game_finished", { game: next.game, mode: this.mode || "" });
+    } else if (next.phase === "playing" && (next.winners || []).length > (prev.winners || []).length) setTimeout(() => this.onFinish(false), wait);
     if (!(next.winners || []).length || (next.phase !== "done" && next.phase !== "playing")) this.hideWinner();
   }
 

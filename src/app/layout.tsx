@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { Baloo_2, IBM_Plex_Mono, Rozha_One } from "next/font/google";
 import { AppHeader } from "@/components/layout/app-header";
 import { Confetti } from "@/components/game/confetti";
@@ -53,6 +54,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Confetti />
         <MusicPlayer />
         <RouteWarmup />
+        <Analytics />
       </body>
     </html>
   );
