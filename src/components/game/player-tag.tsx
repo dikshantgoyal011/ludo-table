@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Bot, MessageCircle, Mic, MicOff, UserRound, Volume2, VolumeX } from "lucide-react";
+import { Bot, MessageCircle, Mic, MicOff, SkipForward, UserRound, Volume2, VolumeX } from "lucide-react";
 import { useGame, useSettings } from "@/hooks/use-game";
 import { defaultAvatar } from "@/lib/avatars";
 import { countryName, flagUrl } from "@/lib/country";
@@ -191,6 +191,10 @@ export function PlayerTag({ corner }: { corner: number }) {
   const showTyping = !showBubble && !!seat && game.isTyping(seat.id);
   const takeover = !!seat?.takeover && s.phase === "playing";
   const pachisi = s.game === "pachisi";
+  // Pachisi: my throw in hand, which I may choose not to move with (moving isn't compulsory).
+  const skipHere = pachisi && isTurn && s.turn === c && game.canPass();
+  // Someone else just skipped a throw (the controller notes it for a moment).
+  const skipped = !!game.skipNote && game.skipNote.c === c && Date.now() < game.skipNote.until;
   const chaupar = s.game === "chaupar";
   // Pachisi's cowries and Chaupar's long dice get a row of their own under the name.
   const thrownRow = pachisi || chaupar;
@@ -279,9 +283,29 @@ export function PlayerTag({ corner }: { corner: number }) {
       <div className="relative z-[15] flex size-[38px] shrink-0 items-center justify-center min-[400px]:size-[42px] sm:size-[46px]">
         {dieColor === c && !thrownRow ? (
           <Dice3D />
+        ) : skipHere ? (
+          // Pachisi, my throw, which I may choose not to move with: my picture's place is Skip for the moment.
+          <button
+            type="button"
+            onClick={game.pass}
+            aria-label="Skip this throw (don't move)"
+            title="Skip this throw"
+            className="skip-spot size-[34px] min-[400px]:size-[38px] sm:size-[42px]"
+            style={{ boxShadow: `0 0 0 2px ${hex}` }}
+          >
+            <SkipForward className="size-3.5 min-[400px]:size-4" strokeWidth={2.4} aria-hidden="true" />
+            <span>Skip</span>
+          </button>
         ) : seat ? (
-          <span className="flex size-[34px] items-center justify-center min-[400px]:size-[38px] sm:size-[42px]">
+          <span className="relative flex size-[34px] items-center justify-center min-[400px]:size-[38px] sm:size-[42px]">
             <Avatar av={seat.bot && !seat.takeover ? "bot" : you ? (game.myLooks().av ?? 0) : (seat.av ?? defaultAvatar(seat.id))} className="size-full" ring={hex} />
+            {/* They just let a throw go: their picture says so for a moment, where Skip was for them. */}
+            {skipped && (
+              <span className="skipped-mark" role="status" aria-label={`${seat.nick} skipped their throw`}>
+                <SkipForward className="size-3 min-[400px]:size-3.5" strokeWidth={2.4} aria-hidden="true" />
+                <span aria-hidden="true">Skipped</span>
+              </span>
+            )}
           </span>
         ) : (
           <span className="size-[34px] rounded-full border border-dashed border-foreground/25 min-[400px]:size-[38px]" />

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { SkipForward } from "lucide-react";
 import { useGame } from "@/hooks/use-game";
 import { DICE_ROLL_MS } from "@/lib/game/constants";
 import { GRACE_STEP, mouthsUp, shellsOf, SIX_SHELLS, type ShellSet } from "@/lib/game/pachisi/throws";
@@ -188,14 +187,13 @@ export function CowrieRow({ c, isTurn, right }: { c: Color; isTurn: boolean; rig
 }
 
 /**
- * Pachisi: what goes with the turn's cowries, in a quiet chip by the player's
- * tag: the throws still to play, and on my own turn a small Skip. It stays in
- * the background (dark glass like the tags, fading in a moment after the throw)
- * so the eye goes to the pieces that can move first. It never covers the board
- * or anything else: it opens away from the board (under a tag below it, over one
- * above it); where the screen has no room there, beside the tag in the row's
- * empty other place (two players); failing that, it takes the place of the tag's
- * own buttons row for the moment (the name stays in view).
+ * Pachisi: the throws still to play (when there's more than one), in a quiet chip
+ * by the player's tag (dark glass like the tags), so the eye stays on the pieces
+ * that can move. (Skip is my picture's place on my tag, PlayerTag.) It never
+ * covers the board or anything else: it opens away from the board (under a tag
+ * below it, over one above it); where the screen has no room there, beside the
+ * tag in the row's empty other place (two players); failing that, it takes the
+ * place of the tag's own buttons row for the moment (the name stays in view).
  */
 export function TurnCallout({ c, isTurn, top, right }: { c: Color; isTurn: boolean; top: boolean; right: boolean }) {
   const game = useGame();
@@ -204,10 +202,9 @@ export function TurnCallout({ c, isTurn, top, right }: { c: Color; isTurn: boole
   const hand = isTurn && s.turn === c && !game.rolling ? game.hand() : [];
   const showHand = hand.length > 1 || (hand.length === 1 && hand[0] !== s.last?.v);
   const mine = isTurn && game.mine(s, c);
-  const pass = mine && game.canPass();
   // (Mine, with throws in hand and none to move with yet: throw again.)
   const again = mine && showHand && !s.roll && !game.rolling;
-  const open = isTurn && (showHand || pass);
+  const open = isTurn && showHand;
   const ref = useRef<HTMLDivElement>(null);
   const [spot, setSpot] = useState<{ at: "away" | "beside" | "row"; box?: React.CSSProperties }>({ at: "away" });
   // Room away from the board: to the scrolling area's edge (beyond it, it would be cut off).
@@ -233,13 +230,13 @@ export function TurnCallout({ c, isTurn, top, right }: { c: Color; isTurn: boole
     place();
     window.addEventListener("resize", place);
     return () => window.removeEventListener("resize", place);
-  }, [open, top, pass, showHand, again]);
+  }, [open, top, showHand, again]);
   if (!open) return null;
   return (
     <div
       ref={ref}
       role="group"
-      aria-label={pass ? "Your throw" : "Throws to play"}
+      aria-label="Throws to play"
       className={cn(
         "turn-callout absolute",
         spot.at === "row" ? "turn-callout-row" : spot.at === "beside" ? "turn-callout-beside" : top ? "turn-callout-above" : "turn-callout-below",
@@ -256,14 +253,7 @@ export function TurnCallout({ c, isTurn, top, right }: { c: Color; isTurn: boole
           ))}
         </span>
       )}
-      {pass ? (
-        <button type="button" onClick={game.pass} title="Don't move with this throw" className="turn-callout-skip">
-          <SkipForward className="size-3" strokeWidth={2.6} aria-hidden="true" />
-          Skip<span className="turn-callout-more"> throw</span>
-        </button>
-      ) : again ? (
-        <span className="turn-callout-note">throw again</span>
-      ) : null}
+      {again && <span className="turn-callout-note">throw again</span>}
     </div>
   );
 }

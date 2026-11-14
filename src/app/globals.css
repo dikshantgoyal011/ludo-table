@@ -1659,11 +1659,11 @@ html.in-game .board-fit > .board-size {
   height: 5px;
 }
 
-/* Pachisi: the turn's chip by its tag (the throws still to play; on my turn a small Skip).
+/* Pachisi: the throws still to play, in a chip by the tag (when there's more than one).
    Quiet on purpose, so the eye stays on the pieces that can move: dark glass like the tags,
-   soft ivory text, a thin outline. It's there the moment Skip is. Never over the board: under
-   a tag below it, over a tag above it, lined up with the tag's outer edge; with no room there,
-   beside the tag (an empty place in its row) or over the tag's own buttons row. */
+   soft ivory text, a thin outline. Never over the board: under a tag below it, over a tag
+   above it, lined up with the tag's outer edge; with no room there, beside the tag (an empty
+   place in its row) or over the tag's own buttons row. */
 .turn-callout {
   z-index: 30;
   display: flex;
@@ -1691,35 +1691,9 @@ html.in-game .board-fit > .board-size {
   font-variant-numeric: tabular-nums;
 }
 .turn-callout-note {
-  padding-right: 8px;
+  padding: 0 8px 0 2px;
   font-size: 11px;
   font-weight: 600;
-}
-.turn-callout-skip {
-  flex-shrink: 0;
-  white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 100%;
-  padding: 0 11px;
-  border-radius: 9999px;
-  box-shadow: inset 0 0 0 1px rgb(251 239 213 / 0.32);
-  font-size: 12px;
-  font-weight: 700;
-  color: rgb(251 239 213 / 0.92);
-  outline: none;
-  transition: background 0.15s ease;
-}
-.turn-callout-skip:hover,
-.turn-callout-skip:focus-visible {
-  background: rgb(251 239 213 / 0.12);
-}
-.turn-callout-skip:focus-visible {
-  box-shadow: inset 0 0 0 2px rgb(var(--c-gold));
-}
-.turn-callout-skip:active {
-  transform: scale(0.96);
 }
 .turn-callout-below,
 .turn-callout-above {
@@ -1756,14 +1730,103 @@ html.in-game .board-fit > .board-size {
 .turn-callout-row:not(.turn-callout-right) {
   justify-content: flex-start;
 }
-/* (In the buttons row's room: the short word, and nothing past the row.) */
+/* (In the buttons row's room: nothing past the row.) */
 .turn-callout-row {
   overflow: hidden;
 }
-.turn-callout-row .turn-callout-more {
-  display: none;
+
+
+/* Pachisi: my throw, which I may choose not to move with: my picture's place on my tag is
+   Skip for the moment. Quiet, so the pieces that can move stay what the eye goes to: the
+   picture's own size and ring (my colour), the tag's dark tone inside, a thin ivory icon and
+   label. It comes in place of the picture with a small, quick swap, and lights up a little
+   under the finger. */
+.skip-spot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 50% 35%, rgb(60 20 24), rgb(26 8 10));
+  color: rgb(251 239 213 / 0.92);
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  outline: none;
+  transition: background 0.15s ease, transform 0.1s ease;
+  animation: skip-spot-in 0.18s ease-out;
 }
-.turn-callout-row .turn-callout-skip {
-  padding: 0 9px;
+@media (min-width: 400px) {
+  .skip-spot {
+    font-size: 10px;
+  }
+}
+.skip-spot:hover {
+  background: radial-gradient(circle at 50% 35%, rgb(84 30 34), rgb(36 12 14));
+}
+.skip-spot:focus-visible {
+  outline: 2px solid rgb(var(--c-gold));
+  outline-offset: 3px;
+}
+.skip-spot:active {
+  transform: scale(0.94);
+}
+@keyframes skip-spot-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skip-spot {
+    animation: none;
+  }
 }
 
+/* Pachisi: another player just let a throw go. For a moment their picture says so, in the
+   same quiet look as the Skip they pressed: the tag's dark tone over the picture, a thin
+   ivory icon and "Skipped". */
+.skipped-mark {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border-radius: 9999px;
+  background: rgb(26 8 10 / 0.86);
+  color: rgb(251 239 213 / 0.92);
+  font-size: 7.5px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+  animation: skipped-mark 2.6s ease-out forwards;
+}
+@media (min-width: 400px) {
+  .skipped-mark {
+    font-size: 8.5px;
+  }
+}
+@keyframes skipped-mark {
+  0% {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  8%,
+  85% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skipped-mark {
+    animation: none;
+  }
+}

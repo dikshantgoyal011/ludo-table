@@ -150,6 +150,8 @@ const RESEARCH_MS = 8_000;
 const PERSONAS_AFTER_MS: [number, number] = [16_000, 24_000];
 /** ...one at a time, this far apart. */
 const PERSONA_GAP_MS: [number, number] = [1_200, 4_500];
+/** How long a player's tag says they skipped a throw. */
+const SKIP_NOTE_MS = 2_600;
 /** The timer sound's mark for someone else's turn running out (sfx.ts: softer and lower). */
 const OTHERS_TICK = 10;
 /** Online: how often a persona lets its turn run out (now and then, as people do). */
@@ -1759,6 +1761,7 @@ export class GameController {
     this.loaded = false;
     this.searching = false;
     this.seeking = false;
+    this.skipNote = null;
     this.autoFor = null;
     this.tickTimers.forEach(clearTimeout);
     this.tickTimers = [];
@@ -2105,6 +2108,21 @@ export class GameController {
     this.tokenBusyUntil = {};
   }
 
+  /** Someone just let a throw go (Pachisi: moving isn't compulsory): whose, until when their tag says so. */
+  skipNote: { c: Color; until: number } | null = null;
+  private noteSkips(prev: GameState, next: GameState) {
+    if (next.game !== "pachisi" || next.phase !== "playing") return;
+    // The lines new to the log (newest first), up to where the old log begins.
+    const head = prev.log[0];
+    const k = head ? next.log.findIndex((l, i) => l.t === head.t && l.c === head.c && next.log[i + 1]?.t === prev.log[1]?.t) : next.log.length;
+    const fresh = next.log.slice(0, k < 0 ? 3 : k);
+    const skip = fresh.find((l) => l.c && l.t.endsWith(" didn't move."));
+    // (Not my own: I pressed Skip myself.)
+    if (!skip || !skip.c || this.isYou(skip.c)) return;
+    this.skipNote = { c: skip.c, until: Date.now() + SKIP_NOTE_MS };
+    setTimeout(() => this.emit(), SKIP_NOTE_MS + 50);
+  }
+
   /** Host, online: personas say something now and then, as people do (as the game starts, at a capture, at the end). */
   private personasReact(prev: GameState, next: GameState) {
     if (!this.isHost || this.mode !== "online") return;
@@ -2166,6 +2184,7 @@ export class GameController {
   private onStateChange(prev: GameState | null, next: GameState, remote: boolean) {
     if (!prev || !next) return;
     this.personasReact(prev, next);
+    this.noteSkips(prev, next);
     // A game begins (or begins again): nothing played in it yet.
     if (next.phase === "playing" && !next.last && (prev.phase !== "playing" || (!!next.gid && next.gid !== prev.gid))) {
       this.play("start");
