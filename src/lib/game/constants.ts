@@ -11,6 +11,8 @@ export const SLOTS_FOR: Color[][] = [[], ["red"], ["red", "yellow"], ["red", "gr
 
 /** Online: time per turn. Not rolling in time counts as a missed turn. */
 export const ONLINE_TURN_LIMIT = 15_000;
+/** Online: the last this share of a turn's time is its warning: the ring glows and pulses, and on my own turn it ticks. */
+export const TURN_WARN_SHARE = 0.3;
 /** Online: each missed turn takes this much off that player's turn time. */
 export const MISS_PENALTY = 2_000;
 /** Online: this many missed turns and the player is out of the game. */

@@ -76,7 +76,13 @@ function ResumeButtons() {
     setResume(game.savedOffline()?.mode ?? null);
     // Only offer to rejoin once the table confirms the game is still on with me in it.
     let alive = true;
-    void game.checkActiveRoom().then((a) => alive && setRejoin(a));
+    // (A game that ended meanwhile: a note saying how.)
+    void game.checkActiveRoom().then((a) => {
+      if (!alive) return;
+      setRejoin(a);
+      const n = game.takeNotice();
+      if (n) setNotice(n);
+    });
     return () => {
       alive = false;
     };
@@ -100,7 +106,10 @@ function ResumeButtons() {
           onClick={() => {
             const path = getController().rejoin();
             if (path) router.push(path, { scroll: false });
-            else setRejoin(null);
+            else {
+              setRejoin(null);
+              setNotice(getController().takeNotice());
+            }
           }}
         >
           Rejoin your {rejoin.mode === "online" ? "online" : "friends"} game

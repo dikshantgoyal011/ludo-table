@@ -21,6 +21,7 @@ import {
   HOST_SILENT_MS,
   MAX_MISSES,
   MISS_PENALTY,
+  TURN_WARN_SHARE,
   NICK_MAX,
   OFFLINE_ALLOWANCE,
   ONLINE_FULL_START_DELAY,
@@ -33,7 +34,8 @@ import {
 } from "./constants";
 import { stackSquare } from "./chaupar/board";
 import { cleanFor, hasSides, hasVariations, noVariations, playsSolo, type Variations } from "./variations";
-import { addLog, clone, finishOf, freshState, freshTokens, isGameId, leaveGame, missTurn, movable, rulesFor, seatName, seated, seatsFor, teamOf, validState } from "./rules";
+import { addLog, clone, finishOf, freshState, freshTokens, isGameId, leaveGame, movable, timeOut, rulesFor, seatName, seated, seatsFor, teamOf, validState } from "./rules";
+import { chatLine, isKind, newPersona, styleOf, thinkTime, type SayWhen } from "./personas";
 import { variantById } from "./variants";
 import type { ChatMessage, Color, GameId, GameState, Looks, Mode, MoveOpt, Seat, TrailStep } from "./types";
 
@@ -144,6 +146,25 @@ const WATCH_GAP_MS = 5_000;
 
 /** Online: someone waiting alone at a table other than the first looks again for an earlier table this often. */
 const RESEARCH_MS = 8_000;
+/** Online: nobody else turned up this long into a search (somewhere in between): players the host's device plays for fill the empty seats. */
+const PERSONAS_AFTER_MS: [number, number] = [16_000, 24_000];
+/** ...one at a time, this far apart. */
+const PERSONA_GAP_MS: [number, number] = [1_200, 4_500];
+/** The timer sound's mark for someone else's turn running out (sfx.ts: softer and lower). */
+const OTHERS_TICK = 10;
+/** Online: how often a persona lets its turn run out (now and then, as people do). */
+const DOZE_ODDS = 0.004;
+const within = ([a, b]: [number, number]) => a + Math.random() * (b - a);
+/** How long a new search waits for people before personas sit down. (Tests set localStorage "ludo.personasAfter", in ms.) */
+function personasAfter() {
+  try {
+    const ms = Number(localStorage.getItem("ludo.personasAfter"));
+    if (ms > 0) return ms;
+  } catch {
+    /* ignore */
+  }
+  return within(PERSONAS_AFTER_MS);
+}
 
 /** Everyone in voice chat says so again this often. */
 const VOICE_REPEAT_MS = 5_000;
@@ -182,6 +203,86 @@ function applyPending(s: GameState, a: Pending) {
   if (a.kind === "roll") return rulesFor(s).applyRoll(s, a.c, a.v);
   if (s.phase !== "playing" || s.turn !== a.c || !s.roll || (s.last?.seq || 0) !== a.seq) return false;
   return applyChoice(s, a.c, a.i, a.opt);
+}
+
+/** Roughly how long a move takes to show (the token going round) before the next throw. */
+const MOVE_SHOW_MS = 1_200;
+
+/**
+ * Which turn timer is running: a fresh one for every turn, and for every throw a
+ * player is owed in it (a 6 throws again), and when a player takes back control from
+ * the computer. Throwing and then moving with that throw are one timer: the throw
+ * held in hand counts as the throw it was (its seq less one).
+ */
+function turnKeyOf(s: GameState) {
+  const seq = s.last?.seq || 0;
+  return `${s.phase}|${s.turn}|${s.roll ? seq - 1 : seq}|${s.turn ? !!s.seats[s.turn]?.bot : ""}`;
+}
+
+/** Does anyone at this table play as a persona? */
+const hasPersonas = (s: GameState) => seated(s).some((c) => !!s.seats[c]!.ai);
+
+/**
+ * An online table with personas that nobody was hosting for a while (everyone
+ * else had gone, or it was only me and personas): what happened at it from
+ * `from` to `to`, worked out turn by turn the way the host plays it. The game
+ * goes on without the people: they're offline, and when their time runs out
+ * their turn is played for them and counts as missed (each 2s shorter, 5 and
+ * they're out), as on the host (turnTimeout); the personas play at their own pace.
+ */
+function catchUp(s0: GameState, from: number, to: number): GameState {
+  const s = clone(s0);
+  if (s.phase !== "playing" || !(to > from)) return s;
+  for (const c of seated(s)) {
+    const seat = s.seats[c]!;
+    if (!seat.ai && !seat.out && !s.winners.includes(c) && !seat.away) Object.assign(seat, { away: true, awayAt: from });
+  }
+  let t = from;
+  // (The turn on screen when everyone left began then, or just now.)
+  let turnStart = s.turnAt && s.turnAt <= from && s.turnAt > from - ONLINE_TURN_LIMIT ? s.turnAt : from;
+  let timer = turnKeyOf(s);
+  // A person's turn that ran out of time, being played for them.
+  let auto: Color | null = null;
+  const keyOf = () => `${s.turn}|${s.roll}|${s.last?.seq}|${stageOf(s)}`;
+  for (let k = 0; k < 5000 && s.phase === "playing" && s.turn; k++) {
+    const c = s.turn;
+    if (auto !== c) auto = null;
+    const seat = s.seats[c]!;
+    const r = rulesFor(s);
+    const kind = !seat.bot && isKind(seat.ai) ? seat.ai : null;
+    const at = kind
+      ? t + thinkTime(kind, s.roll ? Math.max(1, movable(s, c, s.roll).length) : 0) + (s.roll ? MOVE_SHOW_MS : DICE_ROLL_MS + MOVE_SHOW_MS)
+      : seat.bot || auto
+        ? t + (s.roll ? MOVE_SHOW_MS : DICE_ROLL_MS + MOVE_SHOW_MS)
+        : Math.max(t, turnStart + ONLINE_TURN_LIMIT - MISS_PENALTY * (seat.misses || 0) + 1000);
+    if (at > to) break;
+    t = at;
+    const before = keyOf();
+    // (A person: their time ran out; that throw is played for them, see timeOut.)
+    if (!kind && !seat.bot && !auto) {
+      auto = c;
+      if (!timeOut(s, c, MAX_MISSES)) {
+        // (Out after too many: the turn moved on.)
+        timer = turnKeyOf(s);
+        turnStart = t;
+        continue;
+      }
+    }
+    if (!s.roll) r.applyRoll(s, c, r.roll(s, c));
+    else {
+      const { i, opt } = r.chooseMove(s, c, s.roll, kind ? styleOf(kind) : undefined);
+      if (!applyChoice(s, c, i, opt) && !applyChoice(s, c, -1, {})) break;
+    }
+    if (keyOf() === before) break;
+    if (turnKeyOf(s) !== timer) {
+      timer = turnKeyOf(s);
+      turnStart = t;
+      auto = null;
+    }
+  }
+  s.turnAt = turnStart;
+  s.v = (s0.v || 0) + 1;
+  return s;
 }
 
 /** c moves token i with the roll in hand (i = -1: chooses not to move, where the game allows it). false if that isn't possible. */
@@ -325,11 +426,26 @@ export class GameController {
   private preRolledSeq = 0;
   /** When this device started hosting its current table. */
   private hostingSince = 0;
+  /** My turn's last seconds ticking (armTicks). */
+  private tickTimers: ReturnType<typeof setTimeout>[] = [];
+  /** Host, online: the colour whose time ran out: its throw is played for it, until that throw's moves are made. */
+  private autoFor: Color | null = null;
+  /** Host: the turn (its turnKey) a persona is sitting out, and the last turn that was decided for. */
+  private dozing = "";
+  private dozeAsked = "";
+  /** Online: looking for a table, until I have a seat at one. */
+  seeking = false;
+  /** Online: when this search for a table began (moving between tables doesn't start it again). */
+  searchSince = 0;
+  /** ...and when its empty seats start to fill with personas, and the next one may sit down. */
+  private personasAt = 0;
   /** Host: since when presence has been checked without a gap, and the last check. */
   private watchingSince = 0;
   private lastPresenceCheck = 0;
   /** Rejoining an online game (its id): checked against the table once connected. */
   private rejoinGid: string | null = null;
+  /** Rejoining an online game: when I left it (the game went on meanwhile, see catchUp). */
+  private rejoinAt = 0;
   /** Rejoined, but nobody else was at the table: when to call the game over unless someone comes back. */
   private rejoinUntil = 0;
   /** A note for the home screen, e.g. why a rejoin didn't work. */
@@ -433,10 +549,10 @@ export class GameController {
   private get settings() {
     return this.services.settings.get();
   }
-  play(name: SoundName) {
+  play(name: SoundName, arg?: number) {
     const s = this.settings.sound;
-    if (!s.all) return; // one switch for all game sounds
-    playSound(name);
+    if (!s.all || s[name] === false) return; // one switch for all game sounds (and the time running out has its own)
+    playSound(name, arg);
   }
 
   // ============================================================ helpers
@@ -540,7 +656,7 @@ export class GameController {
     const s = this.state;
     return !seated(s).some((c) => {
       const id = s.seats[c]?.id;
-      return !!id && id !== this.myId && !s.seats[c]?.bot && now - (this.lastSeen[id] ?? 0) <= SELF_SILENT_MS;
+      return !!id && id !== this.myId && !s.seats[c]?.bot && !s.seats[c]?.ai && now - (this.lastSeen[id] ?? 0) <= SELF_SILENT_MS;
     });
   }
   /** Which player the dice sits with. */
@@ -559,7 +675,8 @@ export class GameController {
   turnTimerOn(c: Color) {
     const s = this.state;
     const seat = s.seats[c];
-    return this.mode === "online" && s.phase === "playing" && s.turn === c && !!seat && !seat.bot && !this.rolling;
+    // (Also while the throw's dice is in the air: one timer, throw and move.)
+    return this.mode === "online" && s.phase === "playing" && s.turn === c && !!seat && !seat.bot && this.autoFor !== c;
   }
   turnSecsLeft(c: Color) {
     return this.secsLeft(this.turnSeenAt + this.turnLimit(c));
@@ -816,7 +933,9 @@ export class GameController {
     if (!s.roll) this.doRoll(c);
     else {
       const r = rulesFor(s);
-      const { i, opt } = r.chooseMove(s, c, s.roll);
+      // (A persona plays its own way; the computer standing in for someone, its usual way.)
+      const kind = this.personaOf(c);
+      const { i, opt } = r.chooseMove(s, c, s.roll, kind ? styleOf(kind) : undefined);
       if (i >= 0) this.doMove(c, i, opt);
       else if (r.pass) this.doMove(c, -1);
     }
@@ -824,15 +943,38 @@ export class GameController {
 
   private tickBots() {
     if (this.botTimer || !this.loaded || !this.controller() || this.state.phase !== "playing" || this.rolling) return;
-    const st = this.state.turn ? this.state.seats[this.state.turn] : null;
-    if (!st || !st.bot) return;
-    const wait = Math.max(this.state.roll ? 650 : 900, this.animBusyUntil - Date.now() + 250);
+    const s = this.state;
+    const t0 = s.turn;
+    const st = t0 ? s.seats[t0] : null;
+    const auto = this.autoFor === t0;
+    if (!t0 || !st || !(st.bot || auto || this.personaOf(t0))) return;
+    // A persona takes its time like a person: to roll, and to pick a piece (longer with more to choose from).
+    const kind = this.personaOf(t0);
+    // ...and once in a long while it isn't looking, and its turn runs out (turnTimeout counts the miss).
+    if (kind && !s.roll && this.dozeAsked !== this.turnKey) {
+      this.dozeAsked = this.turnKey;
+      if (Math.random() < DOZE_ODDS && (st.misses || 0) < 2) this.dozing = this.turnKey;
+    }
+    if (kind && !auto && this.dozing === this.turnKey) return;
+    const think = kind ? thinkTime(kind, s.roll ? Math.max(1, movable(s, t0, s.roll).length) : 0) : s.roll ? 650 : 900;
+    const wait = Math.max(think, this.animBusyUntil - Date.now() + 250);
     this.botTimer = setTimeout(() => {
       this.botTimer = null;
       const t = this.state.turn;
       // (Not while this device is offline: the others can't see it, and it would only be lost. Next second, again.)
-      if (t && this.state.seats[t]?.bot && !this.selfOffline()) this.autoStep();
+      if (t && (this.state.seats[t]?.bot || this.autoFor === t || this.personaOf(t)) && !this.selfOffline()) this.autoStep();
     }, wait);
+  }
+
+  /** The kind of player a persona at seat c is (null: a person, or the computer standing in for one). */
+  private personaOf(c: Color) {
+    const seat = this.state.seats[c];
+    return seat && !seat.bot && isKind(seat.ai) ? seat.ai : null;
+  }
+  /** Everyone else still in this game is a persona (nobody else's device is at the table). */
+  private onlyPersonas(s: GameState) {
+    const others = seated(s).filter((c) => s.seats[c]!.id !== this.myId && !s.seats[c]!.out);
+    return others.length > 0 && others.every((c) => !!s.seats[c]!.ai);
   }
 
   /** Dice animation: the 3D dice listens for the "roll" event. */
@@ -874,6 +1016,32 @@ export class GameController {
       }
       s.seats = seatsFor(s.players);
       if (this.mode === "online") s.startAt = s.players.length >= cap ? s.startAt || Date.now() + ONLINE_FULL_START_DELAY : null;
+    });
+  }
+
+  /**
+   * Online host: nobody else has come along for a while. The next empty seat
+   * goes to a persona (a player this device plays for, personas.ts), the way
+   * anyone joins: one at a time, a few seconds apart, until the table is full.
+   */
+  private seatPersona(now: number) {
+    const s = this.state;
+    const cap = s.capacity || this.wantCount;
+    if (!this.personasAt || now < this.personasAt || !this.joined(s) || s.players.length >= cap) return;
+    // Someone has just connected and not sat down yet: their seat first.
+    const people = s.players.filter((p) => !p.ai && p.id !== this.myId).length;
+    if ((this.transport?.guestCount() || 0) > people) {
+      this.personasAt = now + 1000;
+      return;
+    }
+    this.personasAt = now + within(PERSONA_GAP_MS);
+    const p = newPersona(s.players, this.myLooks().cc);
+    this.commit((n) => {
+      if (n.phase !== "lobby" || n.players.length >= cap) return false;
+      n.players.push(p);
+      n.log = [{ c: "" as const, t: `${p.nick} joined.` }, ...n.log].slice(0, 20);
+      n.seats = seatsFor(n.players);
+      n.startAt = n.players.length >= cap ? n.startAt || Date.now() + ONLINE_FULL_START_DELAY : null;
     });
   }
 
@@ -1391,14 +1559,20 @@ export class GameController {
   /** Pachisi / Chaupar online: looking for a 2 vs 2 table (or, with two players, a side each), not a solo one. */
   wantPairs = false;
   /** Public matchmaking: only tables for exactly `count` players (Pachisi, Chaupar: and the same Solo or 2 vs 2). */
-  startOnline(count = this.wantCount, game: GameId = this.wantGame, pairs = this.wantPairs) {
+  startOnline(count = this.wantCount, game: GameId = this.wantGame, pairs = this.wantPairs, again = false) {
+    // (`again`: the same search, looking for an earlier table: its clock carries on.)
+    const since = this.searchSince;
+    const at = this.personasAt;
     this.leaveCurrent();
+    this.searchSince = again && since ? since : Date.now();
+    this.personasAt = again && since ? at : this.searchSince + personasAfter();
     this.mode = "online";
     this.wantCount = count;
     this.wantGame = game;
     this.wantPairs = hasSides(game) && pairs && count !== 3;
     this.autoJoin = true;
     this.searching = true;
+    this.seeking = true;
     this.findGame(0);
   }
 
@@ -1456,6 +1630,15 @@ export class GameController {
   async checkActiveRoom(): Promise<ActiveRoom | null> {
     const a = this.activeRoom();
     if (!a) return null;
+    // A table of personas: nobody hosts it while I'm away. What happened there meanwhile (see catchUp) says whether it's still on.
+    const kept = a.mode === "online" ? this.services.saves.loadRoom(a.room) : null;
+    const caught = () => catchUp(kept!, a.at || Date.now(), Date.now());
+    const over = (s: GameState | null) => {
+      if (this.activeRoom()?.room === a.room) this.services.saves.clearActiveRoom();
+      this.notice = this.endNote(s);
+      return null;
+    };
+    if (kept && this.onlyPersonas(kept)) return this.stillMine(caught(), a.gid) ? a : over(caught());
     const ask = async () => {
       const t = this.makeTransport();
       if (!t.probe) return undefined;
@@ -1475,8 +1658,27 @@ export class GameController {
       s = await ask();
     }
     if (this.stillMine(s ?? null, a.gid)) return this.activeRoom();
+    // Nobody hosting a table with personas (the other people left too): it went on without us all.
+    if (!s && kept && hasPersonas(kept)) return this.stillMine(caught(), a.gid) ? a : over(caught());
+    // Online: say how it ended (who won, or everyone left). (Another game at that table now: nothing to say.)
+    if (a.mode === "online" && (!s || !s.gid || s.gid === a.gid)) return over(s ?? null);
     if (this.activeRoom()?.room === a.room) this.services.saves.clearActiveRoom();
     return null;
+  }
+
+  /** Why my online game isn't on any more, for the home screen. */
+  private endNote(s: GameState | null) {
+    const me = s ? COLORS.find((c) => s.seats[c]?.id === this.myId) : undefined;
+    if (!s || !me) return "Your online game has ended. Everyone else had left the table.";
+    if (s.phase === "done" && s.winners.length) {
+      const side = teamOf(s, s.winners[0]);
+      if (side.includes(me)) return "Your online game ended while you were away, and you won!";
+      const names = [...new Set(side.map((c) => s.seats[c]?.nick).filter(Boolean))].join(" & ");
+      return `Your online game ended while you were away. ${names} won.`;
+    }
+    if (s.seats[me]?.out) return `You're out of your online game: you missed ${MAX_MISSES} turns while you were away.`;
+    if (s.winners.includes(me)) return `You finished ${["1st", "2nd", "3rd", "4th"][s.winners.indexOf(me)]} in your online game.`;
+    return "Your online game has ended.";
   }
 
   /** The game I tried to get back into is over: back to the home screen with a note. */
@@ -1507,12 +1709,23 @@ export class GameController {
     this.mode = "online";
     this.wantCount = a.count;
     // Show the last known board straight away; the table's live state replaces it once connected.
-    const carry = this.services.saves.loadRoom(a.room);
+    let carry = this.services.saves.loadRoom(a.room);
     // "Find another game" after this one looks for the same game.
     this.wantGame = carry?.game || (a.room.startsWith("pubp") ? "pachisi" : a.room.startsWith("pubx") ? "parchis" : a.room.startsWith("pubc") ? "chaupar" : "ludo");
     this.wantPairs = a.room.startsWith("pubpt") || a.room.startsWith("pubct");
     // Check, once connected, that it's still this game and I'm still in it.
     this.rejoinGid = carry?.gid ?? a.gid ?? "";
+    // The game went on while I was away (see catchUp): from when I left until now. (Hosting, more time
+    // may have passed by then: from now on, see openRoom.)
+    this.rejoinAt = a.at || Date.now();
+    if (carry && this.onlyPersonas(carry)) {
+      carry = catchUp(carry, this.rejoinAt, Date.now());
+      this.rejoinAt = Date.now();
+      if (!this.stillMine(carry, a.gid)) {
+        this.rejoinFailed(this.endNote(carry));
+        return null;
+      }
+    }
     if (carry) {
       this.state = carry;
       this.loaded = true;
@@ -1524,6 +1737,8 @@ export class GameController {
 
   /** Leave whatever is running (network rooms, timers). */
   leaveCurrent() {
+    // (Leaving a game in progress: noted now, the time it goes on without me from.)
+    if (this.isNet() && this.loaded && this.state.phase === "playing") this.persist();
     if (this.isNet() && this.loaded && (this.state.phase === "lobby" || this.state.phase === "done") && this.joined()) {
       try {
         this.leave();
@@ -1543,6 +1758,11 @@ export class GameController {
     this.online = false;
     this.loaded = false;
     this.searching = false;
+    this.seeking = false;
+    this.autoFor = null;
+    this.tickTimers.forEach(clearTimeout);
+    this.tickTimers = [];
+    this.personasAt = 0;
     this.autoJoin = false;
     this.room = null;
     this.rolling = false;
@@ -1885,9 +2105,67 @@ export class GameController {
     this.tokenBusyUntil = {};
   }
 
+  /** Host, online: personas say something now and then, as people do (as the game starts, at a capture, at the end). */
+  private personasReact(prev: GameState, next: GameState) {
+    if (!this.isHost || this.mode !== "online") return;
+    const here = seated(next).filter((c, k, all) => !!next.seats[c]!.ai && all.findIndex((o) => next.seats[o]!.id === next.seats[c]!.id) === k);
+    if (!here.length) return;
+    const say = (c: Color | undefined, when: SayWhen, after: [number, number]) => {
+      const seat = c && next.seats[c];
+      if (!seat?.ai) return;
+      const text = chatLine(seat.id, when);
+      if (text) this.personaSay(seat.id, text, within(after));
+    };
+    if (next.phase === "playing" && prev.phase === "lobby") here.forEach((c) => say(c, "hello", [1500, 7000]));
+    if (next.phase === "done" && prev.phase === "playing") {
+      const won = next.winners[0] ? teamOf(next, next.winners[0]) : [];
+      here.forEach((c) => say(c, won.includes(c) ? "win" : "lose", [1200, 4500]));
+      return;
+    }
+    for (const c of here) if ((next.seats[c]!.misses || 0) > (prev.seats[c]?.misses || 0)) say(c, "missed", [2500, 6000]);
+    const step = next.trail?.[next.trail.length - 1];
+    if (!step || step.n === prev.trail?.[prev.trail.length - 1]?.n) return;
+    const mover = step.moves[0]?.c;
+    if (step.caps.length) {
+      say(mover, "capture", [900, 2600]);
+      [...new Set(step.caps.map((x) => next.seats[x.c]?.id))].forEach((id) => say(seated(next).find((c) => next.seats[c]!.id === id), "captured", [1200, 3200]));
+    } else if (step.moves.some((m) => m.b === finishOf(next))) say(mover, "home", [800, 2000]);
+  }
+  /** A persona writes in the chat: "typing…" for a moment first, as anyone would. */
+  private personaSay(id: string, text: string, after: number) {
+    const gen = this.gen;
+    const live = () => gen === this.gen && this.isHost && this.online;
+    setTimeout(() => {
+      if (!live()) return;
+      this.noteTyping(id, true);
+      this.transport?.broadcast({ type: "typing", id, on: true });
+      setTimeout(() => {
+        const p = this.state.players.find((x) => x.id === id) || Object.values(this.state.seats).find((x) => x?.id === id);
+        if (!live() || !p) return;
+        const m = { type: "chat" as const, mid: id + "-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), id, nick: p.nick, text, ts: Date.now() };
+        this.addChat(m);
+        this.transport?.broadcast(m);
+      }, 700 + text.length * 110);
+    }, after);
+  }
+  /** Someone greeted the table, or said "gg": a persona may answer. */
+  private personaAnswer(m: ChatMessage) {
+    if (!this.isHost || this.mode !== "online" || !this.online) return;
+    const s = this.state;
+    if (this.personaId(m.id)) return;
+    const greet = /^(hi+|hello|hey+|hii+|👋|gl|good luck|hlo)\b/i.test(m.text);
+    const gg = /^(gg|good game|well played|wp)\b/i.test(m.text);
+    if (!greet && !gg) return;
+    const ids = [...new Set([...s.players.filter((p) => p.ai).map((p) => p.id), ...seated(s).filter((c) => s.seats[c]!.ai).map((c) => s.seats[c]!.id)])];
+    const id = ids[Math.floor(Math.random() * ids.length)];
+    const text = id && chatLine(id, gg ? "lose" : "hello");
+    if (text) this.personaSay(id, text, within([1500, 4500]));
+  }
+
   /** Compare two states and play the matching sounds / animations. */
   private onStateChange(prev: GameState | null, next: GameState, remote: boolean) {
     if (!prev || !next) return;
+    this.personasReact(prev, next);
     // A game begins (or begins again): nothing played in it yet.
     if (next.phase === "playing" && !next.last && (prev.phase !== "playing" || (!!next.gid && next.gid !== prev.gid))) {
       this.play("start");
@@ -2058,6 +2336,7 @@ export class GameController {
       }
       this.bubbles[msg.id] = { text: msg.text, until: Date.now() + 4500 };
       setTimeout(() => this.emit(), 4600);
+      this.personaAnswer(msg);
     }
     this.emit();
     return true;
@@ -2159,11 +2438,17 @@ export class GameController {
     return this.voice.hears(pid);
   }
   inVoice(pid: string) {
-    return this.voiceRoster.some((m) => m.id === pid);
+    // (A persona is in voice chat with its microphone off, as plenty of people are.)
+    return this.voiceRoster.some((m) => m.id === pid) || this.personaId(pid);
   }
   /** Is this player's microphone off? */
   micOffFor(pid: string) {
-    return pid === this.myId ? !this.voice.micOn : !!this.voiceRoster.find((m) => m.id === pid)?.muted;
+    return pid === this.myId ? !this.voice.micOn : this.personaId(pid) || !!this.voiceRoster.find((m) => m.id === pid)?.muted;
+  }
+  /** Is this player at the table a persona? */
+  private personaId(pid: string) {
+    const s = this.state;
+    return s.players.some((p) => p.id === pid && !!p.ai) || seated(s).some((c) => s.seats[c]!.id === pid && !!s.seats[c]!.ai);
   }
   isSpeaking(pid: string) {
     return this.voice.speaking.has(pid === this.myId ? "me" : pid);
@@ -2209,11 +2494,51 @@ export class GameController {
   // ============================================================ timers
   private noteTurn() {
     const s = this.state;
-    // A fresh timer for every turn, roll, and when a player takes back control from the computer.
-    const k = `${s.phase}|${s.turn}|${s.roll}|${s.last?.seq}|${s.turn ? !!s.seats[s.turn]?.bot : ""}`;
+    const k = turnKeyOf(s);
     if (k !== this.turnKey) {
       this.turnKey = k;
       this.turnSeenAt = Date.now();
+      // (A throw played for its player is over: a throw it earned is theirs to make, on this new timer.)
+      this.autoFor = null;
+      this.armTicks();
+    }
+  }
+
+  /**
+   * Online: the seconds of a turn's warning tick (the last TURN_WARN_SHARE of its
+   * time, so a short turn after missed ones isn't ticking from the start), so
+   * everyone knows it's about to run out without looking at the ring. Someone
+   * else's turn ticks softer and lower than mine; only mine buzzes the phone.
+   */
+  private armTicks() {
+    this.tickTimers.forEach(clearTimeout);
+    this.tickTimers = [];
+    const s = this.state;
+    const c = s.turn;
+    if (this.mode !== "online" || s.phase !== "playing" || !c || !this.turnTimerOn(c)) return;
+    const mine = this.mine(s, c);
+    const key = this.turnKey;
+    const limit = this.turnLimit(c);
+    const end = this.turnSeenAt + limit;
+    // One tick a second in the warning, the last one the highest (the sound has five steps, see sfx.ts).
+    const n = Math.max(1, Math.floor((limit * TURN_WARN_SHARE) / 1000 + 1e-6));
+    for (let left = n; left >= 1; left--) {
+      const ms = end - left * 1000 - Date.now();
+      if (ms < 0) continue;
+      const level = Math.max(0, 5 - left);
+      this.tickTimers.push(
+        setTimeout(() => {
+          if (this.turnKey !== key || !this.turnTimerOn(c)) return;
+          // (Someone else's: the same steps, marked so the sound plays them softer, sfx.ts.)
+          this.play("timer", mine ? level : level + OTHERS_TICK);
+          if (mine && left <= 3)
+            try {
+              navigator.vibrate?.(14);
+            } catch {
+              /* ignore */
+            }
+        }, ms),
+      );
     }
   }
 
@@ -2281,9 +2606,10 @@ export class GameController {
         // and never meet). Look again from the first table; only later tables
         // move, so waiting players always end up at the same one.
         if (s.phase === "lobby" && this.searchN > 0 && s.players.length <= 1 && !s.startAt && !this.transport?.guestCount() && now - this.hostingSince > RESEARCH_MS) {
-          this.startOnline(this.wantCount);
+          this.startOnline(this.wantCount, this.wantGame, this.wantPairs, true);
           return;
         }
+        if (s.phase === "lobby") this.seatPersona(now);
         if (s.phase === "lobby" && s.startAt && now >= s.startAt && s.players.length >= (s.capacity || this.wantCount)) this.startGame();
         // A second's grace on the host: a roll made just in time is still on its way here.
         else if (s.phase === "playing" && !this.rolling && s.turn && now - this.turnSeenAt > this.turnLimit(s.turn) + 1000) this.turnTimeout(s.turn);
@@ -2293,21 +2619,32 @@ export class GameController {
   }
 
   /**
-   * Host, online: c's turn time ran out. Not rolling while connected is a
-   * missed turn (5 and you're out); an offline player or a pending token pick
-   * gets an automatic move instead.
+   * Host, online: c's time ran out, before throwing or before moving (also
+   * while they're offline: the game goes on without them). Either way it
+   * counts as a missed turn (every miss takes 2s off their turns; 5 and
+   * they're out), and that one throw is played for them, the throw and its
+   * move: running the time out is no way to get out of a throw. A throw it
+   * earns (a 6) is theirs again, on a timer of its own (noteTurn).
    */
   private turnTimeout(c: Color) {
     const s = this.state;
     const seat = s.seats[c];
-    if (!seat || seat.bot) return;
-    if (!s.roll && !seat.away) this.commit((n) => missTurn(n, c, MAX_MISSES));
-    else this.autoStep();
+    // (A persona plays on its own timer, unless it's sitting this turn out. A throw already played for them goes on by itself.)
+    if (!seat || seat.bot || this.autoFor === c || (seat.ai && this.dozing !== this.turnKey)) return;
+    let still = false;
+    this.commit((n) => {
+      if (n.phase !== "playing" || n.turn !== c) return false;
+      still = timeOut(n, c, MAX_MISSES);
+    });
+    if (!still) return;
+    this.autoFor = c;
+    this.autoStep();
   }
 
   /**
-   * Host: anyone not heard from for a few seconds is offline. After 15s offline
-   * the computer plays for them until they come back and take over again.
+   * Host: anyone not heard from for a few seconds is offline. In a friends room,
+   * after a while offline the computer plays for them until they come back and
+   * take over again; online, their turns run out as missed turns (turnTimeout).
    */
   private checkPresence() {
     // It's this device that's offline: nobody else counts as gone, and once it's back everyone gets
@@ -2323,6 +2660,8 @@ export class GameController {
     }
     this.lastSeen[this.myId] = now;
     const s0 = this.state;
+    // Personas are played here: always here.
+    for (const c of seated(s0)) if (s0.seats[c]!.ai) this.lastSeen[s0.seats[c]!.id] = now;
     // After a gap in these checks (this phone asleep, the app in the background)
     // everyone looks silent, but it was this device that wasn't listening: they
     // all get a fresh grace period. (Before, coming back to the app marked
@@ -2331,6 +2670,8 @@ export class GameController {
     // Someone we haven't heard from since becoming host gets the grace period from now.
     seated(s0).forEach((c) => (this.lastSeen[s0.seats[c]!.id] ??= now));
     const skip = (s: GameState, c: Color) => s.winners.includes(c) || !!s.seats[c]?.out;
+    // (Friends: the computer stands in for someone offline. Online the game goes on without them.)
+    const standIn = this.mode === "friends";
     // Online, with at most one player still here: anyone offline this long (the
     // computer playing for them all the while) has left for good, so the game
     // can end. With two or more still playing, the computer keeps standing in
@@ -2347,13 +2688,12 @@ export class GameController {
       !this.rejoinUntil &&
       stillHere <= 1 &&
       !!seat.away &&
-      !!seat.bot &&
       now - Math.max(seat.awayAt || now, this.watchingSince) > ABANDON_MS;
     const changed = seated(s0).some((c) => {
       const seat = s0.seats[c]!;
       if (skip(s0, c)) return false;
       const gone = now - this.lastSeen[seat.id] > AWAY_GRACE;
-      return gone !== !!seat.away || (seat.away && !seat.bot && this.offlineLeft(seat) <= 0) || abandoned(seat);
+      return gone !== !!seat.away || (standIn && seat.away && !seat.bot && this.offlineLeft(seat) <= 0) || abandoned(seat);
     });
     if (!changed) return;
     this.commit((s) => {
@@ -2370,7 +2710,7 @@ export class GameController {
           delete seat.awayAt;
           addLog(s, c, seat.takeover ? `${seat.nick} is back. The computer keeps playing until they take over.` : `${seat.nick} is back.`);
         }
-        if (seat.away && !seat.bot && this.offlineLeft(seat) <= 0) {
+        if (standIn && seat.away && !seat.bot && this.offlineLeft(seat) <= 0) {
           seat.bot = true;
           seat.takeover = true;
           addLog(s, c, `${seat.nick} is offline. The computer plays for them.`);
@@ -2390,8 +2730,9 @@ export class GameController {
       const n = this.transport?.guestCount() || 0;
       this.setNet(
         "ok",
+        // (Online, how many devices are connected isn't shown: personas sit at the table without one.)
         this.mode === "online"
-          ? `Live · ${this.capacity()}-player table · ${n + 1} connected`
+          ? `Live · ${this.capacity()}-player table`
           : n
             ? `Live · hosting · ${n} friend${n > 1 ? "s" : ""} connected`
             : "Live · hosting",
@@ -2505,7 +2846,27 @@ export class GameController {
     this.autoJoin = false;
   }
 
+  /**
+   * Online, still to get a seat: this table filled up or began without me
+   * while my join was on its way (a seat, once taken, is that player's). On to the next table.
+   */
+  private keepLooking() {
+    if (this.mode !== "online" || !this.seeking || !this.loaded) return false;
+    const s = this.state;
+    if (this.joined(s)) {
+      this.seeking = false;
+      return false;
+    }
+    if (s.phase === "lobby" && s.players.length < (s.capacity || this.wantCount)) return false;
+    const n = this.searchN + 1;
+    this.teardown();
+    this.loaded = false;
+    this.findGame(n);
+    return true;
+  }
+
   private onRemoteState() {
+    if (this.keepLooking()) return;
     const last = this.state.last;
     if (last && last.seq !== this.seenSeq) {
       const first = this.seenSeq === null;
@@ -2611,7 +2972,13 @@ export class GameController {
           this.hostingSince = Date.now();
           // Rejoined an online game and nobody else is at its table: give the
           // others a moment (they may be reconnecting) before calling it over.
-          if (this.rejoinGid !== null && this.mode === "online") this.rejoinUntil = Date.now() + REJOIN_WAIT_MS;
+          // (A table with personas: they were played on the host's device, and play on from here
+          // again, the game caught up to now. Anyone else who comes back joins in.)
+          const rejoinedPersonas = this.rejoinGid !== null && this.mode === "online" && !!carry && hasPersonas(carry);
+          if (this.rejoinGid !== null && this.mode === "online") {
+            if (rejoinedPersonas) this.rejoinGid = null;
+            else this.rejoinUntil = Date.now() + REJOIN_WAIT_MS;
+          }
           if (prevHost && prevHost !== this.myId && prevHostHeard) {
             this.lastSeen[prevHost] = prevHostHeard;
             // (This device was watching all along, as a guest: no gap in the checks that starts everyone's time again.)
@@ -2624,6 +2991,10 @@ export class GameController {
           // (A newer version than the copy the others have, so mine wins when they offer theirs.)
           if (this.pending.length && s === this.state) s = { ...s, v: (s.v || 0) + 1 };          this.pending = [];
           this.hostState = null;
+          if (rejoinedPersonas) {
+            s = catchUp(s, this.rejoinAt || Date.now(), Date.now());
+            this.rejoinAt = 0;
+          }
           // A new friends room belongs to whoever opened it first.
           if (this.mode === "friends" && !s.owner) s = { ...s, owner: this.myId };
           if (this.mode === "online" && !s.capacity) {
@@ -2644,6 +3015,11 @@ export class GameController {
           this.persist();
           if (first) this.onFirstState();
           this.netSummary();
+          // Caught up, the game had ended for me meanwhile (someone won, or I missed too many turns).
+          if (rejoinedPersonas && !this.stillMine(this.state, this.state.gid)) {
+            this.rejoinFailed(this.endNote(this.state));
+            return;
+          }
           // Took over a game in progress: mark the old host offline now, not on the
           // next heartbeat (their tag flickered back to online for up to a second).
           if (this.state.phase === "playing") this.checkPresence();

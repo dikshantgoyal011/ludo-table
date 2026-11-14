@@ -20,6 +20,7 @@
 // Variations change some of this (variations.ts).
 import { COLORS } from "../constants";
 import { addLog, nextTurn, noteStep, seatName, seated, teamOf } from "../table";
+import { PLAIN, type Style } from "../personas";
 import type { Color, GameState, MoveChoice, MoveOpt, PachisiTurn, Rulebook } from "../types";
 import {
   CASTLES,
@@ -268,7 +269,8 @@ export function applyRoll(s: GameState, c: Color, v: number): boolean {
  * cut > bring out > head home > reach a castle > advance furthest. Pieces
  * always head home rather than go round again.
  */
-export function chooseMove(s: GameState, c: Color, v: number): { i: number; opt: MoveOpt } {
+export function chooseMove(s: GameState, c: Color, v: number, w?: Style): { i: number; opt: MoveOpt } {
+  const k = w || PLAIN;
   let best = { i: -1, opt: {} as MoveOpt };
   let bestScore = -Infinity;
   // The best move that isn't going round again.
@@ -279,14 +281,16 @@ export function chooseMove(s: GameState, c: Color, v: number): { i: number; opt:
       const np = ch.to;
       // Progress: a piece on another round counts only where it is on the lap.
       const ahead = np >= P_EXTRA ? (lapIndex(np) as number) : np;
-      let sc = ahead * 0.5;
+      let sc = ahead * 0.5 * k.advance;
       if (ch.extra) sc -= 40;
-      if (np === P_FINISH) sc += 100;
-      if (cutsAt(s, c, np).length) sc += 80;
-      if (p === -1) sc += 60;
-      if (np > P_LAP_TO && np <= P_FINISH && p <= P_LAP_TO) sc += 30;
-      if (isCastle(c, np)) sc += 15;
-      sc += Math.random();
+      if (np === P_FINISH) sc += 100 * k.home;
+      if (cutsAt(s, c, np).length) sc += 80 * k.capture;
+      if (p === -1) sc += 60 * k.enter;
+      if (np > P_LAP_TO && np <= P_FINISH && p <= P_LAP_TO) sc += 30 * k.home;
+      if (isCastle(c, np)) sc += 15 * k.safe;
+      // A persona's own way: the piece furthest on, or the ones behind.
+      if (w && p >= 0) sc += w.lead * (p >= P_EXTRA ? (lapIndex(p) as number) : p) * 0.4;
+      sc += Math.random() * k.noise;
       if (sc > bestScore) {
         bestScore = sc;
         best = { i, opt: { use: ch.use, extra: ch.extra } };

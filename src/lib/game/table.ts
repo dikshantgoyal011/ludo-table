@@ -51,8 +51,8 @@ export function noteStep(s: GameState, moves: TrailStep["moves"], caps: TrailSte
 export function seatsFor(players: Player[]): Partial<Record<Color, Seat>> {
   const out: Partial<Record<Color, Seat>> = {};
   (SLOTS_FOR[players.length] || []).forEach((slot, i) => {
-    const { id, nick, cc, av } = players[i];
-    out[slot] = { id, nick, ...(cc ? { cc } : {}), ...(av !== undefined ? { av } : {}) };
+    const { id, nick, cc, av, ai } = players[i];
+    out[slot] = { id, nick, ...(cc ? { cc } : {}), ...(av !== undefined ? { av } : {}), ...(ai ? { ai } : {}) };
   });
   return out;
 }
@@ -106,6 +106,28 @@ export function missTurn(s: GameState, c: Color, maxMisses: number) {
     addLog(s, c, `${seat.nick} missed ${maxMisses} turns and is out of the game.`);
   } else addLog(s, c, `${seat.nick} missed their turn (${seat.misses}/${maxMisses}).`);
   nextTurn(s);
+  return true;
+}
+
+/**
+ * Online: c's time ran out, before throwing or before moving with the throw.
+ * It counts as a missed turn (each takes time off their next turns; maxMisses
+ * and they're out), but the throw isn't skipped: it's played for them (letting
+ * the time run out is no way to get out of a bad throw). Returns true if
+ * they're still in, to be played for.
+ */
+export function timeOut(s: GameState, c: Color, maxMisses: number) {
+  const seat = s.seats[c];
+  if (s.phase !== "playing" || s.turn !== c || !seat) return false;
+  seat.misses = (seat.misses || 0) + 1;
+  if (seat.misses >= maxMisses) {
+    seat.out = true;
+    s.tokens[c] = [-1, -1, -1, -1];
+    addLog(s, c, `${seat.nick} missed ${maxMisses} turns and is out of the game.`);
+    nextTurn(s);
+    return false;
+  }
+  addLog(s, c, `${seat.nick} ran out of time (${seat.misses}/${maxMisses}). ${s.roll ? "Their move is made" : "Their throw is played"} for them.`);
   return true;
 }
 

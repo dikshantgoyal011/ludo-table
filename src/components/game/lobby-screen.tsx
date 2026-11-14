@@ -4,6 +4,7 @@
 // shows once the game has begun. Friends rooms: everyone marks themselves ready
 // (and, in games with variations, agrees to the rules) before the creator can start.
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ArrowLeftRight, Check, Copy, Crown, MessageCircle, Mic, MicOff, UserPlus, Users, Volume2, VolumeX } from "lucide-react";
 import { MiniBoard } from "@/components/menu/mini-board";
 import { Button } from "@/components/ui/button";
@@ -19,9 +20,11 @@ import { isGameId, rulesFor } from "@/lib/game/rules";
 import type { GameId, Player } from "@/lib/game/types";
 import { variantById, VARIANTS, type Variant } from "@/lib/game/variants";
 import { themeOf } from "@/lib/theme/themes";
+import { canGoBack } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 import { Avatar } from "./avatar";
 import { InviteDialog } from "./invite-dialog";
+import { Matchmaking } from "./matchmaking";
 import { ColorPicker } from "./pickers";
 import { SavePreferences, SidesPicker, VariationsList } from "./variations";
 
@@ -46,7 +49,10 @@ export function LobbyScreen() {
   const game = useGame();
   const s = game.state;
 
-  if (!game.loaded)
+  // Online: looking for players, the whole time on one screen that doesn't change its shape (from the
+  // first look for a table, while it fills, until it starts). Friends: connecting to the room first.
+  const looking = game.mode === "online" && (!game.loaded || game.seeking);
+  if (!game.loaded && game.mode !== "online")
     return (
       <div className="mx-auto flex w-full max-w-xl flex-col items-center gap-3 rounded-2xl border border-border bg-card px-6 py-10 text-center">
         <div className="lobby-spinner" aria-hidden="true" />
@@ -56,19 +62,19 @@ export function LobbyScreen() {
     );
 
   // Games with variations: the rules get a card of their own.
-  const rules = hasVariations(s.game);
+  const rules = hasVariations(game.loaded ? s.game : game.wantGame);
   return (
     <div className={cn("mx-auto flex w-full flex-col gap-3", rules ? "max-w-xl lg:max-w-5xl" : "max-w-xl")}>
       {game.banner && <div className="rounded-xl border border-primary/40 bg-primary/10 px-3 py-2 text-sm break-words">{game.banner}</div>}
       <div className={cn("grid grid-cols-1 gap-3", rules && "lg:grid-cols-2 lg:items-start")}>
         <div className="flex min-w-0 flex-col gap-3">
-          {game.mode === "friends" ? <RoomCard /> : <TableCard />}
+          {game.mode === "friends" ? <RoomCard /> : looking || game.joined() ? <Matchmaking /> : <TableCard />}
           <PlayersCard />
           <YouCard />
         </div>
         {rules && <RulesCard />}
       </div>
-      <ActionBar />
+      {!looking && <ActionBar />}
     </div>
   );
 }
@@ -270,12 +276,14 @@ function PlayersCard() {
   const s = game.state;
   const friends = game.mode === "friends";
   const sided = hasSides(s.game);
-  const n = s.players.length;
+  // (Online, until the table is set: just me.)
+  const players = game.loaded ? s.players : [{ id: game.myId, nick: game.myNick(), ...game.myLooks() }];
+  const n = players.length;
   const cap = friends ? 4 : game.capacity();
   const owner = friends ? game.roomOwnerId() : "";
   const vars = game.variations();
   // Pachisi, Chaupar (Parchís in pairs): who plays with whom, by the order people joined.
-  const nick = (k: number) => s.players[k]?.nick || `Player ${k + 1}`;
+  const nick = (k: number) => players[k]?.nick || `Player ${k + 1}`;
   const partners = `Partners: ${nick(0)} & ${nick(2)} against ${nick(1)} & ${nick(3)}.`;
   const sides =
     s.game === "parchis"
@@ -292,9 +300,10 @@ function PlayersCard() {
             ? `${nick(0)} plays Red & Yellow, ${nick(1)} plays Green & Blue.`
             : partners;
   return (
-    <Panel title={`Players ${n}/${cap}`} aside={game.online && <VoiceRow />}>
+    // (Voice and chat come once connected; their room is kept meanwhile, so nothing moves when they do.)
+    <Panel title={`Players ${n}/${cap}`} aside={<div className={cn(!game.online && "invisible")}><VoiceRow /></div>}>
       <ol className="flex flex-col gap-1.5" aria-label="Players">
-        {s.players.map((p) => {
+        {players.map((p) => {
           const slot = COLORS.find((c) => s.seats[c]?.id === p.id);
           return (
             <PlayerRow
@@ -309,7 +318,8 @@ function PlayersCard() {
             />
           );
         })}
-        {Array.from({ length: Math.max(0, cap - n) }, (_, k) => (
+        {/* (Online, the search card shows the open seats.) */}
+        {friends && Array.from({ length: Math.max(0, cap - n) }, (_, k) => (
           <li key={"open" + k} className="flex h-12 items-center gap-2.5 rounded-xl border border-dashed border-border px-3 text-sm text-muted-foreground">
             <span className="size-8 shrink-0 rounded-full border border-dashed border-foreground/25" />
             Open seat
@@ -371,7 +381,7 @@ function Badge({ tone, children }: { tone: "gold" | "green" | "grey"; children: 
 function RulesCard() {
   const game = useGame();
   const s = game.state;
-  const g = s.game || "ludo";
+  const g = (game.loaded ? s.game : game.wantGame) || "ludo";
   const friends = game.mode === "friends";
   const iRun = friends && game.canRunTable();
   const vars = game.variations();
@@ -420,6 +430,7 @@ function RulesCard() {
 /** My name and color (and leaving the room). */
 function YouCard() {
   const game = useGame();
+  const router = useRouter();
   const [profile, saveProfile] = useProfile();
   const renameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   return (
@@ -447,7 +458,17 @@ function YouCard() {
         />
       </div>
       {game.joined() && game.mode === "friends" && (
-        <Button variant="outline" className="self-start" onClick={game.leave}>
+        <Button
+          variant="outline"
+          className="self-start"
+          onClick={() => {
+            // Back to the screen before the room (that screen leaves the room once it's there);
+            // opened from an invite link, to Play with friends.
+            game.leave();
+            if (canGoBack() && !window.history.state?.ludoGuard) router.back();
+            else router.replace("/play/friends", { scroll: false });
+          }}
+        >
           Leave the room
         </Button>
       )}

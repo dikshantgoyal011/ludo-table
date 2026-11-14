@@ -212,11 +212,6 @@ export function SetupScreen({ mode }: { mode: Mode }) {
           <CardDescription>{MODES[mode].desc}</CardDescription>
         </CardHeader>
 
-        {error && (
-          <div className="rounded-xl border border-primary/40 bg-primary/10 px-3 py-2 text-sm">
-            {error}
-          </div>
-        )}
 
         {(mode === "online" || mode === "friends" || mode === "computer") && (
           <>
@@ -259,7 +254,7 @@ export function SetupScreen({ mode }: { mode: Mode }) {
             </Button>
             <p className="text-xs text-muted-foreground">
               The game starts as soon as the table is full. You have 15 seconds a turn; miss 5 turns and you&apos;re out.
-              If someone goes offline, the computer plays for them until they&apos;re back.
+              If your time runs out, your turn is played for you and counts as missed. The game goes on without anyone who goes offline.
               {withVars && ` Online games use the ${plainRules(game).toLowerCase()}, without variations.`}
             </p>
           </>
@@ -321,12 +316,21 @@ export function SetupScreen({ mode }: { mode: Mode }) {
                     autoCapitalize="off"
                     autoComplete="off"
                     aria-label="Room code"
+                    aria-invalid={!!error}
+                    aria-describedby="roomCodeNote"
                     value={code}
-                    onChange={(e) => setCode(e.target.value)}
+                    onChange={(e) => {
+                      setCode(e.target.value);
+                      setError("");
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") document.getElementById("joinFriendRoom")?.click();
                     }}
                   />
+                  {/* What a code looks like, and what's wrong with this one: always one line here, so nothing moves. */}
+                  <p id="roomCodeNote" role={error ? "alert" : undefined} className={cn("mt-1.5 min-h-4 text-xs leading-4", error ? "font-semibold text-[#fca5a5]" : "text-muted-foreground")}>
+                    {error || "3 to 12 letters or numbers"}
+                  </p>
                 </Field>
                 <Button
                   id="joinFriendRoom"
@@ -335,7 +339,7 @@ export function SetupScreen({ mode }: { mode: Mode }) {
                   onClick={() => {
                     const v = cleanRoomCode(code);
                     if (v.length < 3) {
-                      setError("Room codes are 3 to 12 letters or numbers.");
+                      setError(v ? "Too short: codes are 3 to 12 letters or numbers" : "Enter the code your friend sent");
                       return;
                     }
                     go(roomPath(v));

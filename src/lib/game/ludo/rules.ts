@@ -3,6 +3,7 @@
 // GameController.commit).
 import { COLORS } from "../constants";
 import { addLog, nextTurn, noteStep, seatName } from "../table";
+import { PLAIN, type Style } from "../personas";
 import type { Color, GameState, MoveChoice, Rulebook } from "../types";
 import { basePoint, FINISH, SAFE, trackIdx } from "./board";
 import { rollDie } from "./dice";
@@ -11,6 +12,23 @@ import { diceOdds, progress, recordRoll } from "./luck";
 export const canMove = (p: number, v: number) => p !== FINISH && (p === -1 ? v === 6 : p + v <= FINISH);
 export const movable = (s: GameState, c: Color, v: number) =>
   s.tokens[c].map((p, i) => (canMove(p, v) ? i : -1)).filter((i) => i >= 0);
+
+/** How many rival tokens could land on c's token at position p with their next roll (0 on a safe square or off the track). */
+function threats(s: GameState, c: Color, p: number) {
+  if (p < 0 || p > 50) return 0;
+  const idx = trackIdx(c, p);
+  if (SAFE.has(idx)) return 0;
+  let n = 0;
+  for (const o of COLORS)
+    if (o !== c && s.seats[o])
+      for (const op of s.tokens[o]) {
+        if (op < 0 || op > 50) continue;
+        const d = (idx - trackIdx(o, op) + 52) % 52;
+        // (Only squares still on that token's way round, before its home column.)
+        if (d >= 1 && d <= 6 && op + d <= 50) n++;
+      }
+  return n;
+}
 
 export function wouldCapture(s: GameState, c: Color, np: number) {
   if (np > 50) return false;
@@ -90,19 +108,25 @@ export function applyRoll(s: GameState, c: Color, v: number): boolean {
 }
 
 /** Simple computer strategy: finish > capture > bring out > reach safety > advance furthest. */
-export function chooseMove(s: GameState, c: Color, v: number) {
+export function chooseMove(s: GameState, c: Color, v: number, w?: Style) {
   let best = -1;
   let bestScore = -Infinity;
+  const k = w || PLAIN;
   for (const i of movable(s, c, v)) {
     const p = s.tokens[c][i];
     const np = p === -1 ? 0 : p + v;
-    let sc = np * 0.5;
-    if (np === FINISH) sc += 100;
-    if (wouldCapture(s, c, np)) sc += 80;
-    if (p === -1) sc += 60;
-    if (np > 50 && p <= 50) sc += 30;
-    if (np <= 50 && SAFE.has(trackIdx(c, np))) sc += 15;
-    sc += Math.random();
+    let sc = np * 0.5 * k.advance;
+    if (np === FINISH) sc += 100 * k.home;
+    if (wouldCapture(s, c, np)) sc += 80 * k.capture;
+    if (p === -1) sc += 60 * k.enter;
+    if (np > 50 && p <= 50) sc += 30 * k.home;
+    if (np <= 50 && SAFE.has(trackIdx(c, np))) sc += 15 * k.safe;
+    if (w) {
+      // A persona's own way: which piece it likes to move, and how much it minds being hit.
+      sc += w.lead * Math.max(p, 0) * 0.4;
+      sc -= w.risk * 18 * (threats(s, c, np) - (p >= 0 ? threats(s, c, p) : 0));
+    }
+    sc += Math.random() * k.noise;
     if (sc > bestScore) {
       bestScore = sc;
       best = i;
@@ -126,7 +150,7 @@ export const ludo: Rulebook = {
   },
   applyMove: (s, c, i, v) => applyMove(s, c, i, v),
   pass: null,
-  chooseMove: (s, c, v) => ({ i: chooseMove(s, c, v), opt: {} }),
+  chooseMove: (s, c, v, w) => ({ i: chooseMove(s, c, v, w), opt: {} }),
   steps: (a, b) => Array.from({ length: Math.max(0, b - a) }, (_, k) => a + k + 1),
   point: basePoint,
   progress,

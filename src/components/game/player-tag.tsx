@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Bot, MessageCircle, Mic, MicOff, UserRound, Volume2, VolumeX } from "lucide-react";
 import { useGame, useSettings } from "@/hooks/use-game";
 import { defaultAvatar } from "@/lib/avatars";
 import { countryName, flagUrl } from "@/lib/country";
-import { COLORS, MAX_MISSES } from "@/lib/game/constants";
+import { COLORS, MAX_MISSES, TURN_WARN_SHARE } from "@/lib/game/constants";
 import { finishOf } from "@/lib/game/rules";
 import type { Color, Seat } from "@/lib/game/types";
 import { themeOf } from "@/lib/theme/themes";
@@ -27,24 +27,71 @@ export function TypingDots() {
   );
 }
 
+/** The turn ring's line (the tag's colour bar is 4px: the line sits inside it where they meet). */
+const RING_W = 3;
 /**
- * Turn timer drawn around the name tag's edge, draining as time runs out
- * (green, then yellow, then red). Restarted for each turn via `key`.
+ * Turn timer: a warm ivory line round the tag as its border, on the tag's own
+ * edge and corners, starting from the player's colour bar. As the time goes it
+ * leaves the bar and draws away round both sides towards the far edge, so what's
+ * left is always clear to see, to the last moment. In its last TURN_WARN_SHARE
+ * it turns gold and pulses (and it ticks, controller). Restarted for each throw via `key`.
  */
-function TurnRing({ limit, startedAt }: { limit: number; startedAt: number }) {
+function TurnRing({ limit, startedAt, right }: { limit: number; startedAt: number; right: boolean }) {
   // Measured once, so re-renders don't shift the animation.
   const [elapsed] = useState(() => Math.max(0, Date.now() - startedAt));
+  const ref = useRef<SVGSVGElement>(null);
+  // The tag's size and corner, to draw the border exactly on its edge (the tag grows, say with Pachisi's cowries).
+  const [box, setBox] = useState<{ w: number; h: number; r: number } | null>(null);
+  useLayoutEffect(() => {
+    const tag = ref.current?.parentElement;
+    if (!tag) return;
+    const measure = () => setBox({ w: tag.offsetWidth, h: tag.offsetHeight, r: parseFloat(getComputedStyle(tag).borderTopLeftRadius) || 12 });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(tag);
+    return () => ro.disconnect();
+  }, []);
+  const left = Math.min(elapsed, limit);
+  const run = { animationDuration: `${limit}ms`, animationDelay: `-${left}ms` };
+  const warn = { animationDelay: `${limit * (1 - TURN_WARN_SHARE) - left}ms` };
+  let halves: string[] = [];
+  if (box && box.w > 2 * box.r && box.h >= 2 * box.r) {
+    // From the middle of the far edge, one half over the top and one under the bottom, ending in the
+    // middle of the bar. (A line drains from its end: it lets go of the bar first.)
+    const { w, h } = box;
+    const i = RING_W / 2;
+    const r = Math.max(0, box.r - i);
+    const R = box.r;
+    halves = [
+      `M ${w - i} ${h / 2} L ${w - i} ${R} A ${r} ${r} 0 0 0 ${w - R} ${i} L ${R} ${i} A ${r} ${r} 0 0 0 ${i} ${R} L ${i} ${h / 2}`,
+      `M ${w - i} ${h / 2} L ${w - i} ${h - R} A ${r} ${r} 0 0 1 ${w - R} ${h - i} L ${R} ${h - i} A ${r} ${r} 0 0 1 ${i} ${h - R} L ${i} ${h / 2}`,
+    ];
+  }
   return (
-    <svg className="pointer-events-none absolute -inset-0.5 z-10 h-[calc(100%+4px)] w-[calc(100%+4px)] overflow-visible" aria-hidden="true">
-      <rect className="turn-ring-track" x="1.5" y="1.5" rx="13" />
-      <rect
-        className="turn-ring"
-        x="1.5"
-        y="1.5"
-        rx="13"
-        pathLength={100}
-        style={{ animationDuration: `${limit}ms`, animationDelay: `-${Math.min(elapsed, limit)}ms` }}
-      />
+    <svg ref={ref} className="pointer-events-none absolute inset-0 z-10 size-full overflow-visible" aria-hidden="true">
+      {box && (
+        // (A right-hand tag has its bar on the right: the same drawing, mirrored.)
+        <g transform={right ? `translate(${box.w} 0) scale(-1 1)` : undefined}>
+          {halves.map((d) => (
+            <path key={"t" + d} className="turn-ring-track" d={d} />
+          ))}
+          {/* A thin dark edge under the line, so it reads on any colour (a yellow tag's bright side too). */}
+          {halves.map((d) => (
+            <path key={"h" + d} className="turn-ring turn-ring-halo" d={d} pathLength={100} style={run} />
+          ))}
+          <g className="turn-ring-glow">
+            {halves.map((d) => (
+              <path key={d} className="turn-ring" d={d} pathLength={100} style={run} />
+            ))}
+          </g>
+          {/* The last stretch: a lighter line over it, fading in and out (only opacity: the same in every browser). */}
+          <g className="turn-ring-warn" style={warn}>
+            {halves.map((d) => (
+              <path key={"w" + d} className="turn-ring turn-ring-hot" d={d} pathLength={100} style={run} />
+            ))}
+          </g>
+        </g>
+      )}
     </svg>
   );
 }
@@ -85,7 +132,7 @@ function Flag({ cc, below }: { cc: string; below: boolean }) {
   );
 }
 
-/** Online the host fills `misses` in; 5 and you're out. */
+/** Out of the game, or offline (friends: with the time before the computer plays for them). Missed turns show on their own (the missed-turns badge). */
 function statusNote(game: ReturnType<typeof useGame>, seat: Seat, place: number): { text: string; tone: "red" | "amber" | "grey" } | null {
   const s = game.state;
   if (seat.out) return seat.left ? { text: "Left the game", tone: "grey" } : { text: `Out · missed ${MAX_MISSES} turns`, tone: "red" };
@@ -93,9 +140,10 @@ function statusNote(game: ReturnType<typeof useGame>, seat: Seat, place: number)
   if (game.awayInfo(seat).away) {
     const left = Math.ceil(game.offlineLeft(seat) / 1000);
     // (At 0 the computer is about to play for them: it takes the host's next check, or the table being taken over.)
+    // (Online nobody stands in: the game goes on, and their turns run out as missed turns.)
+    if (game.mode === "online") return { text: "Offline", tone: "red" };
     return { text: seat.bot ? "Offline" : left > 0 ? `Offline · bot in ${left}s` : "Offline · bot taking over", tone: "red" };
   }
-  if (game.mode === "online" && (seat.misses || 0) > 0) return { text: `Missed ${seat.misses}/${MAX_MISSES} turns`, tone: "amber" };
   return null;
 }
 
@@ -130,6 +178,10 @@ export function PlayerTag({ corner }: { corner: number }) {
   const sides = !!s.teams;
   const timer = game.turnTimerOn(c);
   const note = seat ? statusNote(game, seat, place) : null;
+  // Online: turns missed so far (each one takes 2s off their turns; 5 and they're out): the tag's four dots,
+  // mine by my name. (Elsewhere the dots are tokens home; online the board shows those.)
+  const missDots = game.mode === "online" && s.phase === "playing" && place < 0 && !!seat && !seat.out;
+  const missed = missDots ? seat.misses || 0 : 0;
   const away = !!note && note.text.startsWith("Offline");
 
   const showChat = you && game.isNet() && game.online;
@@ -175,7 +227,7 @@ export function PlayerTag({ corner }: { corner: number }) {
           <span className="tag-fx-surge" />
         </span>
       )}
-      {timer && <TurnRing key={game.turnId()} limit={game.turnLimit(c)} startedAt={game.turnSeenAt} />}
+      {timer && <TurnRing key={game.turnId()} limit={game.turnLimit(c)} startedAt={game.turnSeenAt} right={right} />}
       {/* Finished: a medal with the place, while the others play on. */}
       {place >= 0 && (
         <span
@@ -260,6 +312,8 @@ export function PlayerTag({ corner }: { corner: number }) {
               </button>
             )
           )}
+          {/* My missed turns: by my name (the row below is full with my buttons). */}
+          {missDots && showChat && <MissDots missed={missed} />}
           {menu && (
             <button
               type="button"
@@ -333,6 +387,8 @@ export function PlayerTag({ corner }: { corner: number }) {
                   )}
                 </button>
               </>
+            ) : missDots ? (
+              <MissDots missed={missed} />
             ) : (
               s.phase !== "lobby" && <HomeDots home={home} color={hex} />
             )}
@@ -365,6 +421,23 @@ export function PlayerTag({ corner }: { corner: number }) {
       {pachisi && <CowrieRow c={c} isTurn={isTurn} right={right} />}
       {chaupar && <PasaRow c={c} isTurn={isTurn} right={right} />}
     </div>
+  );
+}
+
+/**
+ * Online: the turns a player has missed, as four dots (one more miss after
+ * these and they're out). They fill amber, then deepen to red as the last
+ * chances go; the last one left pulses gently.
+ */
+function MissDots({ missed }: { missed: number }) {
+  const n = MAX_MISSES - 1;
+  const label = missed ? `Missed ${missed} of ${MAX_MISSES} turns` : "No turns missed";
+  return (
+    <span className={cn("miss-dots", missed >= n && "miss-dots-last")} role="img" aria-label={label} title={label}>
+      {Array.from({ length: n }, (_, k) => (
+        <span key={k} className={cn("miss-dot", k < missed && "miss-dot-on")} data-step={k < missed ? Math.min(missed, n) : undefined} />
+      ))}
+    </span>
   );
 }
 

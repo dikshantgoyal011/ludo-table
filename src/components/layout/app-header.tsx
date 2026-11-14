@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useGame } from "@/hooks/use-game";
 import { MODES } from "@/lib/game/constants";
 import { variantById } from "@/lib/game/variants";
+import { notePage } from "@/lib/nav";
 import { uiStore } from "@/lib/ui-store";
 
 export function AppHeader() {
@@ -16,6 +17,8 @@ export function AppHeader() {
 
   const onMenu = pathname === "/" || pathname === "/ludo";
   const inGame = pathname === "/game" || pathname === "/room" || pathname.startsWith("/r/");
+  // (Counting screens, so a screen can go back to the one before it.)
+  useEffect(() => notePage(), [pathname]);
   // The home page loads at once when the logo or Menu is tapped.
   useEffect(() => {
     if (!onMenu) router.prefetch("/");

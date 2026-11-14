@@ -44,6 +44,7 @@
 //   their Belly. A side wins with all eight of its pawns home.
 import { COLORS } from "../constants";
 import { addLog, inPlay, nextTurn, noteStep, seatName, seated, teamOf } from "../table";
+import { PLAIN, type Style } from "../personas";
 import type { ChauparSide, ChauparTurn, Color, GameState, MoveChoice, MoveOpt, Rulebook } from "../types";
 import { P_LAP_FROM, P_LAP_TO, pachisiPoint, ROUTE, squareOf } from "../pachisi/board";
 import { C_FINISH, C_KAJAL, C_OPEN_TO, C_START, C_START_AT, C_START_PAIR, chauparAdvance, chauparBounce, chauparSteps } from "./board";
@@ -578,17 +579,18 @@ const worth = (p: number) => (p < 0 ? 0 : p >= C_FINISH ? 0 : 12 + p);
  * pawn out of danger (into its Belly, into a pair, away from rivals behind).
  * Never past Home unless it has to.
  */
-export function chooseMove(s: GameState, c: Color, _v: number): { i: number; opt: MoveOpt } {
+export function chooseMove(s: GameState, c: Color, _v: number, w?: Style): { i: number; opt: MoveOpt } {
+  const k = w || PLAIN;
   let best = { i: -1, opt: {} as MoveOpt };
   let bestScore = -Infinity;
   for (const m of allMoves(s, c)) {
     const side = sideOf(s, m.h);
     const size = m.group.length;
-    let sc = distOf(m.use) * size;
+    let sc = distOf(m.use) * size * k.advance;
     if (m.use >= C_KHADO) sc += 500;
-    if (m.to === C_FINISH) sc += 40 * size;
+    if (m.to === C_FINISH) sc += 40 * size * k.home;
     // (Capturing is weighed at half what a rival pawn has come: chasing captures made long games, and won no more of them.)
-    for (const r of m.cut) for (const q of r.idx) sc += (10 + worth(s.tokens[r.o][q])) / 2;
+    for (const r of m.cut) for (const q of r.idx) sc += ((10 + worth(s.tokens[r.o][q])) / 2) * k.capture;
     if (m.kajal) sc += 60;
     else if (m.to === C_KAJAL && size === 1 && !side.kajal) sc += 6;
     if (side.jug && side.ool === 1 && size === 1 && m.from < s.tokens[m.h][side.jug[0]] && m.to > s.tokens[m.h][side.jug[0]]) sc += 40;
@@ -599,14 +601,19 @@ export function chooseMove(s: GameState, c: Color, _v: number): { i: number; opt
     const joined = m.to !== C_FINISH && s.tokens[m.h].some((q, k) => q === m.to && !m.group.includes(k));
     const there = joined ? 2 : size;
     const truePair = there > 1 && (joined ? m.kajal || !pairsOf(s, m.h).length : !falsePair(s, m.h, m.group));
-    if (m.use < C_KHADO && m.to !== C_FINISH) sc -= 2 * danger(s, m.h, m.to, truePair) * worth(m.to) * there;
+    if (m.use < C_KHADO && m.to !== C_FINISH) sc -= 2 * danger(s, m.h, m.to, truePair) * worth(m.to) * there * k.risk;
     if (m.from >= P_LAP_FROM && m.from <= P_LAP_TO) {
       const was = groupOf(s, m.h, m.j);
-      sc += 2 * danger(s, m.h, m.from, was.length > 1 && !falsePair(s, m.h, was)) * worth(m.from) * size;
+      sc += 2 * danger(s, m.h, m.from, was.length > 1 && !falsePair(s, m.h, was)) * worth(m.from) * size * k.risk;
       // (Splitting a pair: the pawn left behind is a single now.)
-      if (was.length > size) sc -= 2 * (danger(s, m.h, m.from, false) - danger(s, m.h, m.from, !falsePair(s, m.h, was))) * worth(m.from);
+      if (was.length > size) sc -= 2 * (danger(s, m.h, m.from, false) - danger(s, m.h, m.from, !falsePair(s, m.h, was))) * worth(m.from) * k.risk;
     }
-    sc += Math.random();
+    // A persona's own way: the pawn furthest on, or the ones behind (and pairs, for the careful).
+    if (w) {
+      if (m.from >= 0) sc += w.lead * m.from * 0.3;
+      if (joined) sc += 8 * (w.safe - 1);
+    }
+    sc += Math.random() * k.noise;
     if (sc > bestScore) {
       bestScore = sc;
       best = { i: m.k, opt: { use: m.use } };

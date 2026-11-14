@@ -12,6 +12,7 @@ export const SOUND_KEYS = [
   ["capture", "Cutting a token"],
   ["home", "Token reaches home"],
   ["turn", "Your turn"],
+  ["timer", "Your time running out (online)"],
   ["chat", "Chat messages"],
   ["win", "Winning"],
 ] as const;
@@ -42,6 +43,6 @@ export const DEFAULT_SETTINGS: Settings = {
   parchisBoard: "auto",
   chauparBoard: "auto",
   steps: true,
-  sound: { all: true, start: true, dice: true, cowries: true, pasa: true, move: true, out: true, safe: true, capture: true, home: true, turn: true, chat: true, win: true },
+  sound: { all: true, start: true, dice: true, cowries: true, pasa: true, move: true, out: true, safe: true, capture: true, home: true, turn: true, timer: true, chat: true, win: true },
   music: true,
 };

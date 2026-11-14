@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { getController, useGame } from "@/hooks/use-game";
+import { MAX_MISSES } from "@/lib/game/constants";
 import { uiStore, useUi } from "@/lib/ui-store";
 
 // The phone's Back button must not drop a player out of a game. While a game is
@@ -77,7 +78,9 @@ export function LeaveDialog() {
       ? "Leaving? You can pick this game up again from the home screen for the next hour."
       : game.mode === "computer"
         ? "Leaving ends this game."
-        : "If you leave, the others keep playing and the computer takes over your tokens.";
+        : game.mode === "online"
+          ? `If you leave, the game goes on without you: when your time runs out your turn is played for you and counts as missed, and after ${MAX_MISSES} you're out. Rejoin from the home screen.`
+          : "If you leave, the others keep playing and the computer takes over your tokens.";
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && close()}>

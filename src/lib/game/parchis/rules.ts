@@ -25,6 +25,7 @@
 // the start, two-colour barriers on the seguros, and pairs.
 import { COLORS } from "../constants";
 import { addLog, nextTurn, noteStep, seatName, seated, teamOf } from "../table";
+import { PLAIN, type Style } from "../personas";
 import type { Color, GameState, MoveChoice, MoveOpt, ParchisTurn, Rulebook } from "../types";
 import { isSeguro, keyOf, parchisPoint, parchisSteps, SEGUROS, squareOf, X_FINISH, X_LAST_SHARED, X_PASILLO, X_TRACK } from "./board";
 import { cleanParchisVariations, parchisPairs, type ParchisVariations } from "./variations";
@@ -331,7 +332,8 @@ function threatened(s: GameState, c: Color, n: number) {
  * capture > out of the house > into the pasillo > safety > progress, keeping
  * clear of rivals just behind (and never capturing a partner).
  */
-export function chooseMove(s: GameState, c: Color, v: number): { i: number; opt: MoveOpt } {
+export function chooseMove(s: GameState, c: Color, v: number, w?: Style): { i: number; opt: MoveOpt } {
+  const k = w || PLAIN;
   const t = peek(s);
   const hand = t.hand.length ? uses(s) : [v];
   const side = teamOf(s, c);
@@ -340,21 +342,23 @@ export function chooseMove(s: GameState, c: Color, v: number): { i: number; opt:
   for (const u of hand)
     for (const m of legal(s, c, u)) {
       const p = s.tokens[c][m.i];
-      let sc = m.to * 0.4;
-      if (m.to === X_FINISH) sc += 100;
-      if (m.cap) sc += side.includes(m.cap.c) ? -120 : 90;
-      if (p === -1) sc += 60;
-      if (m.to >= X_PASILLO && p < X_PASILLO) sc += 35;
+      let sc = m.to * 0.4 * k.advance;
+      if (m.to === X_FINISH) sc += 100 * k.home;
+      if (m.cap) sc += side.includes(m.cap.c) ? -120 : 90 * k.capture;
+      if (p === -1) sc += 60 * k.enter;
+      if (m.to >= X_PASILLO && p < X_PASILLO) sc += 35 * k.home;
       const n = sq(c, m.to);
       if (n !== null) {
-        if (SEGUROS.has(n)) sc += 15;
-        else if (threatened(s, c, n)) sc -= 25;
-        if (s.tokens[c].some((x, j) => j !== m.i && keyOf(c, x) === keyOf(c, m.to))) sc += 6; // a barrier
+        if (SEGUROS.has(n)) sc += 15 * k.safe;
+        else if (threatened(s, c, n)) sc -= 25 * k.risk;
+        if (s.tokens[c].some((x, j) => j !== m.i && keyOf(c, x) === keyOf(c, m.to))) sc += 6 * k.safe; // a barrier
       }
       // Getting a piece out of danger.
       const from = p >= 0 ? sq(c, p) : null;
-      if (from !== null && !SEGUROS.has(from) && threatened(s, c, from)) sc += 12;
-      sc += Math.random();
+      if (from !== null && !SEGUROS.has(from) && threatened(s, c, from)) sc += 12 * k.risk;
+      // A persona's own way: the piece furthest on, or the ones behind.
+      if (w && p >= 0) sc += w.lead * p * 0.3;
+      sc += Math.random() * k.noise;
       if (sc > bestScore) {
         bestScore = sc;
         best = { i: m.i, opt: { use: u } };

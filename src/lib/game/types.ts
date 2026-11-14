@@ -1,5 +1,6 @@
 // Shared game types. Everything here is plain data so a game state can be
 // saved, sent over the network or (later) stored by a backend unchanged.
+import type { Style } from "./personas";
 
 export type Color = "red" | "green" | "yellow" | "blue";
 
@@ -24,6 +25,8 @@ export interface Seat extends Looks {
   id: string;
   nick: string;
   bot?: boolean;
+  /** Online: a player the host's device plays for, the way this kind of player plays (personas.ts). Shown like anyone else. */
+  ai?: string;
   /** Online/friends: the computer is playing for this (absent) person until they take back control. */
   takeover?: boolean;
   /** Online/friends: the person has lost their connection. */
@@ -41,6 +44,8 @@ export interface Seat extends Looks {
 export interface Player extends Looks {
   id: string;
   nick: string;
+  /** See Seat.ai. */
+  ai?: string;
 }
 
 export interface LastRoll {
@@ -251,8 +256,8 @@ export interface Rulebook {
   applyMove(s: GameState, c: Color, i: number, v: number, opt?: MoveOpt): void;
   /** c chooses not to move with the roll in hand; null in games where that isn't allowed. */
   pass: ((s: GameState, c: Color) => boolean) | null;
-  /** Computer players: which token to move with v, and how (i = -1: none can move). */
-  chooseMove(s: GameState, c: Color, v: number): { i: number; opt: MoveOpt };
+  /** Computer players: which token to move with v, and how (i = -1: none can move). `style`: the way an online persona plays (personas.ts). */
+  chooseMove(s: GameState, c: Color, v: number, style?: Style): { i: number; opt: MoveOpt };
   /** The positions a token passes through from a to b, b included (for step-by-step animation). */
   steps(a: number, b: number): number[];
   /** Where token i of c is drawn at position p. */

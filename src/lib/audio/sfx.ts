@@ -333,7 +333,36 @@ function diceRoll() {
     src.start();
   });
 }
-const SFX: Record<SoundName, () => void> = {
+// ---------------------------------------------------------------- time running out
+// The last five seconds of my turn: a soft wooden tock each second (a clock's, not an
+// alarm's), with a quiet pitched tone under it that climbs a step each time (D, E,
+// F#, A, B: a pentatonic run, so it never sounds sour against the music or the dice)
+// and comes a little nearer. The last second ticks twice. Short and warm, never a buzzer.
+// Someone else's turn (level + 10): the same, at about half the loudness and a fourth
+// lower, so it's heard as theirs, not mine.
+const TICK_NOTES = [587, 659, 740, 880, 988];
+function timerTick(level: number) {
+  const a = audio();
+  if (!a) return;
+  const theirs = level >= 10;
+  const k = Math.max(0, Math.min(TICK_NOTES.length - 1, Math.round(theirs ? level - 10 : level)));
+  const v = theirs ? 0.5 : 1;
+  const pitch = theirs ? 0.75 : 1;
+  const t = a.currentTime + 0.005;
+  const tock = (at: number, vol: number) =>
+    knock(at, { nf: (1500 + k * 160) * pitch, nq: 5, nd: 0.016, ring: [(480 + k * 36) * pitch, (1130 + k * 85) * pitch], rd: 0.055, vol: vol * v });
+  tock(t, 0.16 + k * 0.03);
+  tone(TICK_NOTES[k] * pitch, 0.16, { vol: (0.03 + k * 0.011) * v, delay: 0.004 });
+  if (k === TICK_NOTES.length - 1) {
+    tock(t + 0.17, 0.2);
+    tone(TICK_NOTES[k] * 1.5 * pitch, 0.22, { vol: 0.05 * v, delay: 0.174 });
+  }
+}
+
+const SFX: Record<SoundName, (arg?: number) => void> = {
+  timer(level = 0) {
+    timerTick(level);
+  },
   dice() {
     diceRoll();
   },
@@ -388,9 +417,9 @@ const SFX: Record<SoundName, () => void> = {
   },
 };
 
-export function playSound(name: SoundName) {
+export function playSound(name: SoundName, arg?: number) {
   try {
-    SFX[name]();
+    SFX[name](arg);
   } catch {
     /* sound is optional */
   }
