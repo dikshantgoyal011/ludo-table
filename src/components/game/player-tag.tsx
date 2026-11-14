@@ -272,8 +272,11 @@ export function PlayerTag({ corner }: { corner: number }) {
         </div>
       )}
 
-      {/* The player's picture; on their turn it turns into the dice (same spot, so nothing moves). Pachisi, Chaupar: always the picture. */}
-      <div className="flex size-[38px] shrink-0 items-center justify-center min-[400px]:size-[42px] sm:size-[46px]">
+      {/*
+        The player's picture; on their turn it turns into the dice (same spot, so nothing moves). Pachisi, Chaupar: always the picture.
+        (Above the turn ring: a thrown dice hops up off the tag, in front of the ring's line, as a real one would, not cut by it.)
+      */}
+      <div className="relative z-[15] flex size-[38px] shrink-0 items-center justify-center min-[400px]:size-[42px] sm:size-[46px]">
         {dieColor === c && !thrownRow ? (
           <Dice3D />
         ) : seat ? (
