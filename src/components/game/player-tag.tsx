@@ -12,7 +12,7 @@ import { themeOf } from "@/lib/theme/themes";
 import { uiStore } from "@/lib/ui-store";
 import { cn } from "@/lib/utils";
 import { Avatar } from "./avatar";
-import { CowrieRow } from "./cowries";
+import { CowrieRow, TurnCallout } from "./cowries";
 import { Dice3D } from "./dice-3d";
 import { PasaRow } from "./pasa";
 
@@ -179,7 +179,7 @@ export function PlayerTag({ corner }: { corner: number }) {
   const timer = game.turnTimerOn(c);
   const note = seat ? statusNote(game, seat, place) : null;
   // Online: turns missed so far (each one takes 2s off their turns; 5 and they're out): the tag's four dots,
-  // mine by my name. (Elsewhere the dots are tokens home; online the board shows those.)
+  // mine as a badge under my picture. (Elsewhere the dots are tokens home; online the board shows those.)
   const missDots = game.mode === "online" && s.phase === "playing" && place < 0 && !!seat && !seat.out;
   const missed = missDots ? seat.misses || 0 : 0;
   const away = !!note && note.text.startsWith("Offline");
@@ -286,6 +286,12 @@ export function PlayerTag({ corner }: { corner: number }) {
         ) : (
           <span className="size-[34px] rounded-full border border-dashed border-foreground/25 min-[400px]:size-[38px]" />
         )}
+        {/* My missed turns: a small badge under my picture (by my name it crowded the name out on a narrow phone). */}
+        {missDots && you && (
+          <span className="miss-badge">
+            <MissDots missed={missed} />
+          </span>
+        )}
       </div>
 
       <div className={cn("flex min-w-0 flex-1 flex-col gap-1", right && "items-end")}>
@@ -315,8 +321,6 @@ export function PlayerTag({ corner }: { corner: number }) {
               </button>
             )
           )}
-          {/* My missed turns: by my name (the row below is full with my buttons). */}
-          {missDots && showChat && <MissDots missed={missed} />}
           {menu && (
             <button
               type="button"
@@ -336,7 +340,7 @@ export function PlayerTag({ corner }: { corner: number }) {
           )}
         </div>
         {seat && (
-          <div className={cn("flex h-6 max-w-full min-w-0 items-center gap-1.5 min-[380px]:h-7", right && "flex-row-reverse")}>
+          <div className={cn("tag-controls flex h-6 max-w-full min-w-0 items-center gap-1.5 min-[380px]:h-7", right && "flex-row-reverse")}>
             {takeover && you ? (
               <button
                 type="button"
@@ -422,6 +426,7 @@ export function PlayerTag({ corner }: { corner: number }) {
         Every tag keeps the row's space, so nothing jumps as the cowries go round the table.
       */}
       {pachisi && <CowrieRow c={c} isTurn={isTurn} right={right} />}
+      {pachisi && <TurnCallout c={c} isTurn={isTurn} top={top} right={right} />}
       {chaupar && <PasaRow c={c} isTurn={isTurn} right={right} />}
     </div>
   );

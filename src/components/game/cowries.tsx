@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { SkipForward } from "lucide-react";
 import { useGame } from "@/hooks/use-game";
 import { DICE_ROLL_MS } from "@/lib/game/constants";
 import { GRACE_STEP, mouthsUp, shellsOf, SIX_SHELLS, type ShellSet } from "@/lib/game/pachisi/throws";
@@ -173,43 +174,99 @@ export function TagCowries({ c, shell }: { c: Color; shell: number }) {
   );
 }
 
+/** The cowries' size on a name tag: always this size (what goes with them has a place of its own, TurnCallout). */
+const TAG_SHELL = 22;
+
 /**
- * Pachisi's row on a name tag: the cowries (only for the player whose turn it is),
- * the throws still to play, and Skip. Every tag keeps the row's space, so
- * nothing jumps as the cowries go round the table.
+ * Pachisi's row on a name tag: the cowries, only for the player whose turn it
+ * is. Every tag keeps the row's space, so nothing jumps as the cowries go round
+ * the table. (The throws still to play and Skip don't fit beside full-size cowries
+ * on a phone: they're in the turn's callout.)
  */
 export function CowrieRow({ c, isTurn, right }: { c: Color; isTurn: boolean; right: boolean }) {
+  return <div className={cn("flex h-[34px] min-w-0 basis-full items-center gap-1.5", right && "flex-row-reverse")}>{isTurn && <TagCowries c={c} shell={TAG_SHELL} />}</div>;
+}
+
+/**
+ * Pachisi: what goes with the turn's cowries, in a quiet chip by the player's
+ * tag: the throws still to play, and on my own turn a small Skip. It stays in
+ * the background (dark glass like the tags, fading in a moment after the throw)
+ * so the eye goes to the pieces that can move first. It never covers the board
+ * or anything else: it opens away from the board (under a tag below it, over one
+ * above it); where the screen has no room there, beside the tag in the row's
+ * empty other place (two players); failing that, it takes the place of the tag's
+ * own buttons row for the moment (the name stays in view).
+ */
+export function TurnCallout({ c, isTurn, top, right }: { c: Color; isTurn: boolean; top: boolean; right: boolean }) {
   const game = useGame();
   const s = game.state;
   // Throws waiting to be played: shown when there's more than the one just thrown (throwing first, a separate grace).
   const hand = isTurn && s.turn === c && !game.rolling ? game.hand() : [];
   const showHand = hand.length > 1 || (hand.length === 1 && hand[0] !== s.last?.v);
+  const mine = isTurn && game.mine(s, c);
+  const pass = mine && game.canPass();
+  // (Mine, with throws in hand and none to move with yet: throw again.)
+  const again = mine && showHand && !s.roll && !game.rolling;
+  const open = isTurn && (showHand || pass);
+  const ref = useRef<HTMLDivElement>(null);
+  const [spot, setSpot] = useState<{ at: "away" | "beside" | "row"; box?: React.CSSProperties }>({ at: "away" });
+  // Room away from the board: to the scrolling area's edge (beyond it, it would be cut off).
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const tag = el?.parentElement;
+    if (!el || !tag || !open) return;
+    const place = () => {
+      const t = tag.getBoundingClientRect();
+      const area = el.closest(".app-scroll")?.getBoundingClientRect();
+      if (!area) return;
+      const room = top ? t.top - area.top : area.bottom - t.bottom;
+      if (room >= CALLOUT_H + 10) return setSpot({ at: "away" });
+      // The row's other place, empty: an empty cell holds nothing.
+      const other = [...(tag.parentElement?.children || [])].find((x) => x !== tag) as HTMLElement | undefined;
+      if (other && !other.children.length && other.offsetWidth > 100) return setSpot({ at: "beside", box: { maxWidth: other.offsetWidth - 12 } });
+      // The tag's buttons row: the chip lies exactly over it.
+      const row = tag.querySelector<HTMLElement>(".tag-controls");
+      if (!row) return setSpot({ at: "away" });
+      const r = row.getBoundingClientRect();
+      setSpot({ at: "row", box: { top: r.top - t.top - 2, left: r.left - t.left - 2, width: r.width + 4, height: r.height + 4 } });
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [open, top, pass, showHand, again]);
+  if (!open) return null;
   return (
-    <div className={cn("flex h-[34px] basis-full items-center gap-1.5", right && "flex-row-reverse")}>
-      {isTurn && <TagCowries c={c} shell={22} />}
+    <div
+      ref={ref}
+      role="group"
+      aria-label={pass ? "Your throw" : "Throws to play"}
+      className={cn(
+        "turn-callout absolute",
+        spot.at === "row" ? "turn-callout-row" : spot.at === "beside" ? "turn-callout-beside" : top ? "turn-callout-above" : "turn-callout-below",
+        right && "turn-callout-right",
+      )}
+      style={spot.box}
+    >
       {showHand && (
-        <span
-          className="badge-pop flex h-7 shrink-0 items-center gap-1 rounded-full bg-paper px-2 text-xs font-extrabold text-[#23302c] tabular-nums shadow"
-          aria-label={`Throws to play: ${hand.map((x) => (x === GRACE_STEP ? "grace" : x)).join(", ")}`}
-          title="Throws to play"
-        >
+        <span className="turn-callout-hand" aria-label={`Throws to play: ${hand.map((x) => (x === GRACE_STEP ? "grace" : x)).join(", ")}`} title="Throws to play">
           {hand.map((x, k) => (
-            <span key={k} className={cn(k > 0 && "border-l border-[#23302c]/25 pl-1")}>
+            <span key={k} className={cn(k > 0 && "border-l border-current/30 pl-1")}>
               {x === GRACE_STEP ? "G" : x}
             </span>
           ))}
         </span>
       )}
-      {isTurn && game.canPass() && (
-        <button
-          type="button"
-          onClick={game.pass}
-          title="Don't move with this throw"
-          className="badge-pop h-8 shrink-0 rounded-full border-2 border-foreground/45 px-3 text-xs font-bold text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95"
-        >
-          Skip
+      {pass ? (
+        <button type="button" onClick={game.pass} title="Don't move with this throw" className="turn-callout-skip">
+          <SkipForward className="size-3" strokeWidth={2.6} aria-hidden="true" />
+          Skip<span className="turn-callout-more"> throw</span>
         </button>
-      )}
+      ) : again ? (
+        <span className="turn-callout-note">throw again</span>
+      ) : null}
     </div>
   );
 }
+
+/** The chip's height (the room it needs away from the board, with its gap). */
+const CALLOUT_H = 30;
