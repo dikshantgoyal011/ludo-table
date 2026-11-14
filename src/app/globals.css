@@ -1737,19 +1737,20 @@ html.in-game .board-fit > .board-size {
 
 
 /* Pachisi: my throw, which I may choose not to move with: my picture's place on my tag is
-   Skip for the moment. Quiet, so the pieces that can move stay what the eye goes to: the
-   picture's own size and ring (my colour), the tag's dark tone inside, a thin ivory icon and
-   label. It comes in place of the picture with a small, quick swap, and lights up a little
-   under the finger. */
+   Skip for the moment. Easy to notice without pulling the eye off the pieces: the picture's
+   own size and ring (my colour), warm ivory against the dark tag with a dark icon and label,
+   and a soft gold halo rippling out from it every couple of seconds. It comes in place of the
+   picture with a small, quick swap. */
 .skip-spot {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 1px;
   border-radius: 9999px;
-  background: radial-gradient(circle at 50% 35%, rgb(60 20 24), rgb(26 8 10));
-  color: rgb(251 239 213 / 0.92);
+  background: radial-gradient(circle at 50% 30%, #fffaf0, #fbefd5 55%, #ead19e);
+  color: #3a1a08;
   font-size: 9px;
   font-weight: 800;
   line-height: 1;
@@ -1764,7 +1765,25 @@ html.in-game .board-fit > .board-size {
   }
 }
 .skip-spot:hover {
-  background: radial-gradient(circle at 50% 35%, rgb(84 30 34), rgb(36 12 14));
+  background: radial-gradient(circle at 50% 30%, #fff, #fdf4e2 55%, #f0d9a8);
+}
+/* The halo (its own layer: the button's ring is set inline). */
+.skip-spot::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  pointer-events: none;
+  animation: skip-halo 2.2s ease-out 0.2s infinite;
+}
+@keyframes skip-halo {
+  0% {
+    box-shadow: 0 0 0 0 rgb(246 172 58 / 0.65);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 6px rgb(246 172 58 / 0);
+  }
 }
 .skip-spot:focus-visible {
   outline: 2px solid rgb(var(--c-gold));
@@ -1780,7 +1799,8 @@ html.in-game .board-fit > .board-size {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .skip-spot {
+  .skip-spot,
+  .skip-spot::after {
     animation: none;
   }
 }
